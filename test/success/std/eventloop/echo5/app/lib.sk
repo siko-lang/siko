@@ -11,10 +11,7 @@ pub fn handler(conn: Socket) {
     let writer = Buffered.Writer.new(conn);
     for i in 0..3 {
         let line = match reader.read_line() {
-            Ok(Some(l)) => {
-                println("received line: ${l}");
-                l
-            }
+            Ok(Some(l)) => l,
             Ok(None) => {
                 println("no line received");
                 continue;
@@ -25,11 +22,11 @@ pub fn handler(conn: Socket) {
             }
         };
         match writer.write("${line}\n".as_slice()) {
-            Ok(_) => println("wrote line: ${line}"),
+            Ok(_) => {},
             Err(e) => println("write error: ${e}"),
         }
         match writer.flush() {
-            Ok(_) => println("flushed"),
+            Ok(_) => {},
             Err(e) => println("flush error: ${e}"),
         }
     }
@@ -70,15 +67,15 @@ pub fn client(port: U16) {
     let writer = Buffered.Writer.new(stream);
     for i in 0..3 {
         match writer.write("hello ${i}\n".as_slice()) {
-            Ok(_) => println("wrote: hello ${i}"),
+            Ok(_) => {},
             Err(e) => println("write error: ${e}"),
         }
         match writer.flush() {
-            Ok(_) => println("flushed"),
+            Ok(_) => {},
             Err(e) => println("flush error: ${e}"),
         }
         match reader.read_line() {
-            Ok(Some(line)) => println("received line: ${line}"),
+            Ok(Some(line)) => println(line),
             Ok(None) => println("no line received"),
             Err(e) => println("read_line error: ${e}"),
         }
