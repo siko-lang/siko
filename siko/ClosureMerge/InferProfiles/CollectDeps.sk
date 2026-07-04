@@ -49,7 +49,6 @@ instance CollectDeps[E.BinaryOp]          = auto(Fold, =)
 instance CollectDeps[E.UnaryOp]           = auto(Fold, =)
 instance CollectDeps[E.LambdaArg]         = auto(Fold, =)
 instance CollectDeps[E.ImplicitRefInfo]   = auto(Fold, =)
-instance CollectDeps[E.FunctionPtrInfo]   = auto(Fold, =)
 instance CollectDeps[E.NamedArgument]     = auto(Fold, =)
 instance CollectDeps[NamedPatternArg]     = auto(Fold, =)
 instance CollectDeps[E.HandlerSelection]  = auto(Fold, =)
@@ -84,6 +83,12 @@ instance CollectDeps[E.FunctionCallInfo] {
             c.deps.insert(info.qname);
         }
         collect_deps(info.args, c);
+    }
+}
+
+instance CollectDeps[E.FunctionPtrInfo] {
+    fn collect_deps(info: E.FunctionPtrInfo, c: DepCollector) {
+        c.deps.insert(info.name);
     }
 }
 

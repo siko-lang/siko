@@ -136,9 +136,14 @@ pub struct MonoContext {
     pub effect_ctx: Map[QualifiedName, HandlerInfo],
     pub effect_associated_type_ctx: Map[QualifiedName, TypeHandlerInfo],
     pub implicit_ctx: Vec[QualifiedName],
+    // Closure-content duplication index (lower-closures v2): functions and
+    // datatypes reached with different concrete closure sets are duplicated,
+    // and the copy's index is part of its mono identity — the same way
+    // witnesses and effect contexts already are. 0 = the sole/first copy.
+    pub closure_instance: Int = 0,
 
     pub fn new() -> MonoContext {
-        MonoContext(Vec.new(), Map.new(), Map.new(), Vec.new())
+        MonoContext(Vec.new(), Map.new(), Map.new(), Vec.new(), 0)
     }
 }
 
@@ -382,9 +387,37 @@ pub enum QualifiedName {
                     let parts: Vec[String] = m.ctx.implicit_ctx.iter().map(|q| I.resolve(q.name())).collect();
                     "{" + join(parts, ",") + "}"
                 };
-                (args_str, witness_str + effect_str + effect_associated_type_str + implicit_str)
+                let instance_str = if m.ctx.closure_instance == 0 {
+                    ""
+                } else {
+                    "#" + m.ctx.closure_instance.to_string()
+                };
+                (args_str, witness_str + effect_str + effect_associated_type_str + implicit_str + instance_str)
             }
         }
+    }
+
+    // A closure-content duplicate of this name (lower-closures v2): same
+    // mono identity plus a distinguishing instance index. Index 0 returns
+    // the name unchanged.
+    pub fn with_closure_instance(qn: QualifiedName, index: Int) -> QualifiedName {
+        if index == 0 {
+            return qn;
+        }
+        let new_qn = match qn {
+            Base(bn) => {
+                let ctx = MonoContext.new();
+                ctx.closure_instance = index;
+                Mono(MonoName(bn, Vec.new(), ctx, "", I.intern("")))
+            }
+            Mono(m) => {
+                let ctx = m.ctx.clone();
+                ctx.closure_instance = index;
+                Mono(MonoName(m.name, m.args.clone(), ctx, "", I.intern("")))
+            }
+        };
+        new_qn.rehash();
+        new_qn
     }
 
     pub fn base(qn: QualifiedName) -> BaseName {

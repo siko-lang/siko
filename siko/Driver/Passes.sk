@@ -24,6 +24,8 @@ import Siko.ClosureMerge.GeneralizeDataTypes as ClosureMergeGeneralizeDataTypes
 import Siko.ClosureMerge.GeneralizeFunctions as ClosureMergeGeneralizeFunctions
 import Siko.ClosureMerge.InferProfiles as ClosureMergeInferProfiles
 import Siko.ClosureMerge.InferProfiles.Debug as ClosureMergeDebug
+import Siko.ClosureMerge.Resolve as ClosureMergeResolve
+import Siko.ClosureMerge.Lower as ClosureMergeLower
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
@@ -197,7 +199,13 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
             Pass(
                 name: "lower-closures",
                 label: "Lowering closures...",
-                run: |driver| { lower_closures(driver.program); },
+                run: |driver| {
+                    if get_config().lower_closure_v2 {
+                        ClosureMergeLower.lower_closures_v2(driver.program);
+                    } else {
+                        lower_closures(driver.program);
+                    }
+                },
                 dump: Some(|driver| println(driver.program.format())),
             ),
             Pass(
@@ -270,6 +278,8 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 println(cloned.format());
                 let profiles = ClosureMergeInferProfiles.infer_profiles(cloned);
                 ClosureMergeDebug.dump_profiles(cloned, profiles);
+                let resolver = ClosureMergeResolve.resolve(cloned, profiles);
+                ClosureMergeResolve.dump(resolver);
             },
             dump: Some(|driver| println(driver.program.format())),
         ));

@@ -31,9 +31,89 @@ Layout in `siko/ClosureMerge/`:
   - [Debug.sk](../siko/ClosureMerge/InferProfiles/Debug.sk) — all debug
     printing (`debug_dump_classes`, `dump_profiles`).
 
-Phase C (concrete resolution / duplication) **does not exist**, and the
-residual parts of Phase B (dynamic-call and capture flow, see below) are
-recorded but not resolved.
+- [Resolve.sk](../siko/ClosureMerge/Resolve.sk) — Phase C: concrete
+  resolution from `Main.main`. Working end-to-end on the test fixtures;
+  see its own section below.
+
+### Resolve (Phase C, concrete resolution)
+
+Two interned universes, both with integer ids:
+
+- **Closure instances** ("c0, c1, …"): a lambda plus what its captured
+  values hold (`captures: Vec[Set[Int]]`, one per flattened capture var —
+  captures are the lambda's leading args, so this aligns with its boundary
+  var prefix). Interning identity is **name-truncated one level deep**
+  (captures reduced to sorted lambda-name lists), which keeps the universe
+  finite even when closures capture closures of their own lineage; the
+  contents stay exact instance sets and may be self-referential
+  (middleware chain: `c14 = chain_lambda_1 captures=[{c9, c14}]`).
+- **Function instances**: `(function, one concrete set per boundary var)`,
+  memoized — the duplication axis, mirroring `fn_mono_key`.
+
+Per function the body is walked **once** (the Phase B `Flow` walk with
+empty SCC set, so every call takes the profile path), yielding the class
+partition plus record lists: creations, applies, static calls (new
+`CallRecord` carrying the callee-var → caller-node subst), and named-type
+occurrences (its own `CollectNamed` fold). All instances of a function
+share this; only the sets differ.
+
+Resolution is a two-level fixpoint:
+
+- **Inner rounds**: per instance — seed inputs from the key; creations
+  seed their pinned closure-instance id and feed its capture contents;
+  static calls derive the callee's input tuple (interning/duplicating
+  instances) and pull the callee's boundary sets back; applies resolve
+  each closure instance in the callee slot like a static call (captures
+  from the instance table, args/result from the site) — this is where
+  Phase B's residuals finally resolve. Instances are processed by a
+  worklist that **discovers the frontier while running** (children edges
+  rebuilt per visit).
+- **Outer rounds**: creation-site identities are (re)derived **only from
+  converged sets**, pinned, and if any pin changed the computed sets are
+  wiped (intern tables and pins survive) and the inner fixpoint reruns.
+  Identities grow monotonically per site → terminates. Bootstrap works
+  upward: round 1 has no flavors, round 2 seeds capture-less identities,
+  round 3 capture-carrying ones, etc.
+
+Output (dump-only, same debug harness): the closure-instance table, every
+reachable function instance with per-slot sets, concrete datatype
+instances (`Main.State[{c13}]`), and one minted enum per distinct
+non-empty set (including bare fn-typed slots outside datatypes). On
+test.sk: 12 lambdas of identical type `fn()->()` resolve to 9 enums, the
+largest with 2 variants, each merge individually justified — versus ONE
+12-variant enum under the current by-signature closure lowering. Verified
+end-to-end: coroutine yield/return separation, captures-from-callee
+returns, arg mutation, Vec round trips, and the self-referential
+middleware chain (which produces a recursive enum, representable since
+closures are heap refs).
+
+**The hard-won fixpoint invariant** (three bugs, one rule — do not
+violate it when touching this code): *identities may only be derived from
+converged data, and every instance that executes must be subject to
+correction.* The three violations found by fixtures: (1) minting an
+identity mid-run from a half-populated capture class creates phantoms;
+(2) processing instances abandoned by re-keying lets their stale keys
+leak phantom ids into shared flavor state (fix: process only
+reachable-from-main, discovered during the pass); (3) correcting pins
+only for end-of-round-reachable instances misses "gateway" instances that
+run early in every round but are re-keyed away by its end — they
+re-inject outdated identities forever (fix: correct pins for everything
+that *ran*).
+
+**Stress run on the compiler itself** (self-build with `--debug-closure`):
+converges in 6 identity rounds × ≤3 passes, unnoticeable wall time. 10,318
+function instances over 9,769 distinct functions = **5.6% duplication
+overhead**; max duplication 14 (`Option.map[TypeDef, TypeDef]`), then
+`Iterator.map/collect` chains at 8–11 — exactly the higher-order helpers
+that should split. 627 closure instances → **586 enums, ~96% singletons**
+(static single dispatch); the only large enums (22 + 21 members) are the
+driver's `Pass` record lambdas, which all live in one `Vec[Pass]` and
+*must* merge — and even there the `run` and `dump` fields got separate
+enums (slot-level precision on real code). One perf fix fell out of the
+run: `Program.format()` was quadratic string concatenation (fixed with
+`StringBuilder`); the resolver itself was never the bottleneck.
+
+Phase C residual gaps: no program rewriting yet (analysis + dump only).
 
 ### Verified behaviors (manual fixtures in `test.sk`, via `--debug-closure`)
 
@@ -303,9 +383,15 @@ Phase B and are firmer than what the original *dataflow.md* says:
 
 ## Explicitly not started
 
-- Phase C (concrete resolution from `main`, duplication/memoization,
-  residual apply/creation resolution against concrete lambda sets).
+- The rewrite pass: physically duplicating `FunctionDef`s per instance,
+  substituting closure vars with their enum types, emitting enums/handlers
+  (reuse `generate_enum`/`generate_handler`), rewriting
+  `CreateClosure`/`DynamicCall`. Until then the clone is a side-channel.
 - Any integration with the real `ClosureLowering/Pass.sk` — that pass is
   completely unmodified. The two systems don't talk to each other yet.
-- Coroutine-classification interaction (`CoroutineLowering/*`) — untouched,
-  irrelevant until Phase C exists.
+- Coroutine-classification interaction (`CoroutineLowering/*`) — untouched;
+  becomes relevant once the rewrite pass exists (ordering is already
+  correct, no code change expected there).
+- Stress run on a large program (the compiler itself) — both the
+  conservative fallbacks' correctness and fixpoint performance at scale are
+  unproven.

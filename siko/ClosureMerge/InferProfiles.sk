@@ -96,17 +96,18 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
     let sccs = build_groups(program);
 
     let ctx = FlowCtx(
-        program,
-        tables,
-        Set.new(),
-        Map.new(),
-        UnionFind.new(),
-        Vec.new(),
-        Vec.new(),
-        QualifiedName.new_closure_enum(0),
-        Map.new(),
-        Vec.new(),
-        Vec.new(),
+        program: program,
+        tables: tables,
+        scc_members: Set.new(),
+        profiles: Map.new(),
+        uf: UnionFind.new(),
+        applies: Vec.new(),
+        creations: Vec.new(),
+        calls: Vec.new(),
+        current_fn: QualifiedName.new_closure_enum(0),
+        env: Map.new(),
+        result_vars: Vec.new(),
+        yield_vars: Vec.new(),
     );
 
     for scc in sccs {
@@ -118,6 +119,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, Profile] {
         ctx.uf = UnionFind.new();
         ctx.applies = Vec.new();
         ctx.creations = Vec.new();
+        ctx.calls = Vec.new();
 
         for q in scc.iter() {
             let func = ctx.program.functions.get(q).unwrap();

@@ -13,6 +13,7 @@ import Siko.AST.Type
 import Siko.Format.Utils
 import Siko.Interner as I
 import Siko.Instances.InstanceResolver
+import Std.StringBuilder
 
 @derive(Clone)
 pub struct Program {
@@ -87,30 +88,37 @@ pub struct Program {
     }
 
     pub fn format(program: Program) -> String {
-        let out = "";
+        let out = StringBuilder.new();
         for def in program.structs.values() {
-            out = out + format_struct(def) + "\n";
+            out.push(format_struct(def));
+            out.push("\n");
         }
         for def in program.enums.values() {
-            out = out + format_enum(def) + "\n";
+            out.push(format_enum(def));
+            out.push("\n");
         }
         for def in program.traits.values() {
-            out = out + format_trait(def) + "\n";
+            out.push(format_trait(def));
+            out.push("\n");
         }
         for def in program.named_instances.values() {
-            out = out + format_instance(def) + "\n";
+            out.push(format_instance(def));
+            out.push("\n");
         }
         for def in program.canonical_instances {
-            out = out + format_instance(def) + "\n";
+            out.push(format_instance(def));
+            out.push("\n");
         }
         for def in program.functions.values() {
-            out = out + format_fn(def) + "\n";
+            out.push(format_fn(def));
+            out.push("\n");
         }
         for def in program.effects.values() {
-            out = out + format_effect(def) + "\n";
+            out.push(format_effect(def));
+            out.push("\n");
         }
-        out = out + program.instance_resolver.format();
-        out
+        out.push(program.instance_resolver.format());
+        out.to_string()
     }
 
     pub fn get_divergent_functions(program: Program) -> Set[QualifiedName] {

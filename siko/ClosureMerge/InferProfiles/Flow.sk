@@ -172,13 +172,24 @@ pub struct ApplyRecord {
     pub result: Vec[FlowNode],
 }
 
-// A closure creation site: which lambda, and the flow nodes of each
-// captured variable. Also residual: captures matter when the closure is
-// eventually applied.
+// A closure creation site: which lambda, the flow nodes of each captured
+// variable, and the nodes of the closure value itself. Also residual:
+// captures matter when the closure is eventually applied.
 pub struct CreationRecord {
     pub owner: QualifiedName,
     pub lambda: QualifiedName,
     pub captures: Vec[Vec[FlowNode]],
+    pub value: Vec[FlowNode],
+}
+
+// A static call site: the callee and the substitution from the callee's
+// boundary vars to the caller-side nodes they correspond to. Phase B only
+// records these; concrete resolution (Phase C) uses them to read off each
+// callee's concrete input tuple and to couple caller and callee instances.
+pub struct CallRecord {
+    pub owner: QualifiedName,
+    pub callee: QualifiedName,
+    pub subst: Map[TypeVar, FlowNode],
 }
 
 // ── Union-find over flow nodes ───────────────────────────────────────────────
@@ -246,6 +257,7 @@ pub struct FlowCtx {
     pub uf: UnionFind,
     pub applies: Vec[ApplyRecord],
     pub creations: Vec[CreationRecord],
+    pub calls: Vec[CallRecord],
     // per-function state
     pub current_fn: QualifiedName,
     pub env: Map[E.VariableName, Vec[TypeVar]],
@@ -373,7 +385,7 @@ instance Flow[E.Expr] {
                     ctx.add_seed(n.clone(), info.name.clone());
                 }
                 let captures: Vec[Vec[FlowNode]] = info.params.iter().map(|p| ctx.env_nodes(p.clone())).collect();
-                ctx.creations.push(CreationRecord(ctx.current_fn.clone(), info.name, captures));
+                ctx.creations.push(CreationRecord(ctx.current_fn.clone(), info.name, captures, out));
             }
             E.ExprKind.If(cond, then_branch, else_branch) => {
                 flow(cond, ctx);
@@ -462,6 +474,15 @@ instance Flow[E.Expr] {
             E.ExprKind.With(E.WithInfo(_, body)) => {
                 flow(body, ctx);
                 ctx.unify(ctx.nodes(evars(body)), out);
+            }
+            E.ExprKind.FunctionPtr(info) => {
+                // taking a Siko function's address: couple the fn-ptr
+                // type's interior vars with the target's boundary vars,
+                // exactly like a call — the target becomes a live instance
+                // and its slots track whatever flows through the pointer's
+                // type (the C side of the call is opaque, but the
+                // conservative extern model bridges the actual invocation)
+                fn_ptr_edges(ctx, info, expr.ty.clone());
             }
             E.ExprKind.FunctionPtrCall(callee, args) => {
                 flow(callee, ctx);
@@ -664,24 +685,63 @@ fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[T
                         }
                     }
 
+                    // callee boundary var -> caller-side node
+                    let subst: Map[TypeVar, FlowNode] = Map.new();
+                    for (i, arg) in info.args.iter().enumerate() {
+                        if i < callee.args.len() {
+                            fill_subst(subst, ty_vars(callee.args[i].type_def.clone()), ctx.nodes(evars(arg)));
+                        }
+                    }
+                    for (callee_vars, caller_nodes) in out_pairs {
+                        fill_subst(subst, callee_vars, caller_nodes);
+                    }
+                    ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.qname.clone(), subst.clone()));
+
                     if ctx.scc_members.contains(info.qname) {
                         // direct wiring onto the callee's real signature vars
-                        for (i, arg) in info.args.iter().enumerate() {
-                            if i < callee.args.len() {
-                                ctx.unify(ctx.nodes(evars(arg)), ctx.nodes_for(info.qname, ty_vars(callee.args[i].type_def.clone())));
-                            }
-                        }
-                        for (callee_vars, caller_nodes) in out_pairs {
-                            ctx.unify(ctx.nodes_for(info.qname, callee_vars), caller_nodes);
+                        for (v, n) in subst.iter() {
+                            ctx.unify([FlowNode(info.qname.clone(), v)], [n]);
                         }
                     } else {
                         match ctx.profiles.get(info.qname) {
-                            Some(profile) => instantiate_profile(ctx, profile, callee, info.args, out_pairs),
+                            Some(profile) => instantiate_profile(ctx, profile, subst),
                             None => conservative_call(ctx, info.args, out),
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+// A function-pointer reference: subst maps the target's boundary vars onto
+// the FnPtr type's interior vars (args then result — the same order
+// boundary_vars uses), then behaves like a static call: recorded for
+// concrete resolution, wired directly inside the SCC, or instantiated from
+// the target's finished profile.
+fn fn_ptr_edges(ctx: FlowCtx, info: E.FunctionPtrInfo, expr_ty: Option[TypeDef]) {
+    let target = match ctx.program.functions.get(info.name) {
+        Some(f) => f,
+        None => return,
+    };
+    if target.body.is_none() {
+        return;
+    }
+    let interior = match expr_ty {
+        Some(t) => ctx.nodes(ty_vars(t)),
+        None => Vec.new(),
+    };
+    let subst: Map[TypeVar, FlowNode] = Map.new();
+    fill_subst(subst, boundary_vars(target), interior);
+    ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.name.clone(), subst.clone()));
+    if ctx.scc_members.contains(info.name) {
+        for (v, n) in subst.iter() {
+            ctx.unify([FlowNode(info.name.clone(), v)], [n]);
+        }
+    } else {
+        match ctx.profiles.get(info.name) {
+            Some(profile) => instantiate_profile(ctx, profile, subst),
+            None => {}
         }
     }
 }
@@ -776,21 +836,11 @@ fn resume_edges(ctx: FlowCtx, args: Vec[E.Expr], expr_ty: Option[TypeDef], out: 
     }
 }
 
-// Instantiate a finished (cross-SCC) profile at a call site: build the
-// substitution from the callee's boundary vars to the caller-side nodes
-// they correspond to, then replay the profile's equivalence groups through
-// it — unify the caller nodes of each group and seed its lambdas. This is
-// what keeps unrelated call sites of the same callee separated.
-fn instantiate_profile(ctx: FlowCtx, profile: Profile, callee: FunctionDef, args: Vec[E.Expr], out_pairs: Vec[(Vec[TypeVar], Vec[FlowNode])]) {
-    let subst: Map[TypeVar, FlowNode] = Map.new();
-    for (i, arg) in args.iter().enumerate() {
-        if i < callee.args.len() {
-            fill_subst(subst, ty_vars(callee.args[i].type_def.clone()), ctx.nodes(evars(arg)));
-        }
-    }
-    for (callee_vars, caller_nodes) in out_pairs {
-        fill_subst(subst, callee_vars, caller_nodes);
-    }
+// Instantiate a finished (cross-SCC) profile at a call site: replay the
+// profile's equivalence groups through the callee-var → caller-node
+// substitution — unify the caller nodes of each group and seed its lambdas.
+// This is what keeps unrelated call sites of the same callee separated.
+fn instantiate_profile(ctx: FlowCtx, profile: Profile, subst: Map[TypeVar, FlowNode]) {
     for group in profile.groups.iter() {
         let caller_nodes: Vec[FlowNode] = group.vars.iter().filter_map(|v| subst.get(v)).collect();
         if caller_nodes.is_empty() {
