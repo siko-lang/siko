@@ -1,0 +1,427 @@
+module Siko.Typechecker.Statistics {
+
+import Std.Time
+import Siko.Typechecker.Constraints as C
+
+pub implicit stats: Statistics
+
+fn format_microseconds_as_millis(us: I64) -> String {
+    let ms = us / 1000.as_i64();
+    let frac = (us % 1000.as_i64()).as_int().to_string();
+    while frac.len() < 3 {
+        frac = "0" + frac;
+    }
+    "${ms}.${frac}ms"
+}
+
+fn format_duration(total: Duration) -> String {
+    format_microseconds_as_millis(total.to_microseconds())
+}
+
+fn format_average_duration(total: Duration, count: Int) -> String {
+    if count == 0 {
+        return "0.000ms";
+    }
+    format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
+}
+
+fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
+    if enabled {
+        starts.push(Instant.now());
+    }
+}
+
+fn statistics_elapsed(enabled: Bool, starts: Vec[Instant]) -> Option[Duration] {
+    if !enabled {
+        return None;
+    }
+    match starts.pop() {
+        Some(start) => Some(start.elapsed()),
+        None => None,
+    }
+}
+
+fn print_time_stat(name: String, count: Int, total: Duration) {
+    println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}");
+}
+
+fn print_count_stat(name: String, count: Int) {
+    println("  ${name}: ${count}");
+}
+
+pub struct ConstraintKindStats {
+    pub unify: Int,
+    pub has_field: Int,
+    pub has_tuple_index: Int,
+    pub call_method: Int,
+    pub call_function: Int,
+    pub call_type_associated: Int,
+    pub dynamic_call: Int,
+    pub has_instance: Int,
+    pub match_variant: Int,
+    pub match_struct: Int,
+    pub resolve_implicit: Int,
+    pub has_index: Int,
+    pub has_index_assign: Int,
+    pub get_function_ptr_type: Int,
+    pub validate_effect_handler: Int,
+    pub validate_effect_type_association: Int,
+
+    pub fn new() -> ConstraintKindStats {
+        ConstraintKindStats(
+            unify: 0,
+            has_field: 0,
+            has_tuple_index: 0,
+            call_method: 0,
+            call_function: 0,
+            call_type_associated: 0,
+            dynamic_call: 0,
+            has_instance: 0,
+            match_variant: 0,
+            match_struct: 0,
+            resolve_implicit: 0,
+            has_index: 0,
+            has_index_assign: 0,
+            get_function_ptr_type: 0,
+            validate_effect_handler: 0,
+            validate_effect_type_association: 0,
+        )
+    }
+
+    pub fn record(k: ConstraintKindStats, kind: C.ConstraintKind) {
+        match kind {
+            C.ConstraintKind.Unify(_, _) => { k.unify += 1; }
+            C.ConstraintKind.HasField(_, _, _) => { k.has_field += 1; }
+            C.ConstraintKind.HasTupleIndex(_, _, _) => { k.has_tuple_index += 1; }
+            C.ConstraintKind.CallMethod(_, _, _, _) => { k.call_method += 1; }
+            C.ConstraintKind.CallFunction(_, _, _, _, _) => { k.call_function += 1; }
+            C.ConstraintKind.CallTypeAssociated(_, _, _, _) => { k.call_type_associated += 1; }
+            C.ConstraintKind.DynamicCall(_, _, _) => { k.dynamic_call += 1; }
+            C.ConstraintKind.HasInstance(_, _, _, _) => { k.has_instance += 1; }
+            C.ConstraintKind.MatchVariant(_, _, _) => { k.match_variant += 1; }
+            C.ConstraintKind.MatchStruct(_, _, _) => { k.match_struct += 1; }
+            C.ConstraintKind.ResolveImplicit(_, _) => { k.resolve_implicit += 1; }
+            C.ConstraintKind.HasIndex(_, _, _) => { k.has_index += 1; }
+            C.ConstraintKind.HasIndexAssign(_, _, _, _) => { k.has_index_assign += 1; }
+            C.ConstraintKind.GetFunctionPtrType(_, _) => { k.get_function_ptr_type += 1; }
+            C.ConstraintKind.ValidateEffectHandler(_, _) => { k.validate_effect_handler += 1; }
+            C.ConstraintKind.ValidateEffectTypeAssociation(_, _) => { k.validate_effect_type_association += 1; }
+        }
+    }
+
+    pub fn dump(k: ConstraintKindStats, label: String) {
+        println("  ${label}:");
+        print_count_stat("    Unify", k.unify);
+        print_count_stat("    HasField", k.has_field);
+        print_count_stat("    HasTupleIndex", k.has_tuple_index);
+        print_count_stat("    CallMethod", k.call_method);
+        print_count_stat("    CallFunction", k.call_function);
+        print_count_stat("    CallTypeAssociated", k.call_type_associated);
+        print_count_stat("    DynamicCall", k.dynamic_call);
+        print_count_stat("    HasInstance", k.has_instance);
+        print_count_stat("    MatchVariant", k.match_variant);
+        print_count_stat("    MatchStruct", k.match_struct);
+        print_count_stat("    ResolveImplicit", k.resolve_implicit);
+        print_count_stat("    HasIndex", k.has_index);
+        print_count_stat("    HasIndexAssign", k.has_index_assign);
+        print_count_stat("    GetFunctionPtrType", k.get_function_ptr_type);
+        print_count_stat("    ValidateEffectHandler", k.validate_effect_handler);
+        print_count_stat("    ValidateEffectTypeAssociation", k.validate_effect_type_association);
+    }
+}
+
+pub struct Statistics {
+    pub enabled: Bool,
+    pub functions: Int,
+    pub failed_functions: Int,
+    pub collected_exprs: Int,
+    pub collected_statements: Int,
+    pub collected_patterns: Int,
+    pub emitted_constraints: Int,
+    pub initial_constraints: Int,
+    pub initial_unify_constraints: Int,
+    pub initial_other_constraints: Int,
+    pub spawned_constraints: Int,
+    pub spawned_unify_constraints: Int,
+    pub spawned_other_constraints: Int,
+    pub processed_constraints: Int,
+    pub processed_unify_constraints: Int,
+    pub processed_other_constraints: Int,
+    pub satisfied_constraints: Int,
+    pub pending_constraints: Int,
+    pub failed_constraints: Int,
+    pub skipped_satisfied_constraints: Int,
+    pub requeued_constraints: Int,
+    pub subscribed_constraints: Int,
+    pub max_constraints_per_function: Int,
+    pub emitted_by_kind: ConstraintKindStats,
+    pub processed_by_kind: ConstraintKindStats,
+    pub spawned_by_kind: ConstraintKindStats,
+    pub collector_calls: Int,
+    pub collector_time: Duration,
+    collector_starts: Vec[Instant],
+    pub solver_calls: Int,
+    pub solver_time: Duration,
+    solver_starts: Vec[Instant],
+    pub finalizer_calls: Int,
+    pub finalizer_time: Duration,
+    finalizer_starts: Vec[Instant],
+    pub sanity_calls: Int,
+    pub sanity_time: Duration,
+    sanity_starts: Vec[Instant],
+
+    pub fn new(enabled: Bool) -> Statistics {
+        Statistics(
+            enabled: enabled,
+            functions: 0,
+            failed_functions: 0,
+            collected_exprs: 0,
+            collected_statements: 0,
+            collected_patterns: 0,
+            emitted_constraints: 0,
+            initial_constraints: 0,
+            initial_unify_constraints: 0,
+            initial_other_constraints: 0,
+            spawned_constraints: 0,
+            spawned_unify_constraints: 0,
+            spawned_other_constraints: 0,
+            processed_constraints: 0,
+            processed_unify_constraints: 0,
+            processed_other_constraints: 0,
+            satisfied_constraints: 0,
+            pending_constraints: 0,
+            failed_constraints: 0,
+            skipped_satisfied_constraints: 0,
+            requeued_constraints: 0,
+            subscribed_constraints: 0,
+            max_constraints_per_function: 0,
+            emitted_by_kind: ConstraintKindStats.new(),
+            processed_by_kind: ConstraintKindStats.new(),
+            spawned_by_kind: ConstraintKindStats.new(),
+            collector_calls: 0,
+            collector_time: Duration.zero(),
+            collector_starts: Vec.new(),
+            solver_calls: 0,
+            solver_time: Duration.zero(),
+            solver_starts: Vec.new(),
+            finalizer_calls: 0,
+            finalizer_time: Duration.zero(),
+            finalizer_starts: Vec.new(),
+            sanity_calls: 0,
+            sanity_time: Duration.zero(),
+            sanity_starts: Vec.new(),
+        )
+    }
+
+    pub fn function(stats: Statistics) {
+        if stats.enabled {
+            stats.functions += 1;
+        }
+    }
+
+    pub fn failed_function(stats: Statistics) {
+        if stats.enabled {
+            stats.failed_functions += 1;
+        }
+    }
+
+    pub fn collected_expr(stats: Statistics) {
+        if stats.enabled {
+            stats.collected_exprs += 1;
+        }
+    }
+
+    pub fn collected_statement(stats: Statistics) {
+        if stats.enabled {
+            stats.collected_statements += 1;
+        }
+    }
+
+    pub fn collected_pattern(stats: Statistics) {
+        if stats.enabled {
+            stats.collected_patterns += 1;
+        }
+    }
+
+    pub fn emitted_constraint(stats: Statistics, kind: C.ConstraintKind) {
+        if !stats.enabled {
+            return;
+        }
+        stats.emitted_constraints += 1;
+        stats.emitted_by_kind.record(kind);
+    }
+
+    pub fn collector_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.collector_starts);
+    }
+
+    pub fn collector_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.collector_starts) {
+            Some(elapsed) => {
+                stats.collector_calls += 1;
+                stats.collector_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn solver_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.solver_starts);
+    }
+
+    pub fn solver_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.solver_starts) {
+            Some(elapsed) => {
+                stats.solver_calls += 1;
+                stats.solver_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn finalizer_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.finalizer_starts);
+    }
+
+    pub fn finalizer_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.finalizer_starts) {
+            Some(elapsed) => {
+                stats.finalizer_calls += 1;
+                stats.finalizer_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn sanity_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.sanity_starts);
+    }
+
+    pub fn sanity_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.sanity_starts) {
+            Some(elapsed) => {
+                stats.sanity_calls += 1;
+                stats.sanity_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn initial_constraint(stats: Statistics, kind: C.ConstraintKind) {
+        if !stats.enabled {
+            return;
+        }
+        stats.initial_constraints += 1;
+        match kind {
+            C.ConstraintKind.Unify(_, _) => { stats.initial_unify_constraints += 1; }
+            _ => { stats.initial_other_constraints += 1; }
+        }
+    }
+
+    pub fn function_constraints(stats: Statistics, count: Int) {
+        if !stats.enabled {
+            return;
+        }
+        if count > stats.max_constraints_per_function {
+            stats.max_constraints_per_function = count;
+        }
+    }
+
+    pub fn spawned_constraint(stats: Statistics, kind: C.ConstraintKind) {
+        if !stats.enabled {
+            return;
+        }
+        stats.spawned_constraints += 1;
+        stats.spawned_by_kind.record(kind);
+        match kind {
+            C.ConstraintKind.Unify(_, _) => { stats.spawned_unify_constraints += 1; }
+            _ => { stats.spawned_other_constraints += 1; }
+        }
+    }
+
+    pub fn processed_constraint(stats: Statistics, kind: C.ConstraintKind) {
+        if !stats.enabled {
+            return;
+        }
+        stats.processed_constraints += 1;
+        stats.processed_by_kind.record(kind);
+        match kind {
+            C.ConstraintKind.Unify(_, _) => { stats.processed_unify_constraints += 1; }
+            _ => { stats.processed_other_constraints += 1; }
+        }
+    }
+
+    pub fn satisfied_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.satisfied_constraints += 1;
+        }
+    }
+
+    pub fn pending_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.pending_constraints += 1;
+        }
+    }
+
+    pub fn failed_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.failed_constraints += 1;
+        }
+    }
+
+    pub fn skipped_satisfied_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.skipped_satisfied_constraints += 1;
+        }
+    }
+
+    pub fn requeued_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.requeued_constraints += 1;
+        }
+    }
+
+    pub fn subscribed_constraint(stats: Statistics) {
+        if stats.enabled {
+            stats.subscribed_constraints += 1;
+        }
+    }
+
+    pub fn dump(stats: Statistics) {
+        if !stats.enabled {
+            return;
+        }
+        println("Typechecker statistics:");
+        print_count_stat("functions", stats.functions);
+        print_count_stat("failed_functions", stats.failed_functions);
+        print_count_stat("collected_exprs", stats.collected_exprs);
+        print_count_stat("collected_statements", stats.collected_statements);
+        print_count_stat("collected_patterns", stats.collected_patterns);
+        print_count_stat("emitted_constraints", stats.emitted_constraints);
+        print_count_stat("initial_constraints", stats.initial_constraints);
+        print_count_stat("initial_unify_constraints", stats.initial_unify_constraints);
+        print_count_stat("initial_other_constraints", stats.initial_other_constraints);
+        print_count_stat("spawned_constraints", stats.spawned_constraints);
+        print_count_stat("spawned_unify_constraints", stats.spawned_unify_constraints);
+        print_count_stat("spawned_other_constraints", stats.spawned_other_constraints);
+        print_count_stat("processed_constraints", stats.processed_constraints);
+        print_count_stat("processed_unify_constraints", stats.processed_unify_constraints);
+        print_count_stat("processed_other_constraints", stats.processed_other_constraints);
+        print_count_stat("satisfied_constraints", stats.satisfied_constraints);
+        print_count_stat("pending_constraints", stats.pending_constraints);
+        print_count_stat("failed_constraints", stats.failed_constraints);
+        print_count_stat("skipped_satisfied_constraints", stats.skipped_satisfied_constraints);
+        print_count_stat("requeued_constraints", stats.requeued_constraints);
+        print_count_stat("subscribed_constraints", stats.subscribed_constraints);
+        print_count_stat("max_constraints_per_function", stats.max_constraints_per_function);
+        print_time_stat("collector", stats.collector_calls, stats.collector_time);
+        print_time_stat("solver", stats.solver_calls, stats.solver_time);
+        print_time_stat("finalizer", stats.finalizer_calls, stats.finalizer_time);
+        print_time_stat("sanity", stats.sanity_calls, stats.sanity_time);
+        stats.emitted_by_kind.dump("emitted_by_kind");
+        stats.processed_by_kind.dump("processed_by_kind");
+        stats.spawned_by_kind.dump("spawned_by_kind");
+    }
+}
+
+}

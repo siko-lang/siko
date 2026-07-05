@@ -15,6 +15,7 @@ import Siko.Location
 import Siko.Typechecker.Constraints as C
 import Siko.Typechecker.Error
 import Siko.Typechecker.Finalize
+import Siko.Typechecker.Statistics
 import Siko.Format.Utils
 import Siko.Unification.Instantiate
 import Siko.Unification.Sub
@@ -940,6 +941,7 @@ pub struct Solver {
         let active: Vec[Int] = Vec.new();
         let i = 0;
         while i < constraints.len() {
+            stats.initial_constraint(constraints[i].kind);
             if is_unify_constraint(constraints[i].kind) {
                 active_unify.push(i);
             } else {
@@ -1011,11 +1013,13 @@ pub struct Solver {
             };
 
             if s.constraints[id].state == C.ConstraintState.Satisfied {
+                stats.skipped_satisfied_constraint();
                 continue;
             }
 
             let kind = s.constraints[id].kind;
             let location = s.constraints[id].location;
+            stats.processed_constraint(kind);
 
             if s.enable_debug {
                 let applied = C.ConstraintKind.apply(kind, s.sub);
@@ -1031,6 +1035,7 @@ pub struct Solver {
 
             match process(kind, ctx, location) {
                 ProcessResult.Satisfied(newly_bound, spawn, call_resolution, witness) => {
+                    stats.satisfied_constraint();
                     if s.enable_debug {
                         if newly_bound.is_empty() && spawn.is_empty() {
                             println("       -> ok");
@@ -1061,6 +1066,7 @@ pub struct Solver {
 
                     for (spawn_kind, spawn_loc) in spawn {
                         let new_id = s.constraints.len();
+                        stats.spawned_constraint(spawn_kind);
                         s.constraints.push(C.Constraint.new(new_id, spawn_kind, spawn_loc));
                         s.activate(new_id);
                     }
@@ -1074,6 +1080,7 @@ pub struct Solver {
                                 }
                                 for sub_id in subscribers {
                                     if s.constraints[sub_id].state != C.ConstraintState.Satisfied {
+                                        stats.requeued_constraint();
                                         s.activate(sub_id);
                                     }
                                 }
@@ -1083,15 +1090,19 @@ pub struct Solver {
                     }
                 }
                 ProcessResult.Pending(subscribe_to) => {
+                    stats.pending_constraint();
                     if s.enable_debug {
                         let waiting: Vec[String] = subscribe_to.iter().map(|v| "$${v.to_string()}").collect();
                         println("       -> pending, waiting on ${join(waiting, ", ")}");
                     }
                     for var in subscribe_to {
+                        stats.subscribed_constraint();
                         s.registry.entry(var).or_insert_with(|| Vec.new()).push(id);
                     }
                 }
                 ProcessResult.Failed(e) => {
+                    stats.failed_constraint();
+                    stats.function_constraints(s.constraints.len());
                     if s.enable_debug {
                         let applied = C.ConstraintKind.apply(kind, s.sub);
                         println("       -> FAILED: ${C.ConstraintKind.describe(applied)}");
@@ -1101,6 +1112,7 @@ pub struct Solver {
             }
         }
 
+        stats.function_constraints(s.constraints.len());
         match s.constraints.iter().find(|c| c.state != C.ConstraintState.Satisfied) {
             Some(stalled) => {
                 if s.enable_debug {

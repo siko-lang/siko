@@ -10,6 +10,7 @@ import Siko.BoundExpansion
 import Siko.Instances.InstanceChecker
 import Siko.Instances.InstanceResolver
 import Siko.Typechecker.Checker
+import Siko.Typechecker.Statistics
 import Siko.Monomorphizer
 import Siko.MatchValidation as MV
 import Siko.PurityCheck.Checker as PC
@@ -116,7 +117,12 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
             name: "typecheck",
             label: "Typechecking...",
             run: |driver| {
-                if let Err(type_errors) = typecheck_program(driver.program) {
+                let tc_stats = Statistics.new(config.debug_typecheck_stats);
+                let typecheck_result = with stats = tc_stats {
+                    typecheck_program(driver.program)
+                };
+                tc_stats.dump();
+                if let Err(type_errors) = typecheck_result {
                     report_type_errors(type_errors);
                 }
             },

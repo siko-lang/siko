@@ -8,28 +8,44 @@ import Siko.Typechecker.Error
 import Siko.Typechecker.Finalize
 import Siko.Typechecker.Sanity
 import Siko.Typechecker.Solver
+import Siko.Typechecker.Statistics
 import Siko.Config
 
 pub fn typecheck_function(key: QualifiedName, program: Program, instance_resolver: InstanceResolver) -> Result[(), Vec[TypeError]] {
+    stats.function();
     let func = program.functions.get(key).unwrap().clone();
     let collector = Collector.new(program);
+    stats.collector_start();
     let annotated = collector.collect_function(func);
+    stats.collector_end();
     if !collector.errors.is_empty() {
+        stats.failed_function();
         return Err(collector.errors);
     }
     let allocator = collector.get_allocator();
     let constraints = collector.into_constraints();
     let solver = Solver.new(program, instance_resolver, func, constraints, allocator).with_debug(get_config().debug_typecheck);
+    stats.solver_start();
     match solver.solve() {
-        Err(e) => { return Err([e]); }
+        Err(e) => {
+            stats.solver_end();
+            stats.failed_function();
+            return Err([e]);
+        }
         Ok(_) => {}
     }
+    stats.solver_end();
     let method_resolutions = solver.get_method_resolutions();
     let witness_map = solver.get_witness_map();
     let finalizer = Finalizer.new(solver.into_subst(), program, method_resolutions, witness_map);
+    stats.finalizer_start();
     let finalized = finalizer.finalize_function(annotated);
+    stats.finalizer_end();
+    stats.sanity_start();
     let sanity_errors = sanity_check(finalized);
+    stats.sanity_end();
     if !sanity_errors.is_empty() {
+        stats.failed_function();
         return Err(sanity_errors);
     }
     program.functions.insert(key, finalized);

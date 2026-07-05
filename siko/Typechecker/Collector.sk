@@ -12,6 +12,7 @@ import Siko.Constants.Builtins as B
 import Siko.Location
 import Siko.Typechecker.Constraints as C
 import Siko.Typechecker.Error
+import Siko.Typechecker.Statistics
 import Siko.Utils.TypeVarAllocator
 import Siko.HIR.Program
 
@@ -79,6 +80,7 @@ pub struct Collector {
 
     fn emit(c: Collector, kind: C.ConstraintKind, location: Location) -> Int {
         let id = c.constraints.len();
+        stats.emitted_constraint(kind);
         c.constraints.push(C.Constraint.new(id, kind, location));
         id
     }
@@ -117,6 +119,7 @@ pub struct Collector {
     }
 
     fn collect_expr(c: Collector, expr: Expr, env: Map[String, TypeDef]) -> (TypeDef, Expr) {
+        stats.collected_expr();
         let ty = c.fresh();
         let loc = expr.location;
 
@@ -467,6 +470,7 @@ pub struct Collector {
     }
 
     fn collect_stmt(c: Collector, stmt: S.Statement, env: Map[String, TypeDef]) -> (TypeDef, S.Statement) {
+        stats.collected_statement();
         match stmt {
             S.Let(S.LetInfo(name, ann, rhs)) => {
                 let (rhs_ty, new_rhs) = c.collect_expr(rhs, env);
@@ -535,6 +539,7 @@ pub struct Collector {
     }
 
     fn collect_pattern(c: Collector, pattern: Pattern, scrutinee_ty: TypeDef, env: Map[String, TypeDef]) -> Pattern {
+        stats.collected_pattern();
         let loc = pattern.location;
 
         let new_kind = match pattern.kind {
