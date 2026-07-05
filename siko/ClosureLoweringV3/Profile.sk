@@ -1,0 +1,35 @@
+module Siko.ClosureLoweringV3.Profile {
+
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+
+// A closure creation visible to callers after profile projection.
+pub struct ContainsLambdaRule {
+    pub target: TypeVar,
+    pub lambda: QualifiedName,
+    pub captures: Vec[TypeVar],
+}
+
+// A dynamic call visible to callers after profile projection.
+pub struct ApplyRule {
+    pub callee: TypeVar,
+    pub args: Vec[TypeVar],
+    pub results: Vec[TypeVar],
+}
+
+// Caller-facing summary of a function. Equality is represented by repeated
+// TypeVars in the signature and rules.
+pub struct FunctionProfile {
+    pub arg_types: Vec[TypeDef],
+    pub result_type: Option[TypeDef],
+    pub yield_type: Option[TypeDef],
+    pub locals: Vec[TypeVar],
+    pub contains: Vec[ContainsLambdaRule],
+    pub applies: Vec[ApplyRule],
+
+    pub fn is_empty(p: FunctionProfile) -> Bool {
+        p.locals.is_empty() && p.contains.is_empty() && p.applies.is_empty()
+    }
+}
+
+}

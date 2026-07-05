@@ -27,6 +27,10 @@ import Siko.ClosureMerge.InferProfiles as ClosureMergeInferProfiles
 import Siko.ClosureMerge.InferProfiles.Debug as ClosureMergeDebug
 import Siko.ClosureMerge.Resolve as ClosureMergeResolve
 import Siko.ClosureMerge.Lower as ClosureMergeLower
+import Siko.ClosureLoweringV3.GeneralizeDataTypes as ClosureLoweringV3GeneralizeDataTypes
+import Siko.ClosureLoweringV3.GeneralizeFunctions as ClosureLoweringV3GeneralizeFunctions
+import Siko.ClosureLoweringV3.ProfileBuilder as ClosureLoweringV3ProfileBuilder
+import Siko.ClosureLoweringV3.Debug as ClosureLoweringV3Debug
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
@@ -208,7 +212,10 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 name: "lower-closures",
                 label: "Lowering closures...",
                 run: |driver| {
-                    if get_config().lower_closure_v2 {
+                    if get_config().lower_closure_v3 {
+                        println("error: --lower-closure-v3 selected, but ClosureLoweringV3 is not implemented yet");
+                        Sys.exit(1.as_i32());
+                    } else if get_config().lower_closure_v2 {
                         ClosureMergeLower.lower_closures_v2(driver.program);
                     } else {
                         lower_closures(driver.program);
@@ -298,6 +305,32 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 ClosureMergeDebug.dump_profiles(cloned, profiles);
                 let resolver = ClosureMergeResolve.resolve(cloned, profiles);
                 ClosureMergeResolve.dump(resolver);
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ));
+    }
+
+    if !config.check_only && config.debug_closure_v3 {
+        lowering_passes.insert(4, Pass(
+            name: "closure-lowering-v3-debug",
+            label: "Closure lowering v3 (debug)...",
+            run: |driver| {
+                let cloned = driver.program.clone();
+                let dump_all = !config.debug_closure_v3_datatypes && !config.debug_closure_v3_profiles && !config.debug_closure_v3_mono;
+                ClosureLoweringV3GeneralizeDataTypes.generalize_datatypes(cloned);
+                if config.debug_closure_v3_datatypes || dump_all {
+                    ClosureLoweringV3Debug.dump_datatypes(cloned);
+                }
+                if config.debug_closure_v3_profiles || dump_all || config.debug_closure_v3_mono {
+                    ClosureLoweringV3GeneralizeFunctions.generalize_functions(cloned);
+                    ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
+                    let result = ClosureLoweringV3ProfileBuilder.build_profiles(cloned);
+                    ClosureLoweringV3Debug.dump_profiles(result.profiles);
+                }
+                if config.debug_closure_v3_mono {
+                    println("error: ClosureLoweringV3 profile mono is not implemented yet");
+                    Sys.exit(1.as_i32());
+                }
             },
             dump: Some(|driver| println(driver.program.format())),
         ));

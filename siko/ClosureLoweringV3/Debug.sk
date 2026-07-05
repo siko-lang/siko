@@ -1,0 +1,72 @@
+module Siko.ClosureLoweringV3.Debug {
+
+import Std.Map
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.ClosureLoweringV3.Profile
+import Siko.Format.Utils
+import Siko.HIR.Program
+import Siko.Interner as I
+
+pub fn dump_datatypes(program: Program) {
+    println("=== ClosureLoweringV3: datatype closure vars ===");
+    for def in program.structs.values() {
+        println(format_struct(def));
+    }
+    for def in program.enums.values() {
+        println(format_enum(def));
+    }
+}
+
+fn format_var(v: TypeVar) -> String {
+    format_type(TypeDef.Var(v))
+}
+
+fn format_vars(vars: Vec[TypeVar]) -> String {
+    let parts: Vec[String] = vars.iter().map(|v| format_var(v)).collect();
+    "[${Std.Vec.join(parts, ", ")}]"
+}
+
+fn format_opt_type(t: Option[TypeDef]) -> String {
+    match t {
+        Some(t) => format_type(t),
+        None => "()",
+    }
+}
+
+pub fn dump_instantiated_functions(program: Program) {
+    println("=== ClosureLoweringV3: instantiated function types ===");
+    for def in program.functions.values() {
+        println(format_fn(def));
+    }
+}
+
+pub fn dump_profiles(profiles: Map[QualifiedName, FunctionProfile]) {
+    println("=== ClosureLoweringV3: profiles ===");
+    for (qname, profile) in profiles.iter() {
+        let arg_parts: Vec[String] = profile.arg_types.iter().map(|t| format_type(t)).collect();
+        let yield_part = match profile.yield_type {
+            Some(t) => " yields ${format_type(t)}",
+            None => "",
+        };
+        println("fn ${I.resolve(qname.name())}:");
+        println("  sig:");
+        println("    (${Std.Vec.join(arg_parts, ", ")}) -> ${format_opt_type(profile.result_type)}${yield_part}");
+        if !profile.locals.is_empty() {
+            println("  locals: ${format_vars(profile.locals)}");
+        }
+        if profile.contains.is_empty() && profile.applies.is_empty() {
+            println("  rules: (none)");
+            continue;
+        }
+        println("  rules:");
+        for r in profile.contains.iter() {
+            println("    ${format_var(r.target)} contains lambda ${I.resolve(r.lambda.name())}(captures: ${format_vars(r.captures)})");
+        }
+        for r in profile.applies.iter() {
+            println("    apply ${format_var(r.callee)}(args: ${format_vars(r.args)}, results: ${format_vars(r.results)})");
+        }
+    }
+}
+
+}

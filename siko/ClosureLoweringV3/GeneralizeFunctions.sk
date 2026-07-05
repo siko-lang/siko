@@ -1,0 +1,159 @@
+module Siko.ClosureLoweringV3.GeneralizeFunctions {
+
+import Std.Map
+import Siko.AST.Annotations
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Package.Collector as PC
+import Siko.Utils.TypeVarAllocator
+import Siko.Utils.VarAllocator
+
+// Phase 2 setup for ClosureLoweringV3. Runs after datatype generalization and
+// tags every function-local closure slot with a fresh internal infer var.
+// Datatype definitions publish Named vars; profile inference works with
+// TypeVar.Var values and only the final profiles are published with Named vars.
+struct Generalizer {
+    alloc: TypeVarAllocator,
+    arities: Map[QualifiedName, Int],
+
+    fn allocate_var(g: Generalizer) -> TypeVar {
+        match g.alloc.allocate() {
+            TypeDef.Var(v) => v,
+            _ => panic("closure lowering v3: type var allocator did not allocate a var"),
+        }
+    }
+}
+
+trait Generalize[T] {
+    fn generalize(t: T, ctx: Generalizer) -> T
+}
+
+instance Generalize[Bool]                = auto(Map, =)
+instance Generalize[Int]                 = auto(Map, =)
+instance Generalize[U8]                  = auto(Map, =)
+instance Generalize[String]              = auto(Map, =)
+instance Generalize[I.String]            = auto(Map, =)
+instance Generalize[Location]            = auto(Map, =)
+instance Generalize[Name]                = auto(Map, =)
+instance Generalize[TypeVar]             = auto(Map, =)
+instance Generalize[Identifier]          = auto(Map, =)
+instance Generalize[QualifiedName]       = auto(Map, =)
+instance Generalize[VariableName]        = auto(Map, =)
+instance Generalize[FunctionKind]        = auto(Map, =)
+instance Generalize[FunctionDefKind]     = auto(Map, =)
+instance Generalize[BinaryOp]            = auto(Map, =)
+instance Generalize[UnaryOp]             = auto(Map, =)
+instance Generalize[WitnessInfo]         = auto(Map, =)
+instance Generalize[HandlerSelection]    = auto(Map, =)
+instance Generalize[ImplicitRefInfo]     = auto(Map, =)
+instance Generalize[CreateClosureInfo]   = auto(Map, =)
+instance Generalize[FunctionPtrInfo]     = auto(Map, =)
+instance Generalize[LambdaArg]           = auto(Map, =)
+instance Generalize[NamedArgument]       = auto(Map, =)
+instance Generalize[NamedPatternArg]     = auto(Map, =)
+instance Generalize[Annotation]          = auto(Map, =)
+instance Generalize[TypeArgDefs]         = auto(Map, =)
+instance Generalize[DefaultValueInfo]    = auto(Map, =)
+instance Generalize[VarAllocator]        = auto(Map, =)
+instance Generalize[PC.SourcePackage]    = auto(Map, =)
+instance Generalize[TypeAssociatedCallInfo] = auto(Map, !)
+
+instance Generalize[CoroutineInfo]       = auto(Map)
+instance Generalize[TypeDef]             = auto(Map)
+instance Generalize[FunctionArg]         = auto(Map)
+instance Generalize[FunctionDef]         = auto(Map)
+instance Generalize[Expr]                = auto(Map)
+instance Generalize[ExprKind]            = auto(Map)
+instance Generalize[Pattern]             = auto(Map)
+instance Generalize[PatternKind]         = auto(Map)
+instance Generalize[NamedPatternInfo]    = auto(Map)
+instance Generalize[S.Statement]         = auto(Map)
+instance Generalize[S.LetInfo]           = auto(Map)
+instance Generalize[S.DeclareInfo]       = auto(Map)
+instance Generalize[BlockInfo]           = auto(Map)
+instance Generalize[MatchInfo]           = auto(Map)
+instance Generalize[MatchArm]            = auto(Map)
+instance Generalize[YieldInfo]           = auto(Map)
+instance Generalize[FunctionCallInfo]    = auto(Map)
+instance Generalize[CallInfo]            = auto(Map)
+instance Generalize[MethodCallInfo]      = auto(Map)
+instance Generalize[WithInfo]            = auto(Map)
+
+instance Generalize[ClosureInfo] {
+    fn generalize(info: ClosureInfo, ctx: Generalizer) -> ClosureInfo {
+        let ClosureInfo(args, ret, existing_var) = info;
+        if existing_var.is_some() {
+            return ClosureInfo(args, ret, existing_var);
+        }
+        ClosureInfo(args, ret, Some(ctx.allocate_var()))
+    }
+}
+
+instance Generalize[NamedInfo] {
+    fn generalize(info: NamedInfo, ctx: Generalizer) -> NamedInfo {
+        let NamedInfo(name, args) = info;
+        if !args.is_empty() {
+            return NamedInfo(name, args);
+        }
+        let arity = ctx.arities.get(name.resolved()).unwrap_or(0);
+        let fresh: Vec[TypeDef] = Vec.new();
+        for _ in 0..arity {
+            fresh.push(TypeDef.Var(ctx.allocate_var()));
+        }
+        NamedInfo(name, fresh)
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Vec[T]] {
+    fn generalize(vec: Vec[T], ctx: Generalizer) -> Vec[T] {
+        vec.into_iter().map(|t| generalize(t, ctx)).collect()
+    }
+}
+
+instance[T: Generalize[T]] Generalize[Option[T]] {
+    fn generalize(opt: Option[T], ctx: Generalizer) -> Option[T] {
+        opt.map(|t| generalize(t, ctx))
+    }
+}
+
+pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
+    let arities: Map[QualifiedName, Int] = Map.new();
+    for (qname, sdef) in program.structs.iter() {
+        let n = match sdef.type_arg_defs {
+            Some(tad) => tad.type_args.len(),
+            None => 0,
+        };
+        arities.insert(qname, n);
+    }
+    for (qname, edef) in program.enums.iter() {
+        let n = match edef.type_arg_defs {
+            Some(tad) => tad.type_args.len(),
+            None => 0,
+        };
+        arities.insert(qname, n);
+    }
+    arities
+}
+
+pub fn generalize_functions(program: Program) {
+    let ctx = Generalizer(TypeVarAllocator.new(), datatype_arities(program));
+
+    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in keys {
+        let func = program.functions.remove(key).unwrap();
+        ctx.alloc = TypeVarAllocator.new();
+        program.functions.insert(key, generalize(func, ctx));
+    }
+}
+
+}
