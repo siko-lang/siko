@@ -3,7 +3,11 @@ HTTPD_SK := $(shell find httpd -name '*.sk')
 TESTRUNNER_SK := $(shell find testrunner -name '*.sk')
 SSG_SK := $(shell find ssg -name '*.sk')
 
-SIKO_TARGET_OS ?= darwin
+SIKO_ROOT ?= $(CURDIR)
+SIKO_TARGET_OS ?= macos
+export SIKO_ROOT
+export SIKO_TARGET_OS
+
 BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
 
 .PHONY: test
