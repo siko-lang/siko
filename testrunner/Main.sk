@@ -218,6 +218,11 @@ fn invoke_failure(compiler: String, args: Vec[String]) -> Result[String, Error] 
     Ok(cmd.captured_stdout())
 }
 
+fn llvm_ir_path(case: String) -> String {
+    let safe = case.replace("/", "_").replace(".", "_");
+    "/tmp/siko_${safe}.ll"
+}
+
 fn build_run(
     compiler: String,
     case: String,
@@ -225,13 +230,19 @@ fn build_run(
     bless: Bool,
     valgrind: Bool,
     cwd: String,
+    llvm: Bool,
 ) -> Result[String, Error] {
-    let bin = "${case}/test_selfhost.bin";
+    let bin = if llvm { "${case}/test_selfhost_llvm.bin" } else { "${case}/test_selfhost.bin" };
     let abs_bin = "${cwd}/${bin}";
     let input = case_input(case);
 
     let build_args: Vec[String] = Vec.new();
     build_args.push("build");
+    if llvm {
+        build_args.push("--llvm");
+        build_args.push("--llvm-ir");
+        build_args.push(llvm_ir_path(case));
+    }
     if nostd && !file_exists("${case}/package.toml") {
         build_args.push("--no-std");
     }
@@ -286,7 +297,7 @@ fn print_indented(msg: String) {
 fn bless_success_case(compiler: String, case: String, nostd: Bool, cwd: String) {
     print("  ${case} ...");
     flush();
-    match build_run(compiler, case, nostd, True, False, cwd) {
+    match build_run(compiler, case, nostd, True, False, cwd, False) {
         Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
         Err(e) => {
             eprintln_str("  [build] failed for ${case}:\n${e}");
@@ -327,6 +338,7 @@ fn run_success_case(
     nostd: Bool,
     valgrind: Bool,
     cwd: String,
+    llvm: Bool,
 ) {
     stats.total = stats.total + 1;
     print("  ${case} ...");
@@ -339,7 +351,7 @@ fn run_success_case(
         return;
     }
 
-    match build_run(compiler, case, nostd, False, valgrind, cwd) {
+    match build_run(compiler, case, nostd, False, valgrind, cwd, llvm) {
         Ok(timing) => {
             println(" ${GREEN}PASS${RESET} (${timing})");
         }
@@ -371,7 +383,7 @@ fn failure_snapshot_test(compiler: String, args: Vec[String], snapshot: String) 
     Ok(())
 }
 
-fn run_failure_case(compiler: String, case: String, stats: Stats) {
+fn run_failure_case(compiler: String, case: String, stats: Stats, llvm: Bool) {
     stats.total = stats.total + 1;
     print("  ${case} ...");
     flush();
@@ -380,6 +392,9 @@ fn run_failure_case(compiler: String, case: String, stats: Stats) {
     let input = case_input(case);
     let args: Vec[String] = Vec.new();
     args.push("build");
+    if llvm {
+        args.push("--llvm");
+    }
     args.push(input);
 
     let self_start = Instant.now();
@@ -467,7 +482,7 @@ fn main() {
         if bless {
             bless_success_case(compiler, case, True, cwd);
         } else {
-            run_success_case(compiler, case, stats, True, valgrind, cwd);
+            run_success_case(compiler, case, stats, True, valgrind, cwd, False);
         }
     }
 
@@ -483,7 +498,7 @@ fn main() {
         if bless {
             bless_success_case(compiler, case, False, cwd);
         } else {
-            run_success_case(compiler, case, stats, False, valgrind, cwd);
+            run_success_case(compiler, case, stats, False, valgrind, cwd, False);
         }
     }
 
@@ -500,7 +515,7 @@ fn main() {
             if bless {
                 bless_failure_case(compiler, case);
             } else {
-                run_failure_case(compiler, case, stats);
+                run_failure_case(compiler, case, stats, False);
             }
         }
     }
@@ -516,6 +531,57 @@ fn main() {
             for name in stats.failed_names {
                 println("  ${name}");
             }
+        }
+
+        let llvm_stats = Stats.new();
+        let llvm_skipped = 0;
+
+        println("\n=== llvm success (${nostd_cases.len()} cases) nostd ===");
+        for case in nostd_cases {
+            if file_exists("${case}/SKIP") {
+                println("  SKIP  ${case} (SKIP file present)");
+                llvm_skipped = llvm_skipped + 1;
+                continue;
+            }
+            run_success_case(compiler, case, llvm_stats, True, valgrind, cwd, True);
+        }
+
+        println("=== llvm success (${std_cases.len()} cases) std ===");
+        for case in std_cases {
+            if file_exists("${case}/SKIP") {
+                println("  SKIP  ${case} (SKIP file present)");
+                llvm_skipped = llvm_skipped + 1;
+                continue;
+            }
+            run_success_case(compiler, case, llvm_stats, False, valgrind, cwd, True);
+        }
+
+        if file_exists("test/failure") {
+            let failure_cases = discover_cases("test/failure", filters);
+            println("\n=== llvm failure (${failure_cases.len()} cases) ===");
+            for case in failure_cases {
+                if file_exists("${case}/SKIP") {
+                    println("  SKIP  ${case} (SKIP file present)");
+                    llvm_skipped = llvm_skipped + 1;
+                    continue;
+                }
+                run_failure_case(compiler, case, llvm_stats, True);
+            }
+        }
+
+        let llvm_passed = llvm_stats.total - llvm_stats.failed;
+        if llvm_skipped > 0 {
+            println("\nllvm: ${llvm_skipped} skipped");
+        }
+        println("llvm: ${llvm_passed}/${llvm_stats.total} passed");
+        if llvm_stats.failed > 0 {
+            println("\nllvm failed tests (not counted in exit status):");
+            for name in llvm_stats.failed_names {
+                println("  ${name}");
+            }
+        }
+
+        if stats.failed > 0 {
             Sys.exit(1.as_i32());
         }
     }

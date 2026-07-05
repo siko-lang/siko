@@ -276,13 +276,21 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                         config.output
                     };
                     if let Some(out) = effective_output {
-                        driver.link(out, config.optimize, config.san, config.tsan);
+                        if config.llvm {
+                            driver.link_llvm_from_c(out, config.llvm_ir, config.optimize, config.san, config.tsan);
+                        } else {
+                            driver.link(out, config.optimize, config.san, config.tsan);
+                        }
                         if config.test {
                             if config.trace { println("Running tests..."); }
                             let result = Command.new(out).run();
                             if !result.success() {
                                 Sys.exit(1.as_i32());
                             }
+                        }
+                    } else if config.llvm {
+                        if let Some(ir) = config.llvm_ir {
+                            driver.emit_llvm_ir_from_c(ir, config.optimize);
                         }
                     }
                 },

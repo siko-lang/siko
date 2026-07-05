@@ -31,6 +31,12 @@ fi
 
 gc_flags=$(pkg-config --cflags --libs bdw-gc 2>/dev/null || echo "-lgc")
 
+siko_root="${SIKO_ROOT:-$(pwd)}"
+runtime_args=()
+if [[ -f "$siko_root/runtime/siko_runtime.c" ]]; then
+    runtime_args=(-I "$siko_root" "$siko_root/runtime/siko_runtime.c")
+fi
+
 opt_flag=""
 if [[ $optimize -eq 1 ]]; then
     opt_flag="-O3"
@@ -43,4 +49,4 @@ elif [[ $tsan -eq 1 ]]; then
     san_flags="-fsanitize=thread -fno-omit-frame-pointer -g"
 fi
 
-exec clang -fno-optimize-sibling-calls -Wno-unused-value -Wno-pointer-sign -Wno-incompatible-pointer-types -x c - -o "$output" $opt_flag $san_flags $gc_flags
+exec clang -fno-optimize-sibling-calls -Wno-unused-value -Wno-pointer-sign -Wno-incompatible-pointer-types -x c - "${runtime_args[@]}" -o "$output" $opt_flag $san_flags $gc_flags

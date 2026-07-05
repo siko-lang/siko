@@ -13,7 +13,10 @@ make test
 ```
 
 `make test` builds `siko.bin` and `runner.bin`, runs the standard library's own
-`std/Common` tests, then runs the snapshot suite.
+`std/Common` tests, then runs the snapshot suite. The runner reports the normal
+snapshot suite first, then runs the success/failure cases again with `--llvm`.
+LLVM-mode failures are reported separately and do not affect the runner's exit
+status.
 
 For targeted snapshot runs, build the runner and pass substring filters:
 
@@ -36,6 +39,22 @@ Useful flags:
 - `--bless`: rewrite `output.txt` snapshots from current output.
 - `--valgrind`: run success-case binaries under Valgrind.
 - `--c <compiler>`: use a compiler other than `./siko.bin`.
+
+## LLVM backend
+
+`build` defaults to the C executable backend. Use `--llvm` to compile through
+the LLVM backend path instead. The compiler writes textual LLVM IR first, then
+asks LLVM tooling to compile that IR into the executable:
+
+```sh
+./siko.bin build test/success/std/hello_world/main.sk --llvm -o hello
+less hello.ll
+./siko.bin build test/success/std/hello_world/main.sk --llvm --llvm-ir /tmp/hello.ll -o hello
+./siko.bin build test/success/std/hello_world/main.sk --llvm-ir /tmp/hello.ll
+```
+
+The direct LLVM lowering work should follow the `misc/basicblock_final.md`
+plan: lower to explicit basic blocks before replacing the C-shaped bridge.
 
 ## License
 

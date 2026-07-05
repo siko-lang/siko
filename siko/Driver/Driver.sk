@@ -50,16 +50,62 @@ pub struct Driver {
         }
     }
 
-    pub fn link(d: Driver, output: String, optimize: Bool, san: Bool, tsan: Bool) {
-        let pkg_args: Vec[String] = ["--cflags", "--libs", "bdw-gc"];
+    fn gc_flags(include_libs: Bool) -> Vec[String] {
+        let pkg_args: Vec[String] = if include_libs {
+            ["--cflags", "--libs", "bdw-gc"]
+        } else {
+            ["--cflags", "bdw-gc"]
+        };
+        let pkg_result = Command.new("pkg-config").with_path().with_capture_stdout().args(pkg_args).run();
+        let fallback = if include_libs { "-lgc" } else { "" };
+        let gc_flags_raw = if pkg_result.success() { pkg_result.captured_stdout() } else { fallback };
+        gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect()
+    }
+
+    fn gc_lib_flags() -> Vec[String] {
+        let pkg_args: Vec[String] = ["--libs", "bdw-gc"];
         let pkg_result = Command.new("pkg-config").with_path().with_capture_stdout().args(pkg_args).run();
         let gc_flags_raw = if pkg_result.success() { pkg_result.captured_stdout() } else { "-lgc" };
-        let gc_flags: Vec[String] = gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect();
+        gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect()
+    }
+
+    fn runtime_root() -> String {
+        Sys.getenv("SIKO_ROOT").unwrap_or(".")
+    }
+
+    fn source_with_runtime(d: Driver) -> String {
+        d.c_source + "\n#include \"runtime/siko_runtime.c\"\n"
+    }
+
+    fn run_clang(d: Driver, args: Vec[String]) {
+        let clang = Command.new("clang").with_path().with_stdin_pipe();
+        for arg in args {
+            clang = clang.arg(arg);
+        }
+        let child = clang.spawn();
+        match child.write_stdin(d.source_with_runtime()) {
+            Err(e) => {
+                println("error: failed to write to clang stdin: ${e}");
+                exit_with_error();
+            }
+            Ok(_) => {}
+        }
+        child.close_stdin();
+        let result = child.wait();
+        if !result.success() {
+            println("clang failed");
+            exit_with_error();
+        }
+    }
+
+    pub fn link(d: Driver, output: String, optimize: Bool, san: Bool, tsan: Bool) {
         let args: Vec[String] = Vec.new();
         args.push("-Wno-unused-value");
         args.push("-Wno-pointer-sign");
         args.push("-Wno-incompatible-pointer-types");
         args.push("-fno-optimize-sibling-calls");
+        args.push("-I");
+        args.push(runtime_root());
         args.push("-x"); args.push("c");
         args.push("-");
         args.push("-o");
@@ -77,27 +123,73 @@ pub struct Driver {
             args.push("-fno-omit-frame-pointer");
             args.push("-g");
         }
-        for flag in gc_flags {
+        for flag in gc_flags(True) {
             args.push(flag);
         }
-        let clang = Command.new("clang").with_path().with_stdin_pipe();
-        for arg in args {
-            clang = clang.arg(arg);
+        d.run_clang(args);
+    }
+
+    pub fn emit_llvm_ir_from_c(d: Driver, output: String, optimize: Bool) {
+        let args: Vec[String] = Vec.new();
+        args.push("-Wno-unused-value");
+        args.push("-Wno-pointer-sign");
+        args.push("-Wno-incompatible-pointer-types");
+        args.push("-fno-optimize-sibling-calls");
+        args.push("-I");
+        args.push(runtime_root());
+        args.push("-S");
+        args.push("-emit-llvm");
+        args.push("-x"); args.push("c");
+        args.push("-");
+        args.push("-o");
+        args.push(output);
+        if optimize {
+            args.push("-O3");
         }
-        let child = clang.spawn();
-        match child.write_stdin(d.c_source) {
-            Err(e) => {
-                println("error: failed to write to clang stdin: ${e}");
-                exit_with_error();
-            }
-            Ok(_) => {}
+        for flag in gc_flags(False) {
+            args.push(flag);
         }
-        child.close_stdin();
-        let result = child.wait();
+        d.run_clang(args);
+    }
+
+    fn run_clang_file(args: Vec[String]) {
+        let result = Command.new("clang").with_path().args(args).run();
         if !result.success() {
             println("clang failed");
             exit_with_error();
         }
+    }
+
+    fn link_llvm_ir(output: String, llvm_ir: String, optimize: Bool, san: Bool, tsan: Bool) {
+        let args: Vec[String] = Vec.new();
+        args.push("-x");
+        args.push("ir");
+        args.push(llvm_ir);
+        args.push("-o");
+        args.push(output);
+        if optimize {
+            args.push("-O3");
+        }
+        if san {
+            args.push("-fsanitize=address,undefined");
+            args.push("-fno-sanitize=leak");
+            args.push("-fno-omit-frame-pointer");
+            args.push("-g");
+        } else if tsan {
+            args.push("-fsanitize=thread");
+            args.push("-fno-omit-frame-pointer");
+            args.push("-g");
+        }
+        for flag in gc_lib_flags() {
+            args.push(flag);
+        }
+        run_clang_file(args);
+    }
+
+    pub fn link_llvm_from_c(d: Driver, output: String, llvm_ir: Option[String], optimize: Bool, san: Bool, tsan: Bool) {
+        let ir_output = llvm_ir.unwrap_or(output + ".ll");
+        d.emit_llvm_ir_from_c(ir_output, optimize);
+        link_llvm_ir(output, ir_output, optimize, san, tsan);
     }
 
     pub fn compile(d: Driver) {

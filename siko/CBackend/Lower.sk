@@ -602,6 +602,7 @@ struct Lowerer {
 
 fn build_directives(program: Program) -> Vec[C.CDirective] {
     let out: Vec[C.CDirective] = Vec.new();
+    out.push(C.CDirective.Define("_GNU_SOURCE", None));
     out.push(C.CDirective.Include("stdio.h"));
     out.push(C.CDirective.Include("stdlib.h"));
     out.push(C.CDirective.Include("stdint.h"));
@@ -614,6 +615,7 @@ fn build_directives(program: Program) -> Vec[C.CDirective] {
     out.push(C.CDirective.Include("gc.h"));
     out.push(C.CDirective.Include("errno.h"));
     out.push(C.CDirective.Include("pthread.h"));
+    out.push(C.CDirective.Include("runtime/siko_runtime.h"));
     let seen: Set[I.String] = Set.new();
     for fdef in program.functions.values() {
         if let Some(header) = fdef.extern_c_header() {
@@ -643,19 +645,6 @@ fn static_inline_fn(ret: C.CType, name: String, params: Vec[C.CFnParam], body: V
 
 fn build_runtime_helpers() -> Vec[C.CFnDef] {
     let out: Vec[C.CFnDef] = Vec.new();
-
-    // static inline int siko_pthread_join(uint64_t t, void** r) {
-    //   return pthread_join((pthread_t)(uintptr_t)t, r);
-    // }
-    let join_params: Vec[C.CFnParam] = Vec.new();
-    join_params.push(C.CFnParam(C.CType.UInt64, "t"));
-    join_params.push(C.CFnParam(C.CType.Ptr(C.CType.Ptr(C.CType.Void)), "r"));
-    let join_args: Vec[C.CExpr] = Vec.new();
-    join_args.push(C.CExpr.Cast(C.CType.Typedef("pthread_t"), C.CExpr.Cast(C.CType.Typedef("uintptr_t"), C.CExpr.Var("t"))));
-    join_args.push(C.CExpr.Var("r"));
-    let join_body: Vec[C.CStmt] = Vec.new();
-    join_body.push(C.CStmt.Return(C.CExpr.Call("pthread_join", join_args)));
-    out.push(static_inline_fn(C.CType.CInt, "siko_pthread_join", join_params, join_body));
 
     // static inline void* siko_malloc(size_t size) {
     //   void* p = GC_malloc(size);
