@@ -3,14 +3,15 @@ module Siko.Errors {
 import Siko.Format.Utils
 import Siko.Instances.InstanceChecker
 import Siko.Interner as I
-import Siko.MatchValidation as MV
+import Siko.MatchValidation
 import Siko.Monomorphizer.Error
 import Siko.Parser.Parser
 import Siko.Report
 import Siko.Resolver.Error
-import Siko.PurityCheck.Checker as PC
-import Siko.SafetyChecker as SC
+import Siko.PurityCheck.Checker
+import Siko.SafetyChecker
 import Siko.Typechecker.Error
+import Siko.ValueTypes
 import Std.Sys.Process as Sys
 
 pub fn exit_with_error() -> ! {
@@ -100,16 +101,16 @@ pub fn report_resolve_error(e: ResolveError) {
     }
 }
 
-pub fn report_match_validation_errors(errors: Vec[MV.MatchValidationError]) -> ! {
+pub fn report_match_validation_errors(errors: Vec[MatchValidationError]) -> ! {
     for e in errors { report_match_validation_error(e); }
     exit_with_error()
 }
 
-pub fn report_match_validation_error(e: MV.MatchValidationError) {
+pub fn report_match_validation_error(e: MatchValidationError) {
     match e {
-        MV.MatchValidationError.RedundantPattern(location) =>
+        MatchValidationError.RedundantPattern(location) =>
             report("redundant pattern:", Some(location)),
-        MV.MatchValidationError.MissingPatterns(location, patterns) =>
+        MatchValidationError.MissingPatterns(location, patterns) =>
             report("non-exhaustive match: missing patterns: ${join(patterns, ", ")}", Some(location)),
     }
 }
@@ -180,44 +181,56 @@ pub fn report_type_error(e: TypeError) {
     }
 }
 
-pub fn report_safety_errors(errors: Vec[SC.SafetyError]) -> ! {
+pub fn report_safety_errors(errors: Vec[SafetyError]) -> ! {
     for e in errors { report_safety_error(e); }
     exit_with_error()
 }
 
-pub fn report_safety_error(e: SC.SafetyError) {
+pub fn report_safety_error(e: SafetyError) {
     match e {
-        SC.SafetyError.UnsafeFunctionNotAnnotated(location) =>
+        SafetyError.UnsafeFunctionNotAnnotated(location) =>
             report("Unsafe function must be annotated with @safe or @unsafe", Some(location)),
-        SC.SafetyError.SafeFunctionAnnotated(location) =>
+        SafetyError.SafeFunctionAnnotated(location) =>
             report("Safe function must not be annotated with @safe or @unsafe", Some(location)),
-        SC.SafetyError.UnsafeEffectHandler(location) =>
+        SafetyError.UnsafeEffectHandler(location) =>
             report("Effect handler must not be marked @unsafe", Some(location)),
-        SC.SafetyError.PureWithoutSafe(location) =>
+        SafetyError.PureWithoutSafe(location) =>
             report("@pure requires @safe: only functions with @safe may be annotated @pure", Some(location)),
     }
 }
 
-pub fn report_purity_errors(errors: Vec[PC.PurityError]) -> ! {
+pub fn report_purity_errors(errors: Vec[PurityError]) -> ! {
     for e in errors { report_purity_error(e); }
     exit_with_error()
 }
 
-pub fn report_purity_error(e: PC.PurityError) {
+pub fn report_purity_error(e: PurityError) {
     match e {
-        PC.PurityError.PureInMixedCycle(location) =>
+        PurityError.PureInMixedCycle(location) =>
             report("@pure function is in a mutual recursion cycle with non-pure functions", Some(location)),
-        PC.PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns) => {
+        PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns) => {
             report("package `${pkg_name}` declares `pure = true` but contains impure functions", None);
             for impure_fn in impure_fns {
                 let reason_str = match impure_fn.reason {
-                    PC.ImpurityReason.DirectlyUnsafe => "directly unsafe/extern",
-                    PC.ImpurityReason.CallsImpure(dep) => "calls impure `${dep.name()}`",
-                    PC.ImpurityReason.UsesImpureHandler(dep) => "uses impure effect handler `${dep.name()}`",
+                    ImpurityReason.DirectlyUnsafe => "directly unsafe/extern",
+                    ImpurityReason.CallsImpure(dep) => "calls impure `${dep.name()}`",
+                    ImpurityReason.UsesImpureHandler(dep) => "uses impure effect handler `${dep.name()}`",
                 };
                 println("  impure: `${impure_fn.name.name()}`: ${reason_str}");
             }
         }
+    }
+}
+
+pub fn report_value_type_errors(errors: Vec[ValueTypeError]) -> ! {
+    for e in errors { report_value_type_error(e); }
+    exit_with_error()
+}
+
+pub fn report_value_type_error(e: ValueTypeError) {
+    match e {
+        ValueTypeError.ExplicitValueTypeInCycle(location) =>
+            report("@value_type type is in a recursive value-layout cycle", Some(location)),
     }
 }
 

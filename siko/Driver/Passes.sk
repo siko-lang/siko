@@ -30,7 +30,7 @@ import Siko.ClosureMerge.Lower as ClosureMergeLower
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
-import Siko.ValueTypes
+import Siko.ValueTypes as ValueTypes
 import Siko.Errors
 import Std.Sys.Process as Sys
 import Std.Sys.Command
@@ -241,8 +241,14 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
             Pass(
                 name: "value-types",
                 label: "Computing value types...",
-                run: |driver| { calculate_value_types(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                run: |driver| {
+                    if let Err(errors) = ValueTypes.calculate_value_types(driver.program) {
+                        report_value_type_errors(errors);
+                    }
+                },
+                dump: Some(|driver| {
+                    ValueTypes.dump_stats(driver.program);
+                }),
             ),
             Pass(
                 name: "c",

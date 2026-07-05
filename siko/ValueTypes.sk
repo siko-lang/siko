@@ -1,64 +1,278 @@
 module Siko.ValueTypes {
 
 import Std.Map
+import Std.Set
 import Siko.AST.QualifiedName
+import Siko.AST.Type
 import Siko.HIR.Program
-import Siko.Unification.Utils
+import Siko.Location
 import Siko.Utils.SCC as SCC
 
-pub fn calculate_value_types(program: Program) -> Vec[QualifiedName] {
-    let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+pub enum ValueTypeError {
+    ExplicitValueTypeInCycle(Location),
+}
 
-    for (qname, edef) in program.enums.iter() {
-        let deps: Vec[QualifiedName] = Vec.new();
-        for variant in edef.variants.iter() {
-            for item in variant.items.iter() {
-                collect_names(item.ty, deps);
+pub struct ValueTypeStats {
+    pub all_types: Int,
+    pub structs: Int,
+    pub enums: Int,
+    pub value_types: Int,
+    pub value_structs: Int,
+    pub value_enums: Int,
+}
+
+fn build_required_candidates(program: Program) -> Set[QualifiedName] {
+    let required: Set[QualifiedName] = Set.new();
+
+    for (qname, sdef) in program.structs {
+        if sdef.is_value_type() || sdef.fields.len() == 0 {
+            required.insert(qname);
+        }
+    }
+
+    for (qname, edef) in program.enums {
+        if edef.is_value_type() {
+            required.insert(qname);
+        }
+    }
+
+    required
+}
+
+fn build_candidates(program: Program, required: Set[QualifiedName]) -> Set[QualifiedName] {
+    let candidates: Set[QualifiedName] = Set.new();
+
+    for qname in required {
+        candidates.insert(qname);
+    }
+
+    for (qname, _) in program.enums {
+        candidates.insert(qname);
+    }
+
+    candidates
+}
+
+fn collect_layout_deps(ty: TypeDef, candidates: Set[QualifiedName], deps: Vec[QualifiedName]) {
+    match ty {
+        TypeDef.Named(NamedInfo(name, _)) => {
+            let qname = name.resolved();
+            if candidates.contains(qname) {
+                deps.push(qname);
             }
         }
-        deps.dedup();
-        graph.insert(qname, deps);
+        TypeDef.Tuple(items) => {
+            for item in items {
+                collect_layout_deps(item, candidates, deps);
+            }
+        }
+        TypeDef.Paren(inner) => collect_layout_deps(inner, candidates, deps),
+        TypeDef.Array(inner, _) => collect_layout_deps(inner, candidates, deps),
+        TypeDef.Ptr(_) |
+        TypeDef.VoidPtr |
+        TypeDef.FnPtr(_, _) |
+        TypeDef.Fn(_) |
+        TypeDef.Co(_) |
+        TypeDef.Var(_) |
+        TypeDef.Never(_) |
+        TypeDef.Wildcard |
+        TypeDef.Void |
+        TypeDef.Numeric(_) => {}
     }
+}
+
+struct Graph {
+    deps: Map[QualifiedName, Vec[QualifiedName]],
+
+    fn new() -> Graph {
+        Graph(Map.new())
+    }
+
+    fn build(program: Program, candidates: Set[QualifiedName]) -> Graph {
+        let graph = Graph.new();
+
+        for (qname, sdef) in program.structs {
+            if candidates.contains(qname) {
+                let deps: Vec[QualifiedName] = Vec.new();
+                for field in sdef.fields {
+                    collect_layout_deps(field.ty, candidates, deps);
+                }
+                deps.dedup();
+                graph.deps.insert(qname, deps);
+            }
+        }
+
+        for (qname, edef) in program.enums {
+            if candidates.contains(qname) {
+                let deps: Vec[QualifiedName] = Vec.new();
+                for variant in edef.variants {
+                    for item in variant.items {
+                        collect_layout_deps(item.ty, candidates, deps);
+                    }
+                }
+                deps.dedup();
+                graph.deps.insert(qname, deps);
+            }
+        }
+
+        graph
+    }
+
+    fn sccs(graph: Graph) -> Vec[Vec[QualifiedName]] {
+        SCC.compute(graph.deps)
+    }
+
+    fn get_deps(graph: Graph, node: QualifiedName) -> Vec[QualifiedName] {
+        graph.deps.get(node).unwrap_or([])
+    }
+
+    fn is_cyclic_scc(graph: Graph, scc: Vec[QualifiedName]) -> Bool {
+        if scc.len() > 1 {
+            return True;
+        }
+        let node = scc[0];
+        let deps = graph.get_deps(node);
+        deps.iter().any(|d| d == node)
+    }
+
+    fn remove_nodes(graph: Graph, removed: Vec[QualifiedName]) {
+        for node in removed {
+            graph.deps.remove(node);
+        }
+
+        let keys: Vec[QualifiedName] = graph.deps.keys().collect();
+        for key in keys {
+            let deps: Vec[QualifiedName] = Vec.new();
+            for dep in graph.get_deps(key) {
+                if !removed.contains(dep) {
+                    deps.push(dep);
+                }
+            }
+            graph.deps.insert(key, deps);
+        }
+    }
+
+    fn prune_optional_cycles(graph: Graph, required: Set[QualifiedName], candidates: Set[QualifiedName]) {
+        loop {
+            let sccs = graph.sccs();
+            let removed: Vec[QualifiedName] = Vec.new();
+
+            for scc in sccs {
+                if graph.is_cyclic_scc(scc) {
+                    for node in scc {
+                        if !required.contains(node) {
+                            removed.push(node);
+                        }
+                    }
+                }
+            }
+
+            removed.dedup();
+            if removed.is_empty() {
+                break;
+            }
+            for node in removed {
+                candidates.remove(node);
+            }
+            graph.remove_nodes(removed);
+        }
+    }
+}
+
+fn mark_value_type(program: Program, qname: QualifiedName, ordered: Vec[QualifiedName]) {
+    if let Some(sdef) = program.structs.get(qname) {
+        sdef.value_type = True;
+        program.structs.insert(qname, sdef);
+        ordered.push(qname);
+    } else if let Some(edef) = program.enums.get(qname) {
+        edef.value_type = True;
+        program.enums.insert(qname, edef);
+        ordered.push(qname);
+    }
+}
+
+fn collect_explicit_value_type_errors(program: Program) -> Vec[ValueTypeError] {
+    let errors: Vec[ValueTypeError] = Vec.new();
+
+    for sdef in program.structs.values() {
+        if sdef.is_value_type() && !sdef.value_type {
+            errors.push(ValueTypeError.ExplicitValueTypeInCycle(sdef.name.location));
+        }
+    }
+
+    for edef in program.enums.values() {
+        if edef.annotations.iter().any(|a| a.is_value_type()) && !edef.value_type {
+            errors.push(ValueTypeError.ExplicitValueTypeInCycle(edef.name.location));
+        }
+    }
+
+    errors
+}
+
+pub fn calculate_value_types(program: Program) -> Result[Vec[QualifiedName], Vec[ValueTypeError]] {
+    let required = build_required_candidates(program);
+    let candidates = build_candidates(program, required);
+    let graph = Graph.build(program, candidates);
+    graph.prune_optional_cycles(required, candidates);
+    let sccs = graph.sccs();
 
     let ordered: Vec[QualifiedName] = Vec.new();
-
-    for (qname, sdef) in program.structs.iter() {
-        let deps: Vec[QualifiedName] = Vec.new();
-        for field in sdef.fields.iter() {
-            collect_names(field.ty, deps);
-        }
-        deps.dedup();
-        graph.insert(qname, deps);
-    }
-
-    let sccs = SCC.compute(graph);
-
     for scc in sccs {
         if scc.len() == 1 {
             let node = scc[0];
-            if let Some(s) = program.structs.get(node) {
-                if s.is_value_type() || s.fields.len() == 0 {
-                    s.value_type = True;
-                    program.structs.insert(node, s);
-                    ordered.push(node);
-                    continue;
-                }
-            }
-            if !program.enums.contains_key(node) {
-                continue;
-            }
-            let deps = graph.get(node).unwrap_or([]);
+            let deps = graph.get_deps(node);
             let has_self_loop = deps.iter().any(|d| d == node);
             if !has_self_loop {
-                let e = program.enums.get(node).unwrap();
-                e.value_type = True;
-                program.enums.insert(node, e);
-                ordered.push(node);
+                mark_value_type(program, node, ordered);
             }
         }
     }
 
-    ordered
+    let errors = collect_explicit_value_type_errors(program);
+    if errors.is_empty() {
+        Ok(ordered)
+    } else {
+        Err(errors)
+    }
+}
+
+pub fn collect_stats(program: Program) -> ValueTypeStats {
+    let value_structs = 0;
+    for sdef in program.structs.values() {
+        if sdef.value_type {
+            value_structs = value_structs + 1;
+        }
+    }
+
+    let value_enums = 0;
+    for edef in program.enums.values() {
+        if edef.value_type {
+            value_enums = value_enums + 1;
+        }
+    }
+
+    let structs = program.structs.len();
+    let enums = program.enums.len();
+    let value_types = value_structs + value_enums;
+    ValueTypeStats(
+        all_types: structs + enums,
+        structs: structs,
+        enums: enums,
+        value_types: value_types,
+        value_structs: value_structs,
+        value_enums: value_enums,
+    )
+}
+
+pub fn dump_stats(program: Program) {
+    let stats = collect_stats(program);
+    println("value-type stats (v2):");
+    println("  all types: ${stats.all_types}");
+    println("  structs: ${stats.structs}");
+    println("  enums: ${stats.enums}");
+    println("  value types: ${stats.value_types}");
+    println("  value structs: ${stats.value_structs}");
+    println("  value enums: ${stats.value_enums}");
 }
 
 }
