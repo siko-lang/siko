@@ -4,6 +4,7 @@ import Std.Libc.FileDescriptor
 import Std.Libc.String
 import Std.IO.Error
 import Std.Arch.Errno
+import Std.Arch.Fs
 
 @extern("C")
 fn open(path: *I8, flags: I32, ...) -> I32
@@ -14,7 +15,7 @@ pub fn fcntl(fd: I32, cmd: I32, ...) -> I32
 @safe
 pub fn open_file(path: String, flags: I32, mode: I32) -> Result[FileDescriptor, Error] {
     let c_path = CString.from_string(path.clone());
-    let fd = open(c_path.as_ptr(), flags, mode);
+    let fd = open(c_path.as_ptr(), flags | Std.Arch.Fs.O_CLOEXEC, mode);
     if fd < 0.as_i32() {
         return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
     }

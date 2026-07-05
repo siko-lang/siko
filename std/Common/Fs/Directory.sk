@@ -149,17 +149,18 @@ pub instance Iterator[DirEntryIterator] {
 
     fn next(i: DirEntryIterator) -> Option[Result[DirEntry, Error]] {
         if i.done {
-            i.dir.close();
             return None;
         }
         let entry = match i.dir.read() {
             Ok(Some(entry)) => Some(Ok(entry)),
             Ok(None) => {
                 i.done = True;
+                i.dir.close();
                 None
             }
             Err(err) => {
                 i.done = True;
+                i.dir.close();
                 Some(Err(err))
             }
         };
