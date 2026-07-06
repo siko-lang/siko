@@ -1,0 +1,18 @@
+module Main {
+
+fn id_fn(f: fn() -> ()) -> fn() -> () {
+    f
+}
+
+@unsafe
+fn call_ptr(p: fn*(fn() -> ()) -> fn() -> (), f: fn() -> ()) -> fn() -> () {
+    p(f)
+}
+
+@unsafe
+fn main() {
+    let p: fn*(fn() -> ()) -> fn() -> () = id_fn;
+    let f = call_ptr(p, || {});
+}
+
+}

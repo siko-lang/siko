@@ -186,11 +186,16 @@ pub fn generate_resume_body(resume_func: FunctionDef, info: CoEnumInfo, coroutin
         arms.push(MatchArm(pat, body));
     }
 
-    let match_body = Expr(
-        ExprKind.Match(MatchInfo(scrutinee, arms)),
-        repr_loc.clone(),
-        Some(co_result.clone()),
-    );
+    let match_body = if arms.is_empty() {
+        let crn = info.co_result.clone().expect("lower_coroutines: co_enum has no resolved CoResult");
+        make_variant_call(crn.completed_qn, Vec.new(), co_result.clone(), repr_loc.clone())
+    } else {
+        Expr(
+            ExprKind.Match(MatchInfo(scrutinee, arms)),
+            repr_loc.clone(),
+            Some(co_result.clone()),
+        )
+    };
 
     let new_func = resume_func.clone();
     new_func.annotations = new_func.annotations.into_iter().filter(|a| !a.is_builtin()).collect();
