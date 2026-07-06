@@ -52,6 +52,10 @@ pub fn format_type_def(f: Formatter, ty: TypeDef) {
             format_type_var(f, v);
         }
         TypeDef.Fn(ClosureInfo(args, result, var)) => {
+            let needs_paren = var.is_some();
+            if needs_paren {
+                f.push("(");
+            }
             f.push("fn(");
             let i = 0;
             for arg in args {
@@ -66,6 +70,9 @@ pub fn format_type_def(f: Formatter, ty: TypeDef) {
             if let Some(var) = var {
                 f.push("/");
                 format_type_var(f, var);
+            }
+            if needs_paren {
+                f.push(")");
             }
         }
         TypeDef.FnPtr(args, result) => {

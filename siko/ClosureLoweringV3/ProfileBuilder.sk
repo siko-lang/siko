@@ -1,158 +1,17 @@
 module Siko.ClosureLoweringV3.ProfileBuilder {
 
 import Std.Map
-import Siko.AST.Function
 import Siko.AST.QualifiedName
-import Siko.AST.Type
+import Siko.ClosureLoweringV3.InferProfiles
 import Siko.ClosureLoweringV3.Profile
-import Siko.ClosureMerge.InferProfiles as V2Infer
-import Siko.ClosureMerge.InferProfiles.Flow as Flow
-import Siko.ClosureMerge.InferProfiles.Profile as V2Profile
 import Siko.HIR.Program
-import Siko.Utils.TypeVarAllocator
 
 pub struct ProfileBuildResult {
     pub profiles: Map[QualifiedName, FunctionProfile],
 }
 
-fn fresh_published_var(var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator, v: TypeVar) -> TypeVar {
-    match var_map.get(v.clone()) {
-        Some(existing) => existing,
-        None => {
-            let published = TypeVar.Named(alloc.allocate_name());
-            var_map.insert(v, published.clone());
-            published
-        }
-    }
-}
-
-fn canonical_type(ty: TypeDef, var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator) -> TypeDef {
-    match ty {
-        TypeDef.Named(NamedInfo(name, args)) => {
-            TypeDef.Named(NamedInfo(name, args.into_iter().map(|a| canonical_type(a, var_map, alloc)).collect()))
-        }
-        TypeDef.Tuple(elems) => TypeDef.Tuple(elems.into_iter().map(|e| canonical_type(e, var_map, alloc)).collect()),
-        TypeDef.Paren(inner) => TypeDef.Paren(canonical_type(inner, var_map, alloc)),
-        TypeDef.Fn(ClosureInfo(args, ret, closure_var)) => {
-            let args = args.into_iter().map(|a| canonical_type(a, var_map, alloc)).collect();
-            let ret = canonical_type(ret, var_map, alloc);
-            let closure_var = closure_var.map(|v| fresh_published_var(var_map, alloc, v));
-            TypeDef.Fn(ClosureInfo(args, ret, closure_var))
-        }
-        TypeDef.FnPtr(args, ret) => {
-            TypeDef.FnPtr(
-                args.into_iter().map(|a| canonical_type(a, var_map, alloc)).collect(),
-                canonical_type(ret, var_map, alloc),
-            )
-        }
-        TypeDef.Var(v) => TypeDef.Var(fresh_published_var(var_map, alloc, v)),
-        TypeDef.Ptr(inner) => TypeDef.Ptr(canonical_type(inner, var_map, alloc)),
-        TypeDef.Array(inner, n) => TypeDef.Array(canonical_type(inner, var_map, alloc), n),
-        TypeDef.Co(CoroutineInfo(y, r)) => TypeDef.Co(CoroutineInfo(canonical_type(y, var_map, alloc), canonical_type(r, var_map, alloc))),
-        TypeDef.Never(b) => TypeDef.Never(b),
-        TypeDef.Wildcard => TypeDef.Wildcard,
-        TypeDef.Void => TypeDef.Void,
-        TypeDef.VoidPtr => TypeDef.VoidPtr,
-        TypeDef.Numeric(n) => TypeDef.Numeric(n),
-    }
-}
-
-fn canonical_opt_type(ty: Option[TypeDef], var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator) -> Option[TypeDef] {
-    ty.map(|t| canonical_type(t, var_map, alloc))
-}
-
-fn canonical_ref_vars(c: V2Profile.ClassRef, var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator) -> Vec[TypeVar] {
-    c.vars.iter().map(|v| fresh_published_var(var_map, alloc, v)).collect()
-}
-
-fn first_canonical_var(c: V2Profile.ClassRef, var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator) -> Option[TypeVar] {
-    match c.vars.first() {
-        Some(v) => Some(fresh_published_var(var_map, alloc, v)),
-        None => None,
-    }
-}
-
-fn unify_profile_group(group: V2Profile.ClassRef, var_map: Map[TypeVar, TypeVar], alloc: TypeVarAllocator) {
-    if group.vars.is_empty() {
-        return;
-    }
-    let published = match var_map.get(group.vars[0].clone()) {
-        Some(v) => v,
-        None => TypeVar.Named(alloc.allocate_name()),
-    };
-    for v in group.vars.iter() {
-        var_map.insert(v.clone(), published.clone());
-    }
-}
-
-fn convert_profile(func: FunctionDef, source: V2Profile.Profile) -> FunctionProfile {
-    let alloc = TypeVarAllocator.new();
-    let var_map: Map[TypeVar, TypeVar] = Map.new();
-
-    for group in source.groups.iter() {
-        unify_profile_group(group.clone(), var_map, alloc);
-    }
-    for v in Flow.boundary_vars(func.clone()) {
-        fresh_published_var(var_map, alloc, v);
-    }
-
-    let arg_types = func.args.iter().map(|a| canonical_type(a.type_def.clone(), var_map, alloc)).collect();
-    let result_type = canonical_opt_type(func.result_type.clone(), var_map, alloc);
-    let yield_type = canonical_opt_type(func.yield_type.clone(), var_map, alloc);
-
-    let contains: Vec[ContainsLambdaRule] = Vec.new();
-    for group in source.groups.iter() {
-        let target = match first_canonical_var(group.clone(), var_map, alloc) {
-            Some(v) => v,
-            None => continue,
-        };
-        for lambda in group.lambdas.iter() {
-            let captures: Vec[TypeVar] = Vec.new();
-            for creation in source.creations.iter() {
-                if creation.lambda == lambda {
-                    for capture in creation.captures.iter() {
-                        captures.extend(canonical_ref_vars(capture.clone(), var_map, alloc));
-                    }
-                }
-            }
-            contains.push(ContainsLambdaRule(target.clone(), lambda.clone(), captures));
-        }
-    }
-
-    let applies: Vec[ApplyRule] = Vec.new();
-    for apply in source.applies.iter() {
-        let callee = match first_canonical_var(apply.callee.clone(), var_map, alloc) {
-            Some(v) => v,
-            None => continue,
-        };
-        let args: Vec[TypeVar] = Vec.new();
-        for arg in apply.args.iter() {
-            args.extend(canonical_ref_vars(arg.clone(), var_map, alloc));
-        }
-        let results: Vec[TypeVar] = Vec.new();
-        for result in apply.results.iter() {
-            results.extend(canonical_ref_vars(result.clone(), var_map, alloc));
-        }
-        applies.push(ApplyRule(callee, args, results));
-    }
-
-    FunctionProfile(arg_types, result_type, yield_type, Vec.new(), contains, applies)
-}
-
 pub fn build_profiles(program: Program) -> ProfileBuildResult {
-    let source_profiles = V2Infer.infer_profiles(program);
-    let profiles: Map[QualifiedName, FunctionProfile] = Map.new();
-    for (qname, func) in program.functions.iter() {
-        match source_profiles.get(qname) {
-            Some(source) => {
-                profiles.insert(qname, convert_profile(func.clone(), source));
-            }
-            None => {
-                profiles.insert(qname, convert_profile(func.clone(), V2Profile.Profile(Vec.new(), Vec.new(), Vec.new())));
-            }
-        }
-    }
-    ProfileBuildResult(profiles)
+    ProfileBuildResult(infer_profiles(program))
 }
 
 }

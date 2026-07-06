@@ -1,0 +1,1065 @@
+module Siko.ClosureLoweringV3.InferProfiles.Flow {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.ClosureLoweringV3.Profile
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+pub struct FlowNode {
+    pub owner: QualifiedName,
+    pub var: TypeVar,
+}
+
+// ── Closure var collection ───────────────────────────────────────────────────
+// The closure infer vars of a type, in deterministic structural order. Two
+// structurally equal types (up to var names) always yield lists of the same
+// length, which is what makes positional zipping between related types
+// valid. ClosureInfo contributes its own tag var only — its args/return
+// describe the closure's call signature, not separate slots.
+
+struct VarAcc {
+    vars: Vec[TypeVar],
+}
+
+trait VarCollect[T] {
+    fn var_collect(t: T, acc: VarAcc)
+}
+
+instance VarCollect[Bool]          = auto(Fold, =)
+instance VarCollect[Int]           = auto(Fold, =)
+instance VarCollect[Name]          = auto(Fold, =)
+instance VarCollect[NamedInfo]     = auto(Fold)
+instance VarCollect[CoroutineInfo] = auto(Fold)
+instance VarCollect[TypeDef]       = auto(Fold)
+
+instance VarCollect[TypeVar] {
+    fn var_collect(v: TypeVar, acc: VarAcc) {
+        acc.vars.push(v);
+    }
+}
+
+instance VarCollect[ClosureInfo] {
+    fn var_collect(info: ClosureInfo, acc: VarAcc) {
+        if let Some(v) = info.closure_infer_var {
+            acc.vars.push(v);
+        }
+    }
+}
+
+instance[T: VarCollect[T]] VarCollect[Vec[T]] {
+    fn var_collect(vec: Vec[T], acc: VarAcc) {
+        for t in vec {
+            var_collect(t, acc);
+        }
+    }
+}
+
+pub fn ty_vars(ty: TypeDef) -> Vec[TypeVar] {
+    let acc = VarAcc(Vec.new());
+    var_collect(ty, acc);
+    acc.vars
+}
+
+pub fn opt_ty_vars(ty: Option[TypeDef]) -> Vec[TypeVar] {
+    match ty {
+        Some(t) => ty_vars(t),
+        None => Vec.new(),
+    }
+}
+
+pub fn evars(e: E.Expr) -> Vec[TypeVar] {
+    opt_ty_vars(e.ty)
+}
+
+pub fn esignature_vars(e: E.Expr) -> Vec[TypeVar] {
+    signature_opt_ty_vars(e.ty)
+}
+
+struct SignatureVarAcc {
+    vars: Vec[TypeVar],
+}
+
+trait SignatureVarCollect[T] {
+    fn signature_var_collect(t: T, acc: SignatureVarAcc)
+}
+
+instance SignatureVarCollect[Bool]          = auto(Fold, =)
+instance SignatureVarCollect[Int]           = auto(Fold, =)
+instance SignatureVarCollect[Name]          = auto(Fold, =)
+instance SignatureVarCollect[NamedInfo]     = auto(Fold)
+instance SignatureVarCollect[CoroutineInfo] = auto(Fold)
+instance SignatureVarCollect[TypeDef]       = auto(Fold)
+
+instance SignatureVarCollect[TypeVar] {
+    fn signature_var_collect(v: TypeVar, acc: SignatureVarAcc) {
+        acc.vars.push(v);
+    }
+}
+
+instance SignatureVarCollect[ClosureInfo] {
+    fn signature_var_collect(info: ClosureInfo, acc: SignatureVarAcc) {
+        if let Some(v) = info.closure_infer_var {
+            acc.vars.push(v);
+        }
+        signature_var_collect(info.args, acc);
+        signature_var_collect(info.return_ty, acc);
+    }
+}
+
+instance[T: SignatureVarCollect[T]] SignatureVarCollect[Vec[T]] {
+    fn signature_var_collect(vec: Vec[T], acc: SignatureVarAcc) {
+        for t in vec {
+            signature_var_collect(t, acc);
+        }
+    }
+}
+
+pub fn signature_ty_vars(ty: TypeDef) -> Vec[TypeVar] {
+    let acc = SignatureVarAcc(Vec.new());
+    signature_var_collect(ty, acc);
+    acc.vars
+}
+
+pub fn signature_opt_ty_vars(ty: Option[TypeDef]) -> Vec[TypeVar] {
+    match ty {
+        Some(t) => signature_ty_vars(t),
+        None => Vec.new(),
+    }
+}
+
+// Peel wrappers off a type down to a datatype reference.
+pub fn peel_named(ty: TypeDef) -> Option[NamedInfo] {
+    match ty {
+        TypeDef.Named(info) => Some(info),
+        TypeDef.Paren(inner) => peel_named(inner),
+        TypeDef.Ptr(inner) => peel_named(inner),
+        _ => None,
+    }
+}
+
+// The closure infer vars appearing in a function's arg/result/yield types —
+// the vocabulary its profile is allowed to speak about.
+pub fn boundary_vars(func: FunctionDef) -> Vec[TypeVar] {
+    let vars: Vec[TypeVar] = Vec.new();
+    for arg in func.args.iter() {
+        vars.extend(signature_ty_vars(arg.type_def.clone()));
+    }
+    vars.extend(signature_opt_ty_vars(func.result_type.clone()));
+    vars.extend(signature_opt_ty_vars(func.yield_type.clone()));
+    vars
+}
+
+// ── Datatype slot tables ─────────────────────────────────────────────────────
+// For every struct field / enum variant item: at which positions of the
+// owner's var pool (= its type_arg_defs, as published by
+// GeneralizeDataTypes) do the field's own vars sit. Construction,
+// destructuring, and field access all zip through these tables.
+
+pub struct DataTables {
+    struct_fields: Map[QualifiedName, Vec[Vec[Int]]],
+    struct_field_index: Map[QualifiedName, Map[I.String, Int]],
+    variant_items: Map[QualifiedName, Vec[Vec[Int]]],
+}
+
+fn pool_positions(pool_index: Map[TypeVar, Int], ty: TypeDef) -> Vec[Int] {
+    ty_vars(ty).iter().filter_map(|v| pool_index.get(v)).collect()
+}
+
+fn pool_index_of(tad: Option[TypeArgDefs]) -> Map[TypeVar, Int] {
+    let pool_index: Map[TypeVar, Int] = Map.new();
+    match tad {
+        Some(tad) => {
+            for (i, id) in tad.type_args.iter().enumerate() {
+                pool_index.insert(TypeVar.Named(id.name), i);
+            }
+        }
+        None => {}
+    }
+    pool_index
+}
+
+pub fn build_tables(program: Program) -> DataTables {
+    let struct_fields: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
+    let struct_field_index: Map[QualifiedName, Map[I.String, Int]] = Map.new();
+    let variant_items: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
+
+    for (qname, sdef) in program.structs.iter() {
+        let pool_index = pool_index_of(sdef.type_arg_defs.clone());
+        let fields: Vec[Vec[Int]] = Vec.new();
+        let index: Map[I.String, Int] = Map.new();
+        for (i, field) in sdef.fields.iter().enumerate() {
+            fields.push(pool_positions(pool_index, field.ty.clone()));
+            index.insert(field.name.name, i);
+        }
+        struct_fields.insert(qname, fields);
+        struct_field_index.insert(qname, index);
+    }
+
+    for (_, edef) in program.enums.iter() {
+        let pool_index = pool_index_of(edef.type_arg_defs.clone());
+        for variant in edef.variants.iter() {
+            let items: Vec[Vec[Int]] = Vec.new();
+            for item in variant.items.iter() {
+                items.push(pool_positions(pool_index, item.ty.clone()));
+            }
+            variant_items.insert(variant.qualified_name.unwrap(), items);
+        }
+    }
+
+    DataTables(struct_fields, struct_field_index, variant_items)
+}
+
+// ── Residual records ─────────────────────────────────────────────────────────
+
+// A dynamic call site (closure application). The callee's lambda set is not
+// known symbolically, so the flow through the call cannot be resolved in
+// this pass; the record is summarized into the profile as a residual for
+// later resolution against concrete sets.
+pub struct ApplyRecord {
+    pub owner: QualifiedName,
+    pub callee: Vec[FlowNode],
+    pub args: Vec[Vec[FlowNode]],
+    pub result: Vec[FlowNode],
+}
+
+// A closure creation site: which lambda, the flow nodes of each captured
+// variable, and the nodes of the closure value itself. Also residual:
+// captures matter when the closure is eventually applied.
+pub struct CreationRecord {
+    pub owner: QualifiedName,
+    pub lambda: QualifiedName,
+    pub captures: Vec[Vec[FlowNode]],
+    pub value: Vec[FlowNode],
+}
+
+// A static call site: the callee and the substitution from the callee's
+// boundary vars to the caller-side nodes they correspond to. Phase B only
+// records these; concrete resolution (Phase C) uses them to read off each
+// callee's concrete input tuple and to couple caller and callee instances.
+pub struct CallRecord {
+    pub owner: QualifiedName,
+    pub callee: QualifiedName,
+    pub subst: Map[TypeVar, FlowNode],
+}
+
+// ── Union-find over flow nodes ───────────────────────────────────────────────
+// Every value copy in Siko is an alias (structs are mutable references), so
+// a write through either side reaches the other: slot relationships are
+// equivalences, not directed flows. The analysis is therefore plain
+// unification — a partition of flow nodes, with the lambda literals known
+// to inhabit each class stored at the class root.
+
+pub struct UnionFind {
+    pub parent: Map[FlowNode, FlowNode],
+    pub lambdas: Map[FlowNode, Set[QualifiedName]],
+
+    pub fn new() -> UnionFind {
+        UnionFind(Map.new(), Map.new())
+    }
+
+    pub fn find(uf: UnionFind, n: FlowNode) -> FlowNode {
+        match uf.parent.get(n) {
+            None => n,
+            Some(p) => {
+                let root = uf.find(p);
+                uf.parent.insert(n, root.clone());
+                root
+            }
+        }
+    }
+
+    pub fn union(uf: UnionFind, a: FlowNode, b: FlowNode) {
+        let ra = uf.find(a);
+        let rb = uf.find(b);
+        if ra == rb {
+            return;
+        }
+        uf.parent.insert(ra.clone(), rb.clone());
+        if let Some(la) = uf.lambdas.remove(ra) {
+            let lb = uf.lambdas.get(rb).unwrap_or(Set.new());
+            for l in la {
+                lb.insert(l);
+            }
+            uf.lambdas.insert(rb, lb);
+        }
+    }
+
+    pub fn add_lambda(uf: UnionFind, n: FlowNode, lambda: QualifiedName) {
+        let root = uf.find(n);
+        let set = uf.lambdas.get(root).unwrap_or(Set.new());
+        set.insert(lambda);
+        uf.lambdas.insert(root, set);
+    }
+
+    pub fn lambdas_of(uf: UnionFind, n: FlowNode) -> Set[QualifiedName] {
+        uf.lambdas.get(uf.find(n)).unwrap_or(Set.new())
+    }
+}
+
+// ── Flow context ─────────────────────────────────────────────────────────────
+
+pub struct FlowCtx {
+    pub program: Program,
+    pub tables: DataTables,
+    pub scc_members: Set[QualifiedName],
+    pub profiles: Map[QualifiedName, FunctionProfile],
+    // per-SCC graph state
+    pub uf: UnionFind,
+    pub applies: Vec[ApplyRecord],
+    pub creations: Vec[CreationRecord],
+    pub calls: Vec[CallRecord],
+    // per-function state
+    pub current_fn: QualifiedName,
+    pub env: Map[E.VariableName, Vec[TypeVar]],
+    pub result_vars: Vec[TypeVar],
+    pub yield_vars: Vec[TypeVar],
+    // signature types eligible for @closure_alias matching; non-empty only
+    // inside annotated functions (sizeof(T) in their bodies aliases the
+    // same-shaped signature type, e.g. allocate's T against its *T result)
+    pub alias_types: Vec[TypeDef],
+
+    pub fn nodes(ctx: FlowCtx, vars: Vec[TypeVar]) -> Vec[FlowNode] {
+        vars.iter().map(|v| FlowNode(ctx.current_fn.clone(), v.clone())).collect()
+    }
+
+    pub fn nodes_for(ctx: FlowCtx, owner: QualifiedName, vars: Vec[TypeVar]) -> Vec[FlowNode] {
+        vars.iter().map(|v| FlowNode(owner.clone(), v.clone())).collect()
+    }
+
+    // Positional zip when the lists correspond structurally; conservative
+    // full cross product when they don't (lossy constructs like transmute).
+    pub fn unify(ctx: FlowCtx, src: Vec[FlowNode], dst: Vec[FlowNode]) {
+        if src.len() == dst.len() {
+            for (i, s) in src.iter().enumerate() {
+                ctx.uf.union(s.clone(), dst[i].clone());
+            }
+        } else {
+            for s in src.iter() {
+                for d in dst.iter() {
+                    ctx.uf.union(s.clone(), d.clone());
+                }
+            }
+        }
+    }
+
+    pub fn add_seed(ctx: FlowCtx, node: FlowNode, lambda: QualifiedName) {
+        ctx.uf.add_lambda(node, lambda);
+    }
+
+    pub fn env_nodes(ctx: FlowCtx, v: E.VariableName) -> Vec[FlowNode] {
+        ctx.nodes(ctx.env.get(v).unwrap_or(Vec.new()))
+    }
+}
+
+// ── Flow walk ────────────────────────────────────────────────────────────────
+// Emits unifications by zipping the closure vars of related expression
+// types. The Expr/Statement/Pattern instances are hand-written because
+// that's where flow rules are decided; everything else defers to the
+// derives. The (!) instances mark node kinds that the hand-written Expr
+// instance intercepts before the derived ExprKind recursion could reach
+// them, or that cannot exist post-monomorphization.
+
+pub trait Flow[T] {
+    fn flow(t: T, ctx: FlowCtx)
+}
+
+instance Flow[String]                  = auto(Fold, =)
+instance Flow[I.String]                = auto(Fold, =)
+instance Flow[Int]                     = auto(Fold, =)
+instance Flow[U8]                      = auto(Fold, =)
+instance Flow[Bool]                    = auto(Fold, =)
+instance Flow[Name]                    = auto(Fold, =)
+instance Flow[Identifier]              = auto(Fold, =)
+instance Flow[E.VariableName]          = auto(Fold, =)
+instance Flow[E.BinaryOp]              = auto(Fold, =)
+instance Flow[E.UnaryOp]               = auto(Fold, =)
+instance Flow[E.FunctionPtrInfo]       = auto(Fold, =)
+instance Flow[E.ImplicitRefInfo]       = auto(Fold, =)
+instance Flow[E.LambdaArg]             = auto(Fold, =)
+instance Flow[TypeDef]                 = auto(Fold, =)
+instance Flow[E.CallInfo]              = auto(Fold, !)
+instance Flow[E.MethodCallInfo]        = auto(Fold, !)
+instance Flow[E.FunctionCallInfo]      = auto(Fold, !)
+instance Flow[E.BlockInfo]             = auto(Fold, !)
+instance Flow[E.MatchInfo]             = auto(Fold, !)
+instance Flow[E.WithInfo]              = auto(Fold, !)
+instance Flow[E.CreateClosureInfo]     = auto(Fold, !)
+instance Flow[E.TypeAssociatedCallInfo] = auto(Fold, !)
+instance Flow[E.YieldInfo]             = auto(Fold, !)
+instance Flow[E.ExprKind]              = auto(Fold)
+
+instance[T: Flow[T]] Flow[Option[T]] {
+    fn flow(opt: Option[T], ctx: FlowCtx) {
+        if let Some(t) = opt {
+            flow(t, ctx);
+        }
+    }
+}
+
+instance[T: Flow[T]] Flow[Vec[T]] {
+    fn flow(vec: Vec[T], ctx: FlowCtx) {
+        for t in vec {
+            flow(t, ctx);
+        }
+    }
+}
+
+instance Flow[E.Expr] {
+    fn flow(expr: E.Expr, ctx: FlowCtx) {
+        let out = ctx.nodes(esignature_vars(expr));
+        match expr.kind {
+            E.ExprKind.Var(v) => {
+                ctx.unify(ctx.env_nodes(v), out);
+            }
+            E.ExprKind.FieldAccess(recv, fname) => {
+                flow(recv, ctx);
+                field_access_edges(ctx, recv, fname.name, out);
+            }
+            E.ExprKind.TupleIndex(recv, idx) => {
+                flow(recv, ctx);
+                let recv_ty = recv.ty.clone().unwrap();
+                match recv_ty {
+                    TypeDef.Tuple(elems) if idx < elems.len() => {
+                        ctx.unify(ctx.nodes(signature_ty_vars(elems[idx].clone())), out);
+                    }
+                    _ => ctx.unify(ctx.nodes(esignature_vars(recv)), out),
+                }
+            }
+            E.ExprKind.FunctionCall(info) => {
+                function_call_edges(ctx, info, expr.ty.clone(), out);
+            }
+            E.ExprKind.SizeOf(ty) => {
+                sizeof_alias_edges(ctx, ty);
+            }
+            E.ExprKind.DynamicCall(callee, args) => {
+                dynamic_call_edges(ctx, callee, args, expr.ty.clone(), out);
+            }
+            E.ExprKind.CreateClosure(info) => {
+                let value_nodes = ctx.nodes(evars(expr));
+                for n in value_nodes.iter() {
+                    ctx.add_seed(n.clone(), info.name.clone());
+                }
+                let captures: Vec[Vec[FlowNode]] = info.params.iter().map(|p| ctx.env_nodes(p.clone())).collect();
+                ctx.creations.push(CreationRecord(ctx.current_fn.clone(), info.name, captures, value_nodes));
+            }
+            E.ExprKind.If(cond, then_branch, else_branch) => {
+                flow(cond, ctx);
+                flow(then_branch, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(then_branch)), out.clone());
+                if let Some(e) = else_branch {
+                    flow(e, ctx);
+                    ctx.unify(ctx.nodes(esignature_vars(e)), out);
+                }
+            }
+            E.ExprKind.IfLet(pat, scrutinee, then_branch, else_branch) => {
+                flow(scrutinee, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(scrutinee)), ctx.nodes(signature_opt_ty_vars(pat.ty.clone())));
+                flow(pat, ctx);
+                flow(then_branch, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(then_branch)), out.clone());
+                if let Some(e) = else_branch {
+                    flow(e, ctx);
+                    ctx.unify(ctx.nodes(esignature_vars(e)), out);
+                }
+            }
+            E.ExprKind.Match(E.MatchInfo(scrutinee, arms)) => {
+                flow(scrutinee, ctx);
+                let scrut_vars = esignature_vars(scrutinee);
+                for arm in arms {
+                    ctx.unify(ctx.nodes(scrut_vars.clone()), ctx.nodes(signature_opt_ty_vars(arm.pattern.ty.clone())));
+                    flow(arm.pattern, ctx);
+                    flow(arm.body, ctx);
+                    ctx.unify(ctx.nodes(esignature_vars(arm.body)), out.clone());
+                }
+            }
+            E.ExprKind.Block(E.BlockInfo(stmts)) => {
+                flow(stmts, ctx);
+                match stmts.last() {
+                    Some(S.TrailingExpr(e)) => ctx.unify(ctx.nodes(esignature_vars(e)), out),
+                    _ => {}
+                }
+            }
+            E.ExprKind.Tuple(exprs) => {
+                flow(exprs, ctx);
+                let elem_vars: Vec[TypeVar] = Vec.new();
+                for e in exprs.iter() {
+                    elem_vars.extend(esignature_vars(e));
+                }
+                ctx.unify(ctx.nodes(elem_vars), out);
+            }
+            E.ExprKind.Paren(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), out);
+            }
+            E.ExprKind.Return(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), ctx.nodes(ctx.result_vars.clone()));
+            }
+            E.ExprKind.Yield(E.YieldInfo(arg)) => {
+                flow(arg, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(arg)), ctx.nodes(ctx.yield_vars.clone()));
+            }
+            E.ExprKind.Try(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), out);
+            }
+            E.ExprKind.Transmute(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), out);
+            }
+            E.ExprKind.Deref(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), out);
+            }
+            E.ExprKind.AddrOf(e) => {
+                flow(e, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(e)), out);
+            }
+            E.ExprKind.Index(recv, idx) => {
+                flow(recv, ctx);
+                flow(idx, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(recv)), out);
+            }
+            E.ExprKind.List(exprs) => {
+                flow(exprs, ctx);
+                for e in exprs.iter() {
+                    ctx.unify(ctx.nodes(esignature_vars(e)), out.clone());
+                }
+            }
+            E.ExprKind.With(E.WithInfo(_, body)) => {
+                flow(body, ctx);
+                ctx.unify(ctx.nodes(esignature_vars(body)), out);
+            }
+            E.ExprKind.FunctionPtr(info) => {
+                // taking a Siko function's address: couple the fn-ptr
+                // type's interior vars with the target's boundary vars,
+                // exactly like a call — the target becomes a live instance
+                // and its slots track whatever flows through the pointer's
+                // type (the C side of the call is opaque, but the
+                // conservative extern model bridges the actual invocation)
+                fn_ptr_edges(ctx, info, expr.ty.clone());
+            }
+            E.ExprKind.FunctionPtrCall(callee, args) => {
+                flow(callee, ctx);
+                flow(args, ctx);
+                let arg_vars: Vec[TypeVar] = Vec.new();
+                for a in args.iter() {
+                    arg_vars.extend(esignature_vars(a));
+                }
+                ctx.unify(ctx.nodes(arg_vars), out);
+            }
+            E.ExprKind.Call(_) => panic("infer_profiles: unexpected Call"),
+            E.ExprKind.MethodCall(_) => panic("infer_profiles: unexpected MethodCall"),
+            E.ExprKind.TypeAssociatedCall(_) => panic("infer_profiles: unexpected TypeAssociatedCall"),
+            E.ExprKind.UnresolvedLambda(_, _) => panic("infer_profiles: unexpected UnresolvedLambda"),
+            E.ExprKind.ResolvedLambda(_, _, _) => panic("infer_profiles: unexpected ResolvedLambda"),
+            kind => flow(kind, ctx),
+        }
+    }
+}
+
+instance Flow[S.Statement] {
+    fn flow(stmt: S.Statement, ctx: FlowCtx) {
+        match stmt {
+            S.Let(info) => {
+                flow(info.rhs, ctx);
+                let bind_vars = match info.ty {
+                    Some(t) => ty_vars(t),
+                    None => evars(info.rhs),
+                };
+                ctx.unify(ctx.nodes(evars(info.rhs)), ctx.nodes(bind_vars.clone()));
+                ctx.env.insert(info.name, bind_vars);
+            }
+            S.Declare(info) => {
+                ctx.env.insert(info.name, opt_ty_vars(info.ty));
+            }
+            S.Assign(lhs, rhs) => {
+                flow(lhs, ctx);
+                flow(rhs, ctx);
+                ctx.unify(ctx.nodes(evars(rhs)), ctx.nodes(evars(lhs)));
+            }
+            S.Expr(e) => flow(e, ctx),
+            S.TrailingExpr(e) => flow(e, ctx),
+            S.Loop(stmts) => flow(stmts, ctx),
+            S.ForLoop(pat, iter, stmts) => {
+                flow(iter, ctx);
+                flow(pat, ctx);
+                // element extraction goes through the iterator protocol; be
+                // conservative about what reaches the loop variable
+                ctx.unify(ctx.nodes(evars(iter)), ctx.nodes(opt_ty_vars(pat.ty)));
+                flow(stmts, ctx);
+            }
+            S.WhileLoop(cond, stmts) => {
+                flow(cond, ctx);
+                flow(stmts, ctx);
+            }
+            S.UnresolvedLet(_, _, _) => panic("infer_profiles: unexpected UnresolvedLet"),
+        }
+    }
+}
+
+instance Flow[Pattern] {
+    fn flow(pat: Pattern, ctx: FlowCtx) {
+        let pvars = opt_ty_vars(pat.ty.clone());
+        match pat.kind {
+            PatternKind.Binding(v) => {
+                ctx.env.insert(v, pvars);
+            }
+            PatternKind.Tuple(pats) => {
+                match pat.ty {
+                    Some(TypeDef.Tuple(elems)) if elems.len() == pats.len() => {
+                        for (i, sub) in pats.iter().enumerate() {
+                            ctx.unify(ctx.nodes(ty_vars(elems[i].clone())), ctx.nodes(opt_ty_vars(sub.ty.clone())));
+                            flow(sub.clone(), ctx);
+                        }
+                    }
+                    _ => flow(pats, ctx),
+                }
+            }
+            PatternKind.Named(info) => {
+                named_pattern_edges(ctx, pat.ty, info);
+            }
+            PatternKind.Guard(inner, cond, else_branch) => {
+                ctx.unify(ctx.nodes(pvars), ctx.nodes(opt_ty_vars(inner.ty.clone())));
+                flow(inner, ctx);
+                flow(cond, ctx);
+                flow(else_branch, ctx);
+            }
+            PatternKind.Typed(inner, _) => {
+                ctx.unify(ctx.nodes(pvars), ctx.nodes(opt_ty_vars(inner.ty.clone())));
+                flow(inner, ctx);
+            }
+            PatternKind.Wildcard => {}
+            PatternKind.StringLiteral(_) => {}
+            PatternKind.IntLiteral(_) => {}
+            PatternKind.CharLiteral(_) => {}
+        }
+    }
+}
+
+// ── Per-construct rules ──────────────────────────────────────────────────────
+
+// s.f — relate the receiver's type args (the datatype pool) to the field's
+// own vars via the slot table.
+fn field_access_edges(ctx: FlowCtx, recv: E.Expr, fname: I.String, out: Vec[FlowNode]) {
+    let fallback = || ctx.unify(ctx.nodes(evars(recv)), out.clone());
+    match peel_named(recv.ty.clone().unwrap()) {
+        Some(NamedInfo(name, targs)) => {
+            let dq = name.resolved();
+            match (ctx.tables.struct_field_index.get(dq), ctx.tables.struct_fields.get(dq)) {
+                (Some(index), Some(fields)) => {
+                    match index.get(fname) {
+                        Some(idx) => {
+                            let src_vars: Vec[TypeVar] = Vec.new();
+                            for p in fields[idx].iter() {
+                                src_vars.extend(ty_vars(targs[p].clone()));
+                            }
+                            ctx.unify(ctx.nodes(src_vars), out);
+                        }
+                        None => fallback(),
+                    }
+                }
+                _ => fallback(),
+            }
+        }
+        None => fallback(),
+    }
+}
+
+// Variant/struct destructuring: scrutinee type args → sub-pattern vars via
+// the slot table.
+fn named_pattern_edges(ctx: FlowCtx, pat_ty: Option[TypeDef], info: NamedPatternInfo) {
+    let positions = {
+        let owner = info.name.resolved();
+        match ctx.tables.variant_items.get(owner) {
+            Some(items) => Some(items),
+            None => ctx.tables.struct_fields.get(owner),
+        }
+    };
+    let targs = match pat_ty {
+        Some(t) => match peel_named(t) {
+            Some(NamedInfo(_, targs)) => targs,
+            None => Vec.new(),
+        },
+        None => Vec.new(),
+    };
+    for (i, sub) in info.args.iter().enumerate() {
+        match positions {
+            Some(items) if i < items.len() => {
+                let src_vars: Vec[TypeVar] = Vec.new();
+                for p in items[i].iter() {
+                    if p < targs.len() {
+                        src_vars.extend(ty_vars(targs[p].clone()));
+                    }
+                }
+                ctx.unify(ctx.nodes(src_vars), ctx.nodes(opt_ty_vars(sub.ty.clone())));
+            }
+            _ => {}
+        }
+        flow(sub.clone(), ctx);
+    }
+}
+
+fn dynamic_call_edges(ctx: FlowCtx, callee: E.Expr, args: Vec[E.Expr], expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
+    flow(callee.clone(), ctx);
+    flow(args.clone(), ctx);
+
+    match callee.ty.clone() {
+        Some(TypeDef.Fn(ClosureInfo(param_tys, ret_ty, _))) => {
+            for (i, arg) in args.iter().enumerate() {
+                if i < param_tys.len() {
+                    ctx.unify(ctx.nodes(signature_ty_vars(param_tys[i].clone())), ctx.nodes(signature_opt_ty_vars(arg.ty.clone())));
+                }
+            }
+            ctx.unify(ctx.nodes(signature_ty_vars(ret_ty)), ctx.nodes(signature_opt_ty_vars(expr_ty)));
+        }
+        _ => {}
+    }
+
+    let arg_nodes: Vec[Vec[FlowNode]] = args.iter().map(|a| ctx.nodes(signature_opt_ty_vars(a.ty.clone()))).collect();
+    ctx.applies.push(ApplyRecord(ctx.current_fn.clone(), ctx.nodes(evars(callee)), arg_nodes, out));
+}
+
+fn profile_boundary_vars(profile: FunctionProfile) -> Vec[TypeVar] {
+    let vars: Vec[TypeVar] = Vec.new();
+    for arg in profile.arg_types.iter() {
+        vars.extend(signature_ty_vars(arg.clone()));
+    }
+    vars.extend(signature_opt_ty_vars(profile.result_type.clone()));
+    vars.extend(signature_opt_ty_vars(profile.yield_type.clone()));
+    vars
+}
+
+fn fill_result_subst(
+    ctx: FlowCtx,
+    subst: Map[TypeVar, FlowNode],
+    result_type: Option[TypeDef],
+    yield_type: Option[TypeDef],
+    expr_ty: Option[TypeDef],
+    is_coroutine_create: Bool,
+    out: Vec[FlowNode],
+) {
+    let full_out = ctx.nodes(signature_opt_ty_vars(expr_ty.clone()));
+    let co_ty = match expr_ty {
+        Some(TypeDef.Co(CoroutineInfo(y, r))) if is_coroutine_create => Some((y, r)),
+        _ => None,
+    };
+    match co_ty {
+        Some((y, r)) => {
+            fill_subst(ctx, subst, signature_opt_ty_vars(yield_type), ctx.nodes(signature_ty_vars(y)));
+            fill_subst(ctx, subst, signature_opt_ty_vars(result_type), ctx.nodes(signature_ty_vars(r)));
+        }
+        None => {
+            let result_nodes = if full_out.is_empty() { out } else { full_out };
+            fill_subst(ctx, subst, signature_opt_ty_vars(result_type), result_nodes);
+        }
+    }
+}
+
+// A static call. Constructors zip into the datatype pool; every other
+// callee is wired directly when it's in the current SCC (introducing the
+// cycles the union-find closes) or by instantiating its finished profile
+// when it's not — bodyless (extern/builtin) callees carry synthesized
+// profiles, so they take the same path.
+fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
+    flow(info.args, ctx);
+    match info.kind {
+        E.FunctionKind.StructCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
+        E.FunctionKind.VariantCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
+        _ => {
+            match ctx.program.functions.get(info.qname) {
+                None => panic("closure lowering: callee ${I.resolve(info.qname.name())} not found"),
+                Some(callee) => {
+                    if ctx.scc_members.contains(info.qname) {
+                        let subst: Map[TypeVar, FlowNode] = Map.new();
+                        for (i, arg) in info.args.iter().enumerate() {
+                            if i < callee.args.len() {
+                                fill_subst(ctx, subst, signature_ty_vars(callee.args[i].type_def.clone()), ctx.nodes(signature_opt_ty_vars(arg.ty.clone())));
+                            }
+                        }
+                        fill_result_subst(ctx, subst, callee.result_type.clone(), callee.yield_type.clone(), expr_ty, info.is_coroutine_create, out.clone());
+                        ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.qname.clone(), subst.clone()));
+                        // direct wiring onto the callee's real signature vars
+                        for (v, n) in subst.iter() {
+                            ctx.unify([FlowNode(info.qname.clone(), v)], [n]);
+                        }
+                    } else {
+                        // SCC order guarantees cross-SCC callees are already
+                        // summarized (bodyless ones synthesized up front)
+                        let profile = ctx.profiles.get(info.qname).expect("closure lowering: callee has no profile");
+                        let subst: Map[TypeVar, FlowNode] = Map.new();
+                        for (i, arg) in info.args.iter().enumerate() {
+                            if i < profile.arg_types.len() {
+                                fill_subst(ctx, subst, signature_ty_vars(profile.arg_types[i].clone()), ctx.nodes(signature_opt_ty_vars(arg.ty.clone())));
+                            }
+                        }
+                        fill_result_subst(ctx, subst, profile.result_type.clone(), profile.yield_type.clone(), expr_ty, info.is_coroutine_create, out.clone());
+                        ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.qname.clone(), subst.clone()));
+                        instantiate_profile(ctx, profile, subst);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A function-pointer reference: subst maps the target's boundary vars onto
+// the FnPtr type's interior vars (args then result — the same order
+// boundary_vars uses), then behaves like a static call: recorded for
+// concrete resolution, wired directly inside the SCC, or instantiated from
+// the target's finished profile.
+fn fn_ptr_edges(ctx: FlowCtx, info: E.FunctionPtrInfo, expr_ty: Option[TypeDef]) {
+    let target = ctx.program.functions.get(info.name).expect("closure lowering: fn ptr target not found");
+    let interior = match expr_ty {
+        Some(t) => ctx.nodes(signature_ty_vars(t)),
+        None => Vec.new(),
+    };
+    let subst: Map[TypeVar, FlowNode] = Map.new();
+    if ctx.scc_members.contains(info.name) {
+        fill_subst(ctx, subst, boundary_vars(target), interior);
+        ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.name.clone(), subst.clone()));
+        for (v, n) in subst.iter() {
+            ctx.unify([FlowNode(info.name.clone(), v)], [n]);
+        }
+    } else {
+        let profile = ctx.profiles.get(info.name).expect("closure lowering: fn ptr target has no profile");
+        fill_subst(ctx, subst, profile_boundary_vars(profile), interior);
+        ctx.calls.push(CallRecord(ctx.current_fn.clone(), info.name.clone(), subst.clone()));
+        instantiate_profile(ctx, profile, subst);
+    }
+}
+
+fn ctor_edges(ctx: FlowCtx, owner: QualifiedName, args: Vec[E.Expr], expr_ty: Option[TypeDef]) {
+    let positions = match ctx.tables.struct_fields.get(owner) {
+        Some(fields) => Some(fields),
+        None => ctx.tables.variant_items.get(owner),
+    };
+    let targs = match expr_ty {
+        Some(t) => match peel_named(t) {
+            Some(NamedInfo(_, targs)) => targs,
+            None => Vec.new(),
+        },
+        None => Vec.new(),
+    };
+    for (i, arg) in args.iter().enumerate() {
+        match positions {
+            Some(items) if i < items.len() => {
+                let dst_vars: Vec[TypeVar] = Vec.new();
+                for p in items[i].iter() {
+                    if p < targs.len() {
+                        dst_vars.extend(ty_vars(targs[p].clone()));
+                    }
+                }
+                ctx.unify(ctx.nodes(evars(arg)), ctx.nodes(dst_vars));
+            }
+            _ => {}
+        }
+    }
+}
+
+// Flow model of a bodyless function (extern/builtin), synthesized from its
+// signature alone since there is no body to walk. The default is the
+// conservative model: every boundary var lands in one class — whatever the
+// caller passes in may end up in any argument or the result. resume gets a
+// precise model instead. With these wired, bodyless functions carry
+// ordinary profiles and neither call sites nor concrete resolution need to
+// treat them specially.
+pub fn bodyless_signature_edges(ctx: FlowCtx, func: FunctionDef) {
+    if func.qualified_name.clone().unwrap().base() == B.get_resume_qn().base() {
+        resume_signature_edges(ctx, func);
+        return;
+    }
+    let ns = ctx.nodes(boundary_vars(func));
+    for i in 1..ns.len() {
+        ctx.uf.union(ns[0].clone(), ns[i].clone());
+    }
+}
+
+// resume(co: co(Y) -> R) -> CoResult[Y, R] is, from a data-flow standpoint,
+// a constructor: the CoResult's Yielded payload is the Co's yield half and
+// its Returned payload is the return half. Wiring the two halves through
+// the variant slot table keeps yield-content and return-content separate —
+// no conservative merging.
+fn resume_signature_edges(ctx: FlowCtx, func: FunctionDef) {
+    let co_info = if func.args.is_empty() {
+        None
+    } else {
+        match func.args[0].type_def.clone() {
+            TypeDef.Co(info) => Some(info),
+            _ => None,
+        }
+    };
+    let named = match func.result_type.clone() {
+        Some(t) => peel_named(t),
+        None => None,
+    };
+    match (co_info, named) {
+        (Some(CoroutineInfo(y, r)), Some(NamedInfo(name, targs))) => {
+            let edef = ctx.program.enums.get(name.resolved()).expect("closure lowering: resume result is not a known enum");
+            for variant in edef.variants.iter() {
+                let vq = variant.qualified_name.clone().unwrap();
+                let half = if vq.base() == B.get_co_result_yielded_qn().base() {
+                    Some(y.clone())
+                } else if vq.base() == B.get_co_result_returned_qn().base() {
+                    Some(r.clone())
+                } else {
+                    None
+                };
+                if let Some(half_ty) = half {
+                    match ctx.tables.variant_items.get(vq) {
+                        Some(items) if !items.is_empty() => {
+                            let dst_vars: Vec[TypeVar] = Vec.new();
+                            for p in items[0].iter() {
+                                if p < targs.len() {
+                                    dst_vars.extend(ty_vars(targs[p].clone()));
+                                }
+                            }
+                            ctx.unify(ctx.nodes(ty_vars(half_ty)), ctx.nodes(dst_vars));
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+        _ => panic("closure lowering: unexpected resume signature"),
+    }
+}
+
+// Instantiate a finished (cross-SCC) profile at a call site: replay the
+// profile's equivalence groups through the callee-var → caller-node
+// substitution — unify the caller nodes of each group and seed its lambdas.
+// This is what keeps unrelated call sites of the same callee separated.
+fn instantiate_profile(ctx: FlowCtx, profile: FunctionProfile, subst: Map[TypeVar, FlowNode]) {
+    for rule in profile.contains.iter() {
+        if let Some(target) = subst.get(rule.target.clone()) {
+            ctx.add_seed(target.clone(), rule.lambda.clone());
+            let captures: Vec[Vec[FlowNode]] = rule.captures
+                .iter()
+                .map(|v| subst.get(v.clone()).map(|n| [n]).unwrap_or(Vec.new()))
+                .collect();
+            ctx.creations.push(CreationRecord(ctx.current_fn.clone(), rule.lambda.clone(), captures, [target]));
+        }
+    }
+    for rule in profile.applies.iter() {
+        if let Some(callee) = subst.get(rule.callee.clone()) {
+            let args: Vec[Vec[FlowNode]] = rule.args
+                .iter()
+                .map(|v| subst.get(v.clone()).map(|n| [n]).unwrap_or(Vec.new()))
+                .collect();
+            let results: Vec[FlowNode] = rule.results.iter().filter_map(|v| subst.get(v.clone())).collect();
+            ctx.applies.push(ApplyRecord(ctx.current_fn.clone(), [callee], args, results));
+        }
+    }
+}
+
+fn fill_subst(ctx: FlowCtx, subst: Map[TypeVar, FlowNode], callee_vars: Vec[TypeVar], caller_nodes: Vec[FlowNode]) {
+    let n = callee_vars.len().min(caller_nodes.len());
+    for i in 0..n {
+        let var = callee_vars[i].clone();
+        let node = caller_nodes[i].clone();
+        match subst.get(var.clone()) {
+            Some(existing) => ctx.uf.union(existing, node),
+            None => { subst.insert(var, node); }
+        }
+    }
+}
+
+// ── @closure_alias ───────────────────────────────────────────────────────────
+// Signature types that are structurally identical (compared with closure
+// vars erased) alias each other's closure content. For functions whose
+// bodies launder pointers through integers (offset_of), where the flow is
+// uninferable because the intermediate type has no closure slots to carry
+// the sets.
+
+trait EraseVars[T] {
+    fn erase_vars(t: T) -> T
+}
+
+instance EraseVars[Bool]          = auto(Map, =)
+instance EraseVars[Int]           = auto(Map, =)
+instance EraseVars[Name]          = auto(Map, =)
+instance EraseVars[NamedInfo]     = auto(Map)
+instance EraseVars[CoroutineInfo] = auto(Map)
+instance EraseVars[TypeDef]       = auto(Map)
+
+instance EraseVars[TypeVar] {
+    fn erase_vars(v: TypeVar) -> TypeVar {
+        TypeVar.Var(0)
+    }
+}
+
+instance EraseVars[ClosureInfo] {
+    fn erase_vars(info: ClosureInfo) -> ClosureInfo {
+        ClosureInfo(info.args, info.return_ty, None)
+    }
+}
+
+instance[T: EraseVars[T]] EraseVars[Vec[T]] {
+    fn erase_vars(vec: Vec[T]) -> Vec[T] {
+        vec.into_iter().map(|t| erase_vars(t)).collect()
+    }
+}
+
+pub fn alias_sig_types(func: FunctionDef) -> Vec[TypeDef] {
+    let sig_types: Vec[TypeDef] = func.args.iter().map(|a| a.type_def.clone()).collect();
+    if let Some(t) = func.result_type {
+        sig_types.push(t);
+    }
+    sig_types
+}
+
+// The size of a type depends on which closure instances inhabit its slots,
+// but the flow can't see the connection (the size travels as a bare U64).
+// Inside a @closure_alias function, a sizeof(T) aliases the signature type
+// with the same pointer-peeled shape: allocate's sizeof(T) is the pointee
+// of its *T result.
+fn sizeof_alias_edges(ctx: FlowCtx, ty: TypeDef) {
+    let key = peel_ptrs(erase_vars(ty.clone()));
+    for s in ctx.alias_types.iter() {
+        if peel_ptrs(erase_vars(s.clone())) == key {
+            ctx.unify(ctx.nodes(ty_vars(ty.clone())), ctx.nodes(ty_vars(s.clone())));
+        }
+    }
+}
+
+fn peel_ptrs(ty: TypeDef) -> TypeDef {
+    match ty {
+        TypeDef.Ptr(inner) => peel_ptrs(inner),
+        TypeDef.Paren(inner) => peel_ptrs(inner),
+        t => t,
+    }
+}
+
+pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
+    let sig_types = alias_sig_types(func);
+    let shape_groups: Map[TypeDef, Vec[TypeDef]] = Map.new();
+    for t in sig_types {
+        let key = erase_vars(t.clone());
+        let group = shape_groups.get(key).unwrap_or(Vec.new());
+        group.push(t);
+        shape_groups.insert(key, group);
+    }
+    for (_, group) in shape_groups {
+        if group.len() < 2 {
+            continue;
+        }
+        let first = ctx.nodes(ty_vars(group[0].clone()));
+        for i in 1..group.len() {
+            ctx.unify(first.clone(), ctx.nodes(ty_vars(group[i].clone())));
+        }
+    }
+}
+
+}
