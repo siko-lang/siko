@@ -1,0 +1,92 @@
+module Siko.VariantPayloads {
+
+import Std.Map
+import Siko.AST.Data
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+
+// Shared naming/metadata for the compiler-generated per-variant payload
+// structs. LowerBasicBlock creates them as real Program.structs and the C
+// backend consumes them; both sides must agree on names, so all naming logic
+// lives here.
+
+pub fn payload_field_name(index: Int) -> I.String {
+    I.intern("item${index}")
+}
+
+pub fn payload_qname(enum_qname: QualifiedName, variant: VariantDef) -> QualifiedName {
+    QualifiedName.new_variant_payload(I.intern(enum_qname.hashed()), variant.name.name())
+}
+
+pub fn payload_type(enum_qname: QualifiedName, variant: VariantDef) -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(payload_qname(enum_qname, variant)), []))
+}
+
+pub fn is_payload_qname(qname: QualifiedName) -> Bool {
+    match qname.base() {
+        BaseName.VariantPayload(_, _) => True,
+        _ => False,
+    }
+}
+
+// The variant a payload struct belongs to, recovered from the qname itself.
+// This is what lets the C backend lower ReadVariant from the result type alone.
+pub fn payload_variant_name(qname: QualifiedName) -> I.String {
+    match qname.base() {
+        BaseName.VariantPayload(_, variant_name) => variant_name,
+        _ => panic("payload_variant_name: not a variant payload qname"),
+    }
+}
+
+// Creates one real StructDef per monomorphic enum variant (including
+// payload-less variants, so enum container layout stays uniform). Runs after
+// value-types, so value_type must be set here: it mirrors the owning enum,
+// matching how the C backend stores payloads (inline for value-type enums,
+// by pointer otherwise).
+pub fn ensure_payload_structs(program: Program) {
+    let new_structs: Map[QualifiedName, StructDef] = Map.new();
+    for edef in program.enums.values() {
+        let enum_qname = edef.qualified_name.unwrap();
+        for variant in edef.variants.iter() {
+            let qname = payload_qname(enum_qname, variant);
+            if program.structs.contains_key(qname) {
+                continue;
+            }
+            let fields: Vec[FieldDef] = variant
+                .items
+                .iter()
+                .enumerate()
+                .map(|(i, item)| FieldDef(
+                    False,
+                    Identifier.new(payload_field_name(i), variant.name.location.clone()),
+                    item.ty.clone(),
+                    None,
+                ))
+                .collect();
+            new_structs.insert(
+                qname.clone(),
+                StructDef(
+                    annotations: [],
+                    public: False,
+                    name: Identifier.new(qname.name(), variant.name.location.clone()),
+                    qualified_name: Some(qname),
+                    type_arg_defs: None,
+                    fields: fields,
+                    all_fields_public: False,
+                    methods: [],
+                    method_map: MethodMap.new(),
+                    module_name: I.intern(""),
+                    default_value_names: Vec.new(),
+                    value_type: edef.value_type,
+                ),
+            );
+        }
+    }
+    program.structs.extend(new_structs);
+}
+
+}

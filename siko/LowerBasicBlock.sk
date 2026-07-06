@@ -1,0 +1,656 @@
+module Siko.LowerBasicBlock {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.Type
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Constants.Builtins as B
+import Siko.VariantPayloads as VP
+import Siko.Interner as I
+
+// Flattens every function body into one flat statement list where Label
+// statements split the list into implicit basic blocks and Return/Goto/
+// If-of-gotos/Switch-of-gotos terminators connect them. Loops, break/continue
+// and enum matches are lowered away; enum matches become EnumTag + Switch +
+// ReadVariant + field lets. Runs after value-types, immediately before the C
+// backend.
+
+struct LoopLabels {
+    continue_label: String,
+    break_label: String,
+    break_used: Bool,
+}
+
+struct BlockLowerer {
+    program: Program,
+    var_alloc: VarAllocator,
+    div_fns: Set[QualifiedName],
+    label_counter: Int,
+    labels_in_use: Set[String],
+    loop_stack: Vec[LoopLabels],
+    out: Vec[S.Statement],
+    terminated: Bool,
+    int_ty: TypeDef,
+
+    // ─── Small helpers ────────────────────────────────────────────────────────
+
+    fn fresh_label(l: BlockLowerer, hint: String) -> String {
+        loop {
+            let name = "bb_${l.label_counter}_${hint}";
+            l.label_counter += 1;
+            if l.labels_in_use.insert(name) {
+                return name;
+            }
+        }
+    }
+
+    fn goto_expr(l: BlockLowerer, label: String, loc: Location) -> Expr {
+        Expr(ExprKind.Goto(label), loc, Some(TypeDef.Void))
+    }
+
+    fn emit_goto(l: BlockLowerer, label: String, loc: Location) {
+        if !l.terminated {
+            l.out.push(S.Statement.Expr(l.goto_expr(label, loc)));
+            l.terminated = True;
+        }
+    }
+
+    // Opens the block `label`; makes any fallthrough into it explicit.
+    fn emit_label(l: BlockLowerer, label: String, loc: Location) {
+        if !l.terminated {
+            l.out.push(S.Statement.Expr(l.goto_expr(label, loc.clone())));
+        }
+        l.out.push(S.Statement.Expr(Expr(ExprKind.Label(label), loc, Some(TypeDef.Void))));
+        l.terminated = False;
+    }
+
+    // A statement-position expression that never returns ends its block.
+    fn diverges(l: BlockLowerer, expr: Expr) -> Bool {
+        match expr.ty {
+            Some(TypeDef.Never(_)) => True,
+            _ => match expr.kind {
+                ExprKind.FunctionCall(info) => l.div_fns.contains(info.qname),
+                _ => False,
+            }
+        }
+    }
+
+    // ─── Statements ───────────────────────────────────────────────────────────
+
+    fn lower_stmts(l: BlockLowerer, stmts: Vec[S.Statement]) {
+        for stmt in stmts {
+            if let S.Statement.Expr(e) = stmt {
+                if let ExprKind.Label(label) = e.kind {
+                    l.emit_label(label, e.location.clone());
+                    continue;
+                }
+            }
+            if l.terminated {
+                // Unreachable code. Drop it unless it owns a label some goto
+                // may target (coroutine segments live inside loops/branches);
+                // then open an anonymous unreachable block and lower normally.
+                if stmt_contains_label(stmt) {
+                    let dead = l.fresh_label("dead");
+                    l.emit_label(dead, stmt_location(stmt));
+                } else {
+                    continue;
+                }
+            }
+            l.lower_stmt(stmt);
+        }
+    }
+
+    fn lower_stmt(l: BlockLowerer, stmt: S.Statement) {
+        match stmt {
+            S.Statement.Let(info) => {
+                check_value_expr(info.rhs, "let rhs");
+                l.out.push(S.Statement.Let(info));
+            }
+            S.Statement.Declare(_) => l.out.push(stmt),
+            S.Statement.Assign(lhs, rhs) => {
+                check_value_expr(lhs, "assign lhs");
+                check_value_expr(rhs, "assign rhs");
+                l.out.push(S.Statement.Assign(lhs, rhs));
+            }
+            S.Statement.Expr(e) => l.lower_stmt_expr(e),
+            S.Statement.TrailingExpr(_) => panic("lower-basic-block: TrailingExpr reached basic block lowering"),
+            S.Statement.Loop(body) => l.lower_loop(body),
+            S.Statement.UnresolvedLet(_, _, _) => panic("lower-basic-block: UnresolvedLet reached basic block lowering"),
+            S.Statement.ForLoop(_, _, _) => panic("lower-basic-block: ForLoop reached basic block lowering"),
+            S.Statement.WhileLoop(_, _) => panic("lower-basic-block: WhileLoop reached basic block lowering"),
+        }
+    }
+
+    fn lower_stmt_expr(l: BlockLowerer, expr: Expr) {
+        let loc = expr.location.clone();
+        match expr.kind {
+            ExprKind.Block(BlockInfo(stmts)) => l.lower_stmts(stmts),
+            ExprKind.If(cond, then_branch, else_branch) => l.lower_if(cond, then_branch, else_branch, loc),
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => l.lower_match(scrutinee, arms, loc),
+            ExprKind.Return(value) => {
+                check_value_expr(value, "return value");
+                l.out.push(S.Statement.Expr(expr));
+                l.terminated = True;
+            }
+            ExprKind.Goto(_) => {
+                l.out.push(S.Statement.Expr(expr));
+                l.terminated = True;
+            }
+            ExprKind.Label(label) => l.emit_label(label, loc),
+            ExprKind.Break => {
+                if l.loop_stack.is_empty() {
+                    panic("lower-basic-block: break outside loop");
+                }
+                let ll = l.loop_stack.pop().unwrap();
+                ll.break_used = True;
+                let target = ll.break_label.clone();
+                l.loop_stack.push(ll);
+                l.emit_goto(target, loc);
+            }
+            ExprKind.Continue => {
+                if l.loop_stack.is_empty() {
+                    panic("lower-basic-block: continue outside loop");
+                }
+                let ll = l.loop_stack.pop().unwrap();
+                let target = ll.continue_label.clone();
+                l.loop_stack.push(ll);
+                l.emit_goto(target, loc);
+            }
+            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+                panic("lower-basic-block: basic block primitive existed before lowering"),
+            _ => {
+                check_value_expr(expr, "statement expression");
+                let diverges = l.diverges(expr);
+                l.out.push(S.Statement.Expr(expr));
+                if diverges {
+                    l.terminated = True;
+                }
+            }
+        }
+    }
+
+    // An if/match-arm body: a statement-position unit block (or single stmt).
+    fn lower_branch(l: BlockLowerer, expr: Expr) {
+        if let ExprKind.Block(BlockInfo(stmts)) = expr.kind {
+            l.lower_stmts(stmts)
+        } else {
+            l.lower_stmt_expr(expr)
+        }
+    }
+
+    // ─── Loops ────────────────────────────────────────────────────────────────
+
+    fn lower_loop(l: BlockLowerer, body: Vec[S.Statement]) {
+        let loc = stmts_location(body);
+        let header = l.fresh_label("loop");
+        let break_label = l.fresh_label("break");
+        l.emit_label(header, loc.clone());
+        l.loop_stack.push(LoopLabels(header.clone(), break_label.clone(), False));
+        l.lower_stmts(body);
+        l.emit_goto(header, loc.clone());
+        let ll = l.loop_stack.pop().unwrap();
+        // Only a taken break creates a block after the loop; otherwise a final
+        // infinite loop must not leave a dangling fallthrough block.
+        if ll.break_used {
+            l.emit_label(break_label, loc);
+        }
+    }
+
+    // ─── If ───────────────────────────────────────────────────────────────────
+
+    fn lower_if(l: BlockLowerer, cond: Expr, then_branch: Expr, else_branch: Option[Expr], loc: Location) {
+        check_value_expr(cond, "if condition");
+        let then_label = l.fresh_label("then");
+        match else_branch {
+            Some(else_body) => {
+                let else_label = l.fresh_label("else");
+                l.out.push(S.Statement.Expr(Expr(
+                    ExprKind.If(cond, l.goto_expr(then_label.clone(), loc.clone()), Some(l.goto_expr(else_label.clone(), loc.clone()))),
+                    loc.clone(),
+                    Some(TypeDef.Void),
+                )));
+                l.terminated = True;
+                let join_label = l.fresh_label("join");
+                let join_used = False;
+                l.emit_label(then_label, loc.clone());
+                l.lower_branch(then_branch);
+                if !l.terminated {
+                    l.emit_goto(join_label.clone(), loc.clone());
+                    join_used = True;
+                }
+                l.emit_label(else_label, loc.clone());
+                l.lower_branch(else_body);
+                if !l.terminated {
+                    l.emit_goto(join_label.clone(), loc.clone());
+                    join_used = True;
+                }
+                if join_used {
+                    l.emit_label(join_label, loc);
+                }
+            }
+            None => {
+                // No else: the false edge is the join.
+                let join_label = l.fresh_label("join");
+                l.out.push(S.Statement.Expr(Expr(
+                    ExprKind.If(cond, l.goto_expr(then_label.clone(), loc.clone()), Some(l.goto_expr(join_label.clone(), loc.clone()))),
+                    loc.clone(),
+                    Some(TypeDef.Void),
+                )));
+                l.terminated = True;
+                l.emit_label(then_label, loc.clone());
+                l.lower_branch(then_branch);
+                l.emit_goto(join_label.clone(), loc.clone());
+                l.emit_label(join_label, loc);
+            }
+        }
+    }
+
+    // ─── Enum match ───────────────────────────────────────────────────────────
+
+    fn lower_match(l: BlockLowerer, scrutinee: Expr, arms: Vec[MatchArm], loc: Location) {
+        check_value_expr(scrutinee, "match scrutinee");
+        let enum_qname = match scrutinee.ty {
+            Some(TypeDef.Named(NamedInfo(name, _))) => name.resolved(),
+            _ => panic("lower-basic-block: non-enum match reached basic block lowering"),
+        };
+        let enum_def = match l.program.enums.get(enum_qname) {
+            Some(d) => d,
+            None => panic("lower-basic-block: non-enum match reached basic block lowering: ${I.resolve(enum_qname.name())}"),
+        };
+
+        // Keep the scrutinee reusable across EnumTag and per-arm ReadVariant.
+        let scrutinee = if let ExprKind.Var(_) = scrutinee.kind {
+            scrutinee
+        } else {
+            let tmp = l.var_alloc.allocate_temp();
+            let ty = scrutinee.ty.clone();
+            l.out.push(S.Statement.Let(S.LetInfo(tmp.clone(), ty.clone(), scrutinee)));
+            Expr(ExprKind.Var(tmp), loc.clone(), ty)
+        };
+
+        let tag_var = l.var_alloc.allocate_temp();
+        l.out.push(S.Statement.Let(S.LetInfo(
+            tag_var.clone(),
+            Some(l.int_ty.clone()),
+            Expr(ExprKind.EnumTag(scrutinee.clone()), loc.clone(), Some(l.int_ty.clone())),
+        )));
+        let tag_expr = Expr(ExprKind.Var(tag_var), loc.clone(), Some(l.int_ty.clone()));
+
+        // One label per arm; a wildcard arm is the default for unlisted tags.
+        let arm_labels: Vec[String] = Vec.new();
+        let variant_targets: Map[Int, String] = Map.new();
+        let default_label: Option[String] = None;
+        for arm in arms.iter() {
+            let label = l.fresh_label("arm");
+            arm_labels.push(label.clone());
+            match arm.pattern.kind {
+                PatternKind.Named(info) => {
+                    let variant_qname = info.name.resolved();
+                    let index = enum_def
+                        .variants
+                        .iter()
+                        .position(|v| v.qualified_name.unwrap() == variant_qname)
+                        .expect("lower-basic-block: match pattern is not a variant of the scrutinee enum");
+                    variant_targets.insert(index, label);
+                }
+                PatternKind.Wildcard => { default_label = Some(label); }
+                _ => panic("lower-basic-block: unexpected enum match pattern"),
+            }
+        }
+
+        let goto_arms: Vec[Expr] = Vec.new();
+        for (index, variant) in enum_def.variants.iter().enumerate() {
+            let target = match variant_targets.get(index) {
+                Some(label) => label,
+                None => match default_label {
+                    Some(label) => label,
+                    None => panic("lower-basic-block: missing switch target for enum variant ${I.resolve(variant.name.name())}"),
+                },
+            };
+            goto_arms.push(l.goto_expr(target, loc.clone()));
+        }
+        l.out.push(S.Statement.Expr(Expr(
+            ExprKind.Switch(tag_expr.clone(), goto_arms),
+            loc.clone(),
+            Some(TypeDef.Void),
+        )));
+        l.terminated = True;
+
+        let join_label = l.fresh_label("join");
+        let join_used = False;
+        for (arm_index, arm) in arms.iter().enumerate() {
+            l.emit_label(arm_labels[arm_index].clone(), loc.clone());
+            if let PatternKind.Named(info) = arm.pattern.kind {
+                if !info.args.is_empty() {
+                    let variant_qname = info.name.resolved();
+                    let variant = l.program.variant(variant_qname);
+                    let payload_ty = VP.payload_type(enum_qname, variant);
+                    let payload_tmp = l.var_alloc.allocate_temp();
+                    l.out.push(S.Statement.Let(S.LetInfo(
+                        payload_tmp.clone(),
+                        Some(payload_ty.clone()),
+                        Expr(ExprKind.ReadVariant(scrutinee.clone(), tag_expr.clone()), loc.clone(), Some(payload_ty.clone())),
+                    )));
+                    let payload_var = Expr(ExprKind.Var(payload_tmp), loc.clone(), Some(payload_ty.clone()));
+                    for (i, sub_pat) in info.args.iter().enumerate() {
+                        match sub_pat.kind {
+                            PatternKind.Binding(var) => {
+                                let item_ty = variant.items[i].ty.clone();
+                                l.out.push(S.Statement.Let(S.LetInfo(
+                                    var.clone(),
+                                    Some(item_ty.clone()),
+                                    Expr(
+                                        ExprKind.FieldAccess(payload_var.clone(), Identifier.new(VP.payload_field_name(i), loc.clone())),
+                                        loc.clone(),
+                                        Some(item_ty),
+                                    ),
+                                )));
+                            }
+                            PatternKind.Wildcard => {}
+                            _ => panic("lower-basic-block: unexpected enum match subpattern"),
+                        }
+                    }
+                }
+            }
+            l.lower_branch(arm.body);
+            if !l.terminated {
+                l.emit_goto(join_label.clone(), loc.clone());
+                join_used = True;
+            }
+        }
+        if join_used {
+            l.emit_label(join_label, loc);
+        }
+    }
+
+    // ─── Body ─────────────────────────────────────────────────────────────────
+
+    fn lower_body(l: BlockLowerer, body: Expr) -> Expr {
+        let stmts = match body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => stmts,
+            _ => panic("lower-basic-block: function body is not a block"),
+        };
+        collect_labels_stmts(stmts, l.labels_in_use);
+        let entry = l.fresh_label("entry");
+        l.terminated = True; // no fallthrough into the entry label
+        l.emit_label(entry, body.location.clone());
+        l.lower_stmts(stmts);
+        if !l.terminated {
+            panic("lower-basic-block: final block is unterminated");
+        }
+        Expr(ExprKind.Block(BlockInfo(l.out)), body.location, body.ty)
+    }
+}
+
+// ─── Value-position checks ────────────────────────────────────────────────────
+//
+// The pass is not a second normalizer: control flow in value position means an
+// earlier pass broke its contract, so fail loudly instead of lifting it.
+
+fn check_value_expr(expr: Expr, where_: String) {
+    match expr.kind {
+        ExprKind.If(_, _, _) => panic("lower-basic-block: If in value position (${where_}); normalizer should have lifted it"),
+        ExprKind.Match(_) => panic("lower-basic-block: Match in value position (${where_}); normalizer should have lifted it"),
+        ExprKind.Block(_) => panic("lower-basic-block: Block in value position (${where_}); normalizer should have lifted it"),
+        ExprKind.Return(_) => panic("lower-basic-block: Return in value position (${where_})"),
+        ExprKind.Break => panic("lower-basic-block: Break in value position (${where_})"),
+        ExprKind.Continue => panic("lower-basic-block: Continue in value position (${where_})"),
+        ExprKind.Goto(_) => panic("lower-basic-block: Goto in value position (${where_})"),
+        ExprKind.Label(_) => panic("lower-basic-block: Label in value position (${where_})"),
+        ExprKind.Switch(_, _) => panic("lower-basic-block: Switch in value position (${where_})"),
+        ExprKind.EnumTag(_) | ExprKind.ReadVariant(_, _) =>
+            panic("lower-basic-block: basic block primitive existed before lowering (${where_})"),
+        ExprKind.BinaryOp(_, lhs, rhs) => {
+            check_value_expr(lhs, where_);
+            check_value_expr(rhs, where_);
+        }
+        ExprKind.UnaryOp(_, inner) => check_value_expr(inner, where_),
+        ExprKind.FunctionCall(info) => {
+            for arg in info.args {
+                check_value_expr(arg, where_);
+            }
+        }
+        ExprKind.DynamicCall(callee, args) => {
+            check_value_expr(callee, where_);
+            for arg in args {
+                check_value_expr(arg, where_);
+            }
+        }
+        ExprKind.FunctionPtrCall(callee, args) => {
+            check_value_expr(callee, where_);
+            for arg in args {
+                check_value_expr(arg, where_);
+            }
+        }
+        ExprKind.FieldAccess(recv, _) => check_value_expr(recv, where_),
+        ExprKind.TupleIndex(recv, _) => check_value_expr(recv, where_),
+        ExprKind.Tuple(items) => {
+            for item in items {
+                check_value_expr(item, where_);
+            }
+        }
+        ExprKind.Paren(inner) => check_value_expr(inner, where_),
+        ExprKind.Transmute(inner) => check_value_expr(inner, where_),
+        ExprKind.Discriminator(inner) => check_value_expr(inner, where_),
+        ExprKind.Deref(inner) => check_value_expr(inner, where_),
+        ExprKind.AddrOf(inner) => check_value_expr(inner, where_),
+        ExprKind.Index(base, index) => {
+            check_value_expr(base, where_);
+            check_value_expr(index, where_);
+        }
+        _ => {}
+    }
+}
+
+// ─── Label discovery ──────────────────────────────────────────────────────────
+
+fn collect_labels_stmts(stmts: Vec[S.Statement], labels: Set[String]) {
+    for stmt in stmts {
+        collect_labels_stmt(stmt, labels);
+    }
+}
+
+fn collect_labels_stmt(stmt: S.Statement, labels: Set[String]) {
+    match stmt {
+        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => collect_labels_expr(e, labels),
+        S.Statement.Loop(body) => collect_labels_stmts(body, labels),
+        _ => {}
+    }
+}
+
+fn collect_labels_expr(expr: Expr, labels: Set[String]) {
+    match expr.kind {
+        ExprKind.Label(label) => { labels.insert(label); }
+        ExprKind.Block(BlockInfo(stmts)) => collect_labels_stmts(stmts, labels),
+        ExprKind.If(_, then_branch, else_branch) => {
+            collect_labels_expr(then_branch, labels);
+            if let Some(e) = else_branch {
+                collect_labels_expr(e, labels);
+            }
+        }
+        ExprKind.Match(MatchInfo(_, arms)) => {
+            for arm in arms {
+                collect_labels_expr(arm.body, labels);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn stmt_contains_label(stmt: S.Statement) -> Bool {
+    let labels: Set[String] = Set.new();
+    collect_labels_stmt(stmt, labels);
+    !labels.is_empty()
+}
+
+fn stmt_location(stmt: S.Statement) -> Location {
+    match stmt {
+        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => e.location.clone(),
+        S.Statement.Let(info) => info.rhs.location.clone(),
+        S.Statement.Assign(lhs, _) => lhs.location.clone(),
+        S.Statement.Loop(body) => stmts_location(body),
+        _ => Location.empty(),
+    }
+}
+
+fn stmts_location(stmts: Vec[S.Statement]) -> Location {
+    match stmts.first() {
+        Some(stmt) => stmt_location(stmt),
+        None => Location.empty(),
+    }
+}
+
+// ─── Validator ────────────────────────────────────────────────────────────────
+//
+// Proves the shape invariants the C backend (and later LLVM lowering) rely on:
+// flat body, unique labels, resolved gotos, every block explicitly terminated.
+
+fn is_goto(expr: Expr) -> Bool {
+    match expr.kind {
+        ExprKind.Goto(_) => True,
+        _ => False,
+    }
+}
+
+fn validate_function(l: BlockLowerer, body: Expr) {
+    let stmts = match body.kind {
+        ExprKind.Block(BlockInfo(stmts)) => stmts,
+        _ => panic("lower-basic-block validator: body is not a block"),
+    };
+    let labels: Set[String] = Set.new();
+    for stmt in stmts.iter() {
+        if let S.Statement.Expr(e) = stmt {
+            if let ExprKind.Label(label) = e.kind {
+                if !labels.insert(label.clone()) {
+                    panic("lower-basic-block: duplicate label ${label}");
+                }
+            }
+        }
+    }
+    match stmts.first() {
+        Some(S.Statement.Expr(e)) => {
+            match e.kind {
+                ExprKind.Label(_) => {}
+                _ => panic("lower-basic-block validator: body does not start with a label"),
+            }
+        }
+        _ => panic("lower-basic-block validator: body does not start with a label"),
+    }
+    let goto_targets: Vec[String] = Vec.new();
+    let terminated = False;
+    for stmt in stmts.iter() {
+        let is_label = match stmt {
+            S.Statement.Expr(e) => match e.kind {
+                ExprKind.Label(_) => True,
+                _ => False,
+            },
+            _ => False,
+        };
+        if terminated && !is_label {
+            panic("lower-basic-block validator: statement after terminator is not a label");
+        }
+        match stmt {
+            S.Statement.Let(_) | S.Statement.Declare(_) | S.Statement.Assign(_, _) => {}
+            S.Statement.TrailingExpr(_) => panic("lower-basic-block validator: TrailingExpr in lowered body"),
+            S.Statement.Loop(_) => panic("lower-basic-block validator: Loop in lowered body"),
+            S.Statement.UnresolvedLet(_, _, _) | S.Statement.ForLoop(_, _, _) | S.Statement.WhileLoop(_, _) =>
+                panic("lower-basic-block validator: unexpected statement in lowered body"),
+            S.Statement.Expr(e) => {
+                match e.kind {
+                    ExprKind.Label(_) => { terminated = False; }
+                    ExprKind.Goto(target) => {
+                        goto_targets.push(target);
+                        terminated = True;
+                    }
+                    ExprKind.Return(_) => { terminated = True; }
+                    ExprKind.If(_, then_branch, else_branch) => {
+                        if !is_goto(then_branch) {
+                            panic("lower-basic-block validator: If terminator then-branch is not a Goto");
+                        }
+                        match else_branch {
+                            Some(else_expr) => {
+                                if !is_goto(else_expr) {
+                                    panic("lower-basic-block validator: If terminator else-branch is not a Goto");
+                                }
+                            }
+                            None => panic("lower-basic-block validator: If terminator has no else branch"),
+                        }
+                        if let ExprKind.Goto(target) = then_branch.kind {
+                            goto_targets.push(target);
+                        }
+                        if let Some(else_expr) = else_branch {
+                            if let ExprKind.Goto(target) = else_expr.kind {
+                                goto_targets.push(target);
+                            }
+                        }
+                        terminated = True;
+                    }
+                    ExprKind.Switch(_, arms) => {
+                        for arm in arms {
+                            match arm.kind {
+                                ExprKind.Goto(target) => goto_targets.push(target),
+                                _ => panic("lower-basic-block validator: Switch arm is not a Goto"),
+                            }
+                        }
+                        terminated = True;
+                    }
+                    ExprKind.Match(_) => panic("lower-basic-block validator: Match in lowered body"),
+                    ExprKind.Block(_) => panic("lower-basic-block validator: nested Block in lowered body"),
+                    ExprKind.Break | ExprKind.Continue => panic("lower-basic-block validator: Break/Continue in lowered body"),
+                    _ => {
+                        if l.diverges(e) {
+                            terminated = True;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if !terminated {
+        panic("lower-basic-block: final block is unterminated");
+    }
+    for target in goto_targets {
+        if !labels.contains(target) {
+            panic("lower-basic-block: goto target does not exist ${target}");
+        }
+    }
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+pub fn lower_basic_blocks(program: Program) {
+    VP.ensure_payload_structs(program);
+    let div_fns = program.get_divergent_functions();
+    let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn().as_mono()), []));
+    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in keys {
+        let func = program.functions.get(key).unwrap();
+        if let Some(body) = func.body {
+            let lowerer = BlockLowerer(
+                program,
+                func.var_allocator,
+                div_fns.clone(),
+                0,
+                Set.new(),
+                Vec.new(),
+                Vec.new(),
+                True,
+                int_ty.clone(),
+            );
+            let new_body = lowerer.lower_body(body);
+            validate_function(lowerer, new_body);
+            func.body = Some(new_body);
+            program.functions.insert(key, func);
+        }
+    }
+}
+
+}

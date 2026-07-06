@@ -12,6 +12,7 @@ import Siko.AST.Type
 import Siko.HIR.Program
 import Siko.Location
 import Siko.Utils.VarAllocator
+import Siko.Utils.VarRenamer
 import Siko.MatchCompilation.Compiler
 import Siko.MatchCompilation.Pattern as MC
 import Siko.MatchCompilation.Tree as T
@@ -589,7 +590,10 @@ pub struct MatchLowerer {
             };
         }
 
-        result
+        // The decision tree can reach the same arm from several leaves, each of
+        // which clones the arm body (and its binding lets) above. Alpha-rename
+        // every leaf so each variable is defined exactly once per function.
+        rename_variables(result, lowerer.var_alloc)
     }
 }
 

@@ -4,6 +4,7 @@ import Siko.AST.Expr
 import Siko.AST.QualifiedName
 import Siko.AST.Data
 import Siko.Interner as I
+import Siko.VariantPayloads as VP
 
 pub fn mangle(name: String) -> String {
     let s = name.trim_start_matches("$");
@@ -52,16 +53,20 @@ pub fn fn_name(qualified_name: QualifiedName) -> String {
     mangle(qualified_name.hashed())
 }
 
+// C struct name of a variant's payload struct: derived from the real
+// VariantPayload qname so LowerBasicBlock and the backend agree.
 pub fn variant_struct_name(edef: EnumDef, variant: VariantDef) -> String {
-    mangle("${edef.qualified_name.unwrap().hashed()}.${variant.name.name()}")
+    mangle(VP.payload_qname(edef.qualified_name.unwrap(), variant).hashed())
 }
 
-pub fn variant_payload_name(variant: VariantDef) -> String {
-    "v_${I.resolve(variant.name.name())}"
+// The enum container's union member for one variant.
+pub fn variant_payload_name(variant_name: I.String) -> String {
+    "v_${I.resolve(variant_name)}"
 }
 
+// C field name of payload item `index` (the payload struct's `itemN` field).
 pub fn variant_field_name(index: Int) -> String {
-    "field_${index}"
+    struct_field_name(VP.payload_field_name(index))
 }
 
 // Struct field names are prefixed so a Siko field can never collide with a

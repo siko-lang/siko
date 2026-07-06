@@ -35,6 +35,7 @@ import Siko.ClosureLoweringV3.Resolve as ClosureLoweringV3Resolve
 import Siko.ClosureLoweringV3.Lower as ClosureLoweringV3Lower
 import Siko.ClosureLoweringV3.Statistics as ClosureLoweringV3Statistics
 import Siko.CoroutineLowering
+import Siko.LowerBasicBlock
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
 import Siko.ValueTypes as ValueTypes
@@ -262,6 +263,12 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 dump: Some(|driver| {
                     ValueTypes.dump_stats(driver.program);
                 }),
+            ),
+            Pass(
+                name: "lower-basic-block",
+                label: "Lowering basic blocks...",
+                run: |driver| { lower_basic_blocks(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
             ),
             Pass(
                 name: "c",

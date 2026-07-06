@@ -2,7 +2,6 @@ module Siko.CBackend.Lower {
 
 import Siko.AST.Expr
 import Siko.AST.Statement as S
-import Siko.AST.Pattern
 import Siko.AST.Type
 import Siko.AST.QualifiedName
 import Siko.AST.Data
@@ -11,6 +10,7 @@ import Siko.Constants.Builtins as B
 import Siko.CBackend.Util
 import Siko.HIR.Program
 import Siko.Interner as I
+import Siko.VariantPayloads as VP
 import Siko.Format.Utils
 import Std.Map
 import Std.Set
@@ -23,8 +23,6 @@ struct Lowerer {
     program: Program,
     // Maps a builtin integer type's qualified name to its MiniC type.
     builtin_int_types: Map[QualifiedName, C.CType],
-    loop_counter: Int,
-    current_loop_id: Int,
 
     fn new(program: Program) -> Lowerer {
         let builtin_int_types: Map[QualifiedName, C.CType] = Map.new();
@@ -37,7 +35,7 @@ struct Lowerer {
         builtin_int_types.insert(B.get_u16_type_qn().as_mono(), C.CType.UInt16);
         builtin_int_types.insert(B.get_u32_type_qn().as_mono(), C.CType.UInt32);
         builtin_int_types.insert(B.get_u64_type_qn().as_mono(), C.CType.UInt64);
-        Lowerer(program, builtin_int_types, 0, 0)
+        Lowerer(program, builtin_int_types)
     }
 
     // ─── Value-type queries (mirror the old emitter) ──────────────────────────
@@ -163,8 +161,36 @@ struct Lowerer {
                 }
                 C.CExpr.FnPtrCall(l.lower_expr(callee), ret_ty, param_tys, l.lower_args(args))
             }
-            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
-                panic("lower_expr: basic block expression reached C backend before support was added"),
+            ExprKind.EnumTag(inner) => {
+                let inner_c = l.lower_expr(inner);
+                let tag = if l.is_value_type_ty(inner.ty.unwrap()) {
+                    C.CExpr.FieldDot(inner_c, "tag")
+                } else {
+                    C.CExpr.FieldArrow(inner_c, "tag")
+                };
+                C.CExpr.Cast(C.CType.Int64, tag)
+            }
+            ExprKind.ReadVariant(value, _) => {
+                // The payload struct type on the expression identifies the
+                // variant; the union member name comes straight from its qname.
+                let payload_qname = match expr.ty {
+                    Some(TypeDef.Named(NamedInfo(name, _))) => name.resolved(),
+                    _ => panic("cbackend: ReadVariant result type is not a generated payload struct"),
+                };
+                if !VP.is_payload_qname(payload_qname) {
+                    panic("cbackend: ReadVariant result type is not a generated payload struct");
+                }
+                let member = variant_payload_name(VP.payload_variant_name(payload_qname));
+                let value_c = l.lower_expr(value);
+                let base = if l.is_value_type_ty(value.ty.unwrap()) {
+                    C.CExpr.FieldDot(value_c, "payload")
+                } else {
+                    C.CExpr.FieldArrow(value_c, "payload")
+                };
+                C.CExpr.FieldDot(base, member)
+            }
+            ExprKind.Switch(_, _) =>
+                panic("lower_expr: Switch in value position; it is statement-only"),
             _ => panic("lower_expr: unexpected expr kind in value position"),
         }
     }
@@ -260,8 +286,8 @@ struct Lowerer {
                 out
             }
             S.Statement.Expr(e) => l.lower_stmt_expr(e),
-            S.Statement.TrailingExpr(e) => l.lower_stmt_expr(e),
-            S.Statement.Loop(body) => l.lower_loop(body),
+            S.Statement.TrailingExpr(_) => panic("lower_stmt: TrailingExpr reached backend after basic block lowering"),
+            S.Statement.Loop(_) => panic("lower_stmt: Loop reached backend after basic block lowering"),
             S.Statement.ForLoop(_, _, _) => panic("lower_stmt: ForLoop must be desugared"),
             S.Statement.WhileLoop(_, _) => panic("lower_stmt: WhileLoop must be desugared"),
         }
@@ -281,19 +307,28 @@ struct Lowerer {
                 };
                 out.push(C.CStmt.If(c, then_stmts, else_stmts));
             }
-            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
-                for s in l.lower_match(scrutinee, arms) {
-                    out.push(s);
-                }
-            }
-            ExprKind.Block(BlockInfo(stmts)) => out.push(C.CStmt.Block(l.lower_stmts(stmts))),
+            ExprKind.Match(_) => panic("lower_stmt_expr: Match reached backend after basic block lowering"),
+            ExprKind.Block(_) => panic("lower_stmt_expr: nested Block reached backend after basic block lowering"),
             ExprKind.Return(e) => out.push(C.CStmt.Return(l.lower_expr(e))),
-            ExprKind.Break => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_break")),
-            ExprKind.Continue => out.push(C.CStmt.Goto("loop_${l.current_loop_id}_continue")),
+            ExprKind.Break | ExprKind.Continue =>
+                panic("lower_stmt_expr: Break/Continue reached backend after basic block lowering"),
             ExprKind.Goto(label) => out.push(C.CStmt.Goto(label)),
             ExprKind.Label(label) => out.push(C.CStmt.Label(label)),
-            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
-                panic("lower_stmt_expr: basic block expression reached C backend before support was added"),
+            ExprKind.Switch(tag, arms) => {
+                // Basic-block switch: dense enum tag dispatch, every arm a Goto.
+                let cases: Vec[C.CSwitchCase] = Vec.new();
+                for (index, arm) in arms.iter().enumerate() {
+                    let body: Vec[C.CStmt] = Vec.new();
+                    match arm.kind {
+                        ExprKind.Goto(label) => body.push(C.CStmt.Goto(label)),
+                        _ => panic("lower_stmt_expr: Switch arm is not a Goto"),
+                    }
+                    cases.push(C.CSwitchCase(Some(index), body));
+                }
+                out.push(C.CStmt.Switch(l.lower_expr(tag), cases));
+            }
+            ExprKind.EnumTag(_) | ExprKind.ReadVariant(_, _) =>
+                panic("lower_stmt_expr: EnumTag/ReadVariant in statement position"),
             _ => out.push(C.CStmt.ExprStmt(l.lower_expr(expr))),
         }
         out
@@ -308,112 +343,6 @@ struct Lowerer {
         } else {
             l.lower_stmt_expr(expr)
         }
-    }
-
-    fn lower_loop(l: Lowerer, body: Vec[S.Statement]) -> Vec[C.CStmt] {
-        l.loop_counter = l.loop_counter + 1;
-        let loop_id = l.loop_counter;
-        let prev = l.current_loop_id;
-        l.current_loop_id = loop_id;
-        let inner = l.lower_stmts(body);
-        inner.push(C.CStmt.Label("loop_${loop_id}_continue"));
-        l.current_loop_id = prev;
-        let out: Vec[C.CStmt] = Vec.new();
-        out.push(C.CStmt.WhileTrue(inner));
-        out.push(C.CStmt.Label("loop_${loop_id}_break"));
-        out
-    }
-
-    // ─── Match ────────────────────────────────────────────────────────────────
-
-    fn lower_match(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
-        let ty = scrutinee.ty.unwrap();
-        let name = ty.name_opt().expect("lower_match: scrutinee has no named type");
-        if !l.program.enums.contains_key(name) {
-            panic("lower_match: non-enum match reached C backend: ${I.resolve(name.name())}");
-        }
-        l.lower_match_enum(scrutinee, arms)
-    }
-
-    fn lower_match_enum(l: Lowerer, scrutinee: Expr, arms: Vec[MatchArm]) -> Vec[C.CStmt] {
-        let is_vt = match scrutinee.ty {
-            Some(t) => l.is_value_type_ty(t),
-            None => False,
-        };
-        let tag = if is_vt {
-            C.CExpr.FieldDot(l.lower_expr(scrutinee), "tag")
-        } else {
-            C.CExpr.FieldArrow(l.lower_expr(scrutinee), "tag")
-        };
-        let enum_name = scrutinee.ty.expect("lower_match_enum: scrutinee without ty").name();
-        let enum_def = l.program.enum_def(enum_name);
-        let cases: Vec[C.CSwitchCase] = Vec.new();
-        for arm in arms {
-            let label = match arm.pattern.kind {
-                PatternKind.Named(info) => {
-                    let qn = info.name.resolved();
-                    let idx = enum_def
-                        .variants
-                        .iter()
-                        .position(|v| v.qualified_name.unwrap() == qn)
-                        .expect("lower_match_enum: pattern ${I.resolve(qn.name())} is not a variant of ${I.resolve(enum_name.name())}");
-                    Some(idx)
-                }
-                PatternKind.Wildcard => None,
-                _ => panic("unexpected pattern in enum match"),
-            };
-            let body: Vec[C.CStmt] = Vec.new();
-            for s in l.lower_variant_bindings(scrutinee, arm.pattern) {
-                body.push(s);
-            }
-            for s in l.lower_branch(arm.body) {
-                body.push(s);
-            }
-            cases.push(C.CSwitchCase(label, body));
-        }
-        let out: Vec[C.CStmt] = Vec.new();
-        out.push(C.CStmt.Switch(tag, cases));
-        out
-    }
-
-    // Extracts the payload struct and binds the variant's sub-fields.
-    fn lower_variant_bindings(l: Lowerer, scrutinee: Expr, pattern: Pattern) -> Vec[C.CStmt] {
-        let out: Vec[C.CStmt] = Vec.new();
-        let (qn, sub_pats) = match pattern.kind {
-            PatternKind.Named(info) if !info.args.is_empty() => (info.name.resolved(), info.args),
-            _ => { return out; }
-        };
-        let enum_qname = l.program.variant_enum_map.get(qn).expect("variant enum not found");
-        let edef = l.program.enums.get(enum_qname).unwrap();
-        let vdef = l.program.variant(qn);
-        let is_vt = match scrutinee.ty {
-            Some(t) => l.is_value_type_ty(t),
-            None => False,
-        };
-        let vname = variant_struct_name(edef, vdef);
-        let variant_name_str = variant_payload_name(vdef);
-        let payload_var = "_payload_${variant_name_str}";
-        let payload_ty = if is_vt { C.CType.Named(vname) } else { C.CType.Ptr(C.CType.Named(vname)) };
-        let payload_base = if is_vt {
-            C.CExpr.FieldDot(l.lower_expr(scrutinee), "payload")
-        } else {
-            C.CExpr.FieldArrow(l.lower_expr(scrutinee), "payload")
-        };
-        out.push(C.CStmt.Decl(payload_ty, payload_var));
-        out.push(C.CStmt.Assign(C.CExpr.Var(payload_var), C.CExpr.FieldDot(payload_base, variant_name_str)));
-        for (i, sub_pat) in sub_pats.iter().enumerate() {
-            if let PatternKind.Binding(var) = sub_pat.kind {
-                let field_ty = l.lower_type(vdef.items[i].ty);
-                let access = if is_vt {
-                    C.CExpr.FieldDot(C.CExpr.Var(payload_var), variant_field_name(i))
-                } else {
-                    C.CExpr.FieldArrow(C.CExpr.Var(payload_var), variant_field_name(i))
-                };
-                out.push(C.CStmt.Decl(field_ty, var_name(var)));
-                out.push(C.CStmt.Assign(C.CExpr.Var(var_name(var)), access));
-            }
-        }
-        out
     }
 
     // ─── Data definitions ─────────────────────────────────────────────────────
@@ -459,24 +388,19 @@ struct Lowerer {
         let enum_name = mangle(edef.qualified_name.unwrap().hashed());
         let is_vt = l.is_value_type(edef.qualified_name.unwrap());
         // Container struct: { uint32_t tag; union { ...variants } payload; }
+        // The per-variant payload structs are real Program.structs (created by
+        // LowerBasicBlock), so lower_structs emits them; only the container is
+        // synthesized here.
         let members: Vec[C.CField] = Vec.new();
         for variant in edef.variants.iter() {
             let vname = variant_struct_name(edef, variant);
             let member_ty = if is_vt { C.CType.Named(vname) } else { C.CType.Ptr(C.CType.Named(vname)) };
-            members.push(C.CField(member_ty, variant_payload_name(variant)));
+            members.push(C.CField(member_ty, variant_payload_name(variant.name.name())));
         }
         let container_fields: Vec[C.CField] = Vec.new();
         container_fields.push(C.CField(C.CType.UInt32, "tag"));
         container_fields.push(C.CField(C.CType.Union(members), "payload"));
         defs.push(C.CStructDef(enum_name, container_fields, False, Some(I.resolve(edef.qualified_name.unwrap().name()))));
-        // Per-variant payload structs.
-        for variant in edef.variants.iter() {
-            let fields: Vec[C.CField] = Vec.new();
-            for (index, item) in variant.items.iter().enumerate() {
-                fields.push(C.CField(l.lower_type(item.ty), variant_field_name(index)));
-            }
-            defs.push(C.CStructDef(variant_struct_name(edef, variant), fields, False, Some(I.resolve(variant.qualified_name.unwrap().name()))));
-        }
     }
 
     // ─── Constructors ─────────────────────────────────────────────────────────
@@ -484,6 +408,11 @@ struct Lowerer {
     fn lower_ctors(l: Lowerer, fns: Vec[C.CFnDef]) {
         for sdef in l.program.structs.values() {
             if sdef.is_builtin() {
+                continue;
+            }
+            // Payload structs are only built inside variant ctors; a standalone
+            // ctor function for them would just be dead code.
+            if VP.is_payload_qname(sdef.qualified_name.unwrap()) {
                 continue;
             }
             fns.push(l.lower_struct_ctor(sdef));
@@ -536,7 +465,7 @@ struct Lowerer {
             params.push(C.CFnParam(l.lower_type(item.ty), variant_field_name(index)));
         }
         let body: Vec[C.CStmt] = Vec.new();
-        let payload_field = variant_payload_name(variant);
+        let payload_field = variant_payload_name(variant.name.name());
         if is_vt {
             body.push(C.CStmt.Decl(C.CType.Named(vname), "variant"));
             for (index, _) in variant.items.iter().enumerate() {

@@ -36,6 +36,11 @@ pub enum BaseName {
     ImplicitWrap(parent_name: I.String),
     ImplicitContext(implicits: Vec[I.String]),
     Tuple(args: Vec[TypeDef]),
+    // Compiler-generated payload struct of one monomorphic enum variant.
+    // enum_name is the owning enum's hashed monomorphic name, so the payload
+    // identity is unique per enum instantiation and never collides with user
+    // structs.
+    VariantPayload(enum_name: I.String, variant_name: I.String),
 
     pub fn name(bn: BaseName) -> I.String {
         match bn {
@@ -66,6 +71,7 @@ pub enum BaseName {
             ImplicitContext(implicits) => I.intern("__implicit_context_" + join(implicits.iter().map(|n| I.resolve(n)).collect(), "_")),
             Tuple(args) => I.intern("__tuple_" + format_types(args) + "_"),
             EffectAssociatedType(m, e, t) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(t)),
+            VariantPayload(e, v) => I.intern(I.resolve(e) + "." + I.resolve(v) + ".payload"),
         }
     }
 }
@@ -289,6 +295,10 @@ pub enum QualifiedName {
         Base(BaseNameInfo.new(BaseName.Tuple(args)))
     }
 
+    pub fn new_variant_payload(enum_name: I.String, variant_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.VariantPayload(enum_name, variant_name)))
+    }
+
     // Returns the short identifier name: the last component of the base name
     // (e.g. "CoResult" from Enum, "Yielded" from Variant, "String" from Struct).
     pub fn short_name(qn: QualifiedName) -> I.String {
@@ -306,6 +316,7 @@ pub enum QualifiedName {
             | BaseName.Function(_, n)
             | BaseName.NamedInstance(_, n) => n,
             BaseName.Variant(_, _, v) => v,
+            BaseName.VariantPayload(_, v) => v,
             _ => panic("short_name: unsupported base name kind"),
         }
     }

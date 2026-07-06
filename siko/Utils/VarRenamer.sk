@@ -1,0 +1,149 @@
+module Siko.Utils.VarRenamer {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+
+// Alpha-renames every variable *defined* inside an expression (lets, declares,
+// pattern bindings) to a fresh name from the function's allocator, rewriting
+// the uses to match. Free variables (defined outside the expression) are left
+// untouched. Used when a pass clones a subtree into several places in the same
+// function body — e.g. match compilation duplicating an arm body across
+// decision-tree leaves — so that every variable stays unique per function.
+
+pub struct Renamer {
+    var_alloc: VarAllocator,
+    map: Map[VariableName, VariableName],
+
+    fn fresh(r: Renamer, old: VariableName) -> VariableName {
+        let new_name = match old {
+            VariableName.UserDefined(name, _) => r.var_alloc.allocate_user(name),
+            VariableName.Temp(_) => r.var_alloc.allocate_temp(),
+            VariableName.Unresolved(_) => panic("rename_variables: unresolved variable"),
+        };
+        r.map.insert(old, new_name.clone());
+        new_name
+    }
+}
+
+pub fn rename_variables(expr: Expr, var_alloc: VarAllocator) -> Expr {
+    let r = Renamer(var_alloc, Map.new());
+    rename(expr, r)
+}
+
+trait Rename[T] {
+    fn rename(t: T, r: Renamer) -> T
+}
+
+// A bare VariableName in the tree is a use site: remap if a definition inside
+// the renamed subtree introduced it, otherwise it is free and stays.
+instance Rename[VariableName] {
+    fn rename(v: VariableName, r: Renamer) -> VariableName {
+        r.map.get(v).unwrap_or(v)
+    }
+}
+
+// Definition sites allocate fresh names. The rhs is renamed before the name is
+// redefined so a use of an outer binding on the rhs is not captured.
+instance Rename[S.LetInfo] {
+    fn rename(info: S.LetInfo, r: Renamer) -> S.LetInfo {
+        let rhs = rename(info.rhs, r);
+        S.LetInfo(r.fresh(info.name), info.ty, rhs)
+    }
+}
+
+instance Rename[S.DeclareInfo] {
+    fn rename(info: S.DeclareInfo, r: Renamer) -> S.DeclareInfo {
+        S.DeclareInfo(r.fresh(info.name), info.ty)
+    }
+}
+
+instance Rename[PatternKind] {
+    fn rename(pk: PatternKind, r: Renamer) -> PatternKind {
+        match pk {
+            PatternKind.Binding(v) => PatternKind.Binding(r.fresh(v)),
+            PatternKind.Tuple(pats) => PatternKind.Tuple(rename(pats, r)),
+            PatternKind.Named(info) => PatternKind.Named(rename(info, r)),
+            PatternKind.Wildcard => pk,
+            PatternKind.StringLiteral(_) => pk,
+            PatternKind.IntLiteral(_) => pk,
+            PatternKind.CharLiteral(_) => pk,
+            // The setup block declares the guard temp; the var expr uses it,
+            // so the setup must be renamed first.
+            PatternKind.Guard(inner, setup, var) => {
+                let inner = rename(inner, r);
+                let setup = rename(setup, r);
+                PatternKind.Guard(inner, setup, rename(var, r))
+            }
+            PatternKind.Typed(inner, ty) => PatternKind.Typed(rename(inner, r), ty),
+        }
+    }
+}
+
+// An arm's pattern bindings must be renamed before the body that uses them.
+instance Rename[MatchArm] {
+    fn rename(arm: MatchArm, r: Renamer) -> MatchArm {
+        let pattern = rename(arm.pattern, r);
+        MatchArm(pattern, rename(arm.body, r))
+    }
+}
+
+instance Rename[Location] = auto(Map, =)
+instance Rename[TypeDef] = auto(Map, =)
+instance Rename[I.String] = auto(Map, =)
+instance Rename[String] = auto(Map, =)
+instance Rename[Int] = auto(Map, =)
+instance Rename[U8] = auto(Map, =)
+instance Rename[Bool] = auto(Map, =)
+instance Rename[QualifiedName] = auto(Map, =)
+instance Rename[Name] = auto(Map, =)
+instance Rename[Identifier] = auto(Map, =)
+instance Rename[WitnessInfo] = auto(Map, =)
+instance Rename[FunctionKind] = auto(Map, =)
+instance Rename[BinaryOp] = auto(Map, =)
+instance Rename[UnaryOp] = auto(Map, =)
+instance Rename[LambdaArg] = auto(Map, =)
+instance Rename[ImplicitRefInfo] = auto(Map, =)
+instance Rename[FunctionPtrInfo] = auto(Map, =)
+instance Rename[NamedArgument] = auto(Map, =)
+instance Rename[NamedPatternArg] = auto(Map, =)
+
+// HandlerSelection.Implicit carries a variable use, so it must be traversed.
+instance Rename[HandlerSelection] = auto(Map)
+instance Rename[Pattern] = auto(Map)
+instance Rename[NamedPatternInfo] = auto(Map)
+// CreateClosure params are captures, i.e. use sites: auto remaps them.
+instance Rename[CreateClosureInfo] = auto(Map)
+instance Rename[FunctionCallInfo] = auto(Map)
+instance Rename[TypeAssociatedCallInfo] = auto(Map)
+instance Rename[MethodCallInfo] = auto(Map)
+instance Rename[CallInfo] = auto(Map)
+instance Rename[WithInfo] = auto(Map)
+instance Rename[MatchInfo] = auto(Map)
+instance Rename[S.Statement] = auto(Map)
+instance Rename[BlockInfo] = auto(Map)
+instance Rename[ExprKind] = auto(Map)
+instance Rename[YieldInfo] = auto(Map)
+instance Rename[Expr] = auto(Map)
+
+instance[T: Rename[T]] Rename[Option[T]] {
+    fn rename(opt: Option[T], r: Renamer) -> Option[T] {
+        opt.map(|t| rename(t, r))
+    }
+}
+
+instance[T: Rename[T]] Rename[Vec[T]] {
+    fn rename(vec: Vec[T], r: Renamer) -> Vec[T] {
+        vec.into_iter().map(|t| rename(t, r)).collect()
+    }
+}
+
+}
