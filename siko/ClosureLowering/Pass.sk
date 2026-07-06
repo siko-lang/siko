@@ -59,10 +59,8 @@ instance Rewrite[UnaryOp]           = auto(Map, =)
 instance Rewrite[TypeDef] {
     fn rewrite(ty: TypeDef, ctx: ClosureLowerer) -> TypeDef {
         match ty {
-            TypeDef.Fn(ClosureInfo(args, ret, var)) => {
-                let args = args.into_iter().map(|a| rewrite(a, ctx)).collect();
-                let ret = rewrite(ret, ctx);
-                let fn_type = TypeDef.Fn(ClosureInfo(args, ret, var));
+            TypeDef.Fn(_) => {
+                let fn_type = ctx.normalize_fn_type(ty);
                 let info = ctx.get_or_create_enum(fn_type);
                 TypeDef.Named(NamedInfo(Name.inner(info.enum_qname), []))
             }
@@ -151,6 +149,17 @@ struct ClosureLowerer {
     fn_type_to_enum: Map[TypeDef, ClosureEnumInfo],
     enum_index: Int,
 
+    fn normalize_fn_type(ctx: ClosureLowerer, fn_type: TypeDef) -> TypeDef {
+        match fn_type {
+            TypeDef.Fn(ClosureInfo(args, ret, var)) => {
+                let args = args.into_iter().map(|a| rewrite(a, ctx)).collect();
+                let ret = rewrite(ret, ctx);
+                TypeDef.Fn(ClosureInfo(args, ret, var))
+            }
+            _ => panic("normalize_fn_type: not a Fn type"),
+        }
+    }
+
     fn get_or_create_enum(ctx: ClosureLowerer, fn_type: TypeDef) -> ClosureEnumInfo {
         if let Some(info) = ctx.fn_type_to_enum.get(fn_type) {
             return info.clone();
@@ -175,7 +184,7 @@ struct ClosureLowerer {
 
         match expr.kind {
             ExprKind.CreateClosure(CreateClosureInfo(lambda_qname, captures, _)) => {
-                let fn_type = ty.clone().unwrap();
+                let fn_type = ctx.normalize_fn_type(ty.clone().unwrap());
                 let info = ctx.get_or_create_enum(fn_type.clone());
 
                 let lambda_def = ctx.functions.get(lambda_qname).unwrap();
@@ -215,7 +224,7 @@ struct ClosureLowerer {
             }
 
             ExprKind.DynamicCall(callee, args) => {
-                let fn_type = callee.ty.clone().unwrap();
+                let fn_type = ctx.normalize_fn_type(callee.ty.clone().unwrap());
                 let info = ctx.get_or_create_enum(fn_type);
                 let callee = rewrite(callee, ctx);
                 let args = rewrite(args, ctx);
@@ -405,7 +414,6 @@ fn any_location(program: Program) -> Location {
 }
 
 }
-
 
 
 

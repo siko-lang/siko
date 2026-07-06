@@ -323,9 +323,13 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 }
                 if config.debug_closure_v3_profiles || dump_all || config.debug_closure_v3_mono {
                     ClosureLoweringV3GeneralizeFunctions.generalize_functions(cloned);
-                    ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
+                    if dump_all {
+                        ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
+                    }
                     let result = ClosureLoweringV3ProfileBuilder.build_profiles(cloned);
-                    ClosureLoweringV3Debug.dump_profiles(result.profiles);
+                    if config.debug_closure_v3_profiles || dump_all {
+                        ClosureLoweringV3Debug.dump_profiles(result.profiles);
+                    }
                 }
                 if config.debug_closure_v3_mono {
                     println("error: ClosureLoweringV3 profile mono is not implemented yet");
