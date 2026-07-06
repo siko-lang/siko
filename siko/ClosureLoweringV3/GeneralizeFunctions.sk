@@ -11,6 +11,7 @@ import Siko.AST.Pattern
 import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.AST.Type
+import Siko.ClosureLoweringV3.Statistics
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
@@ -28,7 +29,10 @@ struct Generalizer {
 
     fn allocate_var(g: Generalizer) -> TypeVar {
         match g.alloc.allocate() {
-            TypeDef.Var(v) => v,
+            TypeDef.Var(v) => {
+                stats.function_slot();
+                v
+            }
             _ => panic("closure lowering v3: type var allocator did not allocate a var"),
         }
     }
@@ -148,14 +152,17 @@ pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
 }
 
 pub fn generalize_functions(program: Program) {
+    stats.generalize_functions_start();
     let ctx = Generalizer(TypeVarAllocator.new(), datatype_arities(program));
 
     let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
     for key in keys {
+        stats.generalized_function();
         let func = program.functions.remove(key).unwrap();
         ctx.alloc = TypeVarAllocator.new();
         program.functions.insert(key, generalize(func, ctx));
     }
+    stats.generalize_functions_end();
 }
 
 }

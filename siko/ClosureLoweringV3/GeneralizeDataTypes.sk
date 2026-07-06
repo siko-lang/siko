@@ -11,6 +11,7 @@ import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
 import Siko.AST.Type
+import Siko.ClosureLoweringV3.Statistics
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
@@ -36,6 +37,7 @@ struct Generalizer {
     fn allocate_var(v: Generalizer) -> TypeVar {
         let var = TypeVar.Named(v.alloc.allocate_name());
         v.pool.push(var);
+        stats.datatype_slot();
         var
     }
 }
@@ -154,12 +156,14 @@ fn type_arg_defs_for(pool: Vec[TypeVar], loc: Location) -> Option[TypeArgDefs] {
 }
 
 pub fn generalize_datatypes(program: Program) {
+    stats.generalize_datatypes_start();
     let graph = build_dep_graph(program);
     let sccs = SCC.compute(graph);
 
     let finished: Map[QualifiedName, Vec[TypeVar]] = Map.new();
 
     for scc in sccs {
+        stats.generalized_datatype_scc();
         let scc_members: Set[QualifiedName] = Set.new();
         for m in scc.iter() {
             scc_members.insert(m);
@@ -170,6 +174,7 @@ pub fn generalize_datatypes(program: Program) {
         let scc_structs: Map[QualifiedName, StructDef] = Map.new();
         let scc_enums: Map[QualifiedName, EnumDef] = Map.new();
         for qname in scc.iter() {
+            stats.generalized_datatype();
             if let Some(sdef) = program.structs.get(qname) {
                 scc_structs.insert(qname, generalize(sdef.clone(), ctx));
             } else if let Some(edef) = program.enums.get(qname) {
@@ -196,6 +201,7 @@ pub fn generalize_datatypes(program: Program) {
             finished.insert(m, ctx.pool.clone());
         }
     }
+    stats.generalize_datatypes_end();
 }
 
 }

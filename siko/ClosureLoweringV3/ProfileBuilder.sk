@@ -4,6 +4,7 @@ import Std.Map
 import Siko.AST.QualifiedName
 import Siko.ClosureLoweringV3.InferProfiles
 import Siko.ClosureLoweringV3.Profile
+import Siko.ClosureLoweringV3.Statistics
 import Siko.HIR.Program
 
 pub struct ProfileBuildResult {
@@ -11,7 +12,10 @@ pub struct ProfileBuildResult {
 }
 
 pub fn build_profiles(program: Program) -> ProfileBuildResult {
-    ProfileBuildResult(infer_profiles(program))
+    stats.profile_build_start();
+    let profiles = infer_profiles(program);
+    stats.profile_build_end();
+    ProfileBuildResult(profiles)
 }
 
 }

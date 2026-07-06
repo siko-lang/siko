@@ -1,0 +1,616 @@
+module Siko.ClosureLoweringV3.Resolve {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.ClosureLoweringV3.InferProfiles.Flow
+import Siko.ClosureLoweringV3.Profile
+import Siko.ClosureLoweringV3.Statistics
+import Siko.Config
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+
+// V3 concrete resolution. Profiles are generic summaries; this pass walks from
+// Main.main and computes concrete closure sets for reachable function
+// instances. Closure identity is the closure creation site's lambda qname, so
+// there is no V2-style pin stabilization loop.
+
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+struct InstanceKey {
+    fn_name: QualifiedName,
+    inputs: Vec[Vec[Int]],
+}
+
+pub struct ClosureInstance {
+    pub lambda: QualifiedName,
+    pub captures: Vec[Set[Int]],
+}
+
+pub struct FnInstance {
+    pub fn_name: QualifiedName,
+    pub inputs: Vec[Vec[Int]],
+    pub class_sets: Map[FlowNode, Set[Int]],
+    pub children: Set[Int],
+}
+
+pub struct WalkData {
+    pub uf: UnionFind,
+    pub applies: Vec[ApplyRecord],
+    pub creations: Vec[CreationRecord],
+    pub calls: Vec[CallRecord],
+    pub profile_boundary: Vec[TypeVar],
+    pub profile_to_local: Map[TypeVar, Vec[FlowNode]],
+}
+
+pub struct Resolver {
+    pub program: Program,
+    pub profiles: Map[QualifiedName, FunctionProfile],
+    tables: DataTables,
+    walks: Map[QualifiedName, WalkData],
+    closure_ids: Map[QualifiedName, Int],
+    pub closures: Vec[ClosureInstance],
+    instance_ids: Map[InstanceKey, Int],
+    pub instances: Vec[FnInstance],
+    pub main_instance: Int,
+    changed: Bool,
+
+    fn add_profile_mapping(r: Resolver, m: Map[TypeVar, Vec[FlowNode]], v: TypeVar, node: FlowNode) {
+        let nodes = m.get(v.clone()).unwrap_or(Vec.new());
+        if !nodes.contains(node.clone()) {
+            nodes.push(node);
+        }
+        m.insert(v, nodes);
+    }
+
+    fn fill_profile_mapping(
+        r: Resolver,
+        m: Map[TypeVar, Vec[FlowNode]],
+        owner: QualifiedName,
+        profile_vars: Vec[TypeVar],
+        local_vars: Vec[TypeVar],
+    ) {
+        if profile_vars.len() == local_vars.len() {
+            for (i, v) in profile_vars.iter().enumerate() {
+                r.add_profile_mapping(m, v.clone(), FlowNode(owner.clone(), local_vars[i].clone()));
+            }
+        } else {
+            for v in profile_vars.iter() {
+                for local in local_vars.iter() {
+                    r.add_profile_mapping(m, v.clone(), FlowNode(owner.clone(), local.clone()));
+                }
+            }
+        }
+    }
+
+    fn build_profile_to_local(r: Resolver, fn_name: QualifiedName, func: FunctionDef, profile: FunctionProfile) -> Map[TypeVar, Vec[FlowNode]] {
+        let m: Map[TypeVar, Vec[FlowNode]] = Map.new();
+        for (i, arg) in profile.arg_types.iter().enumerate() {
+            if i < func.args.len() {
+                r.fill_profile_mapping(m, fn_name.clone(), signature_ty_vars(arg.clone()), signature_ty_vars(func.args[i].type_def.clone()));
+            }
+        }
+        r.fill_profile_mapping(m, fn_name.clone(), signature_opt_ty_vars(profile.result_type.clone()), signature_opt_ty_vars(func.result_type.clone()));
+        r.fill_profile_mapping(m, fn_name, signature_opt_ty_vars(profile.yield_type.clone()), signature_opt_ty_vars(func.yield_type.clone()));
+        m
+    }
+
+    pub fn walk_data(r: Resolver, fn_name: QualifiedName) -> WalkData {
+        if let Some(wd) = r.walks.get(fn_name.clone()) {
+            stats.resolver_walk_data_hit();
+            return wd;
+        }
+        stats.resolver_walk_data_build();
+        stats.resolver_walk_data_start();
+        let func = r.program.functions.get(fn_name).unwrap();
+        let profile = r.profiles.get(fn_name).expect("closure lowering v3: function has no profile");
+        let ctx = FlowCtx(
+            program: r.program,
+            tables: r.tables,
+            scc_members: Set.new(),
+            profiles: r.profiles,
+            uf: UnionFind.new(),
+            applies: Vec.new(),
+            creations: Vec.new(),
+            calls: Vec.new(),
+            current_fn: fn_name.clone(),
+            env: Map.new(),
+            result_vars: signature_opt_ty_vars(func.result_type.clone()),
+            yield_vars: signature_opt_ty_vars(func.yield_type.clone()),
+            alias_types: Vec.new(),
+        );
+        for arg in func.args.iter() {
+            ctx.env.insert(arg.name.clone(), signature_ty_vars(arg.type_def.clone()));
+        }
+        if func.is_closure_alias() {
+            ctx.alias_types = alias_sig_types(func.clone());
+            apply_closure_alias(ctx, func.clone());
+        }
+        if let Some(body) = func.body {
+            flow(body.clone(), ctx);
+            ctx.unify(ctx.nodes(signature_opt_ty_vars(body.ty.clone())), ctx.nodes(ctx.result_vars.clone()));
+        } else {
+            bodyless_signature_edges(ctx, func.clone());
+        }
+        let wd = WalkData(
+            ctx.uf,
+            ctx.applies,
+            ctx.creations,
+            ctx.calls,
+            profile_boundary_vars(profile.clone()),
+            r.build_profile_to_local(fn_name.clone(), func.clone(), profile.clone()),
+        );
+        r.walks.insert(fn_name, wd);
+        stats.resolver_walk_data_end();
+        wd
+    }
+
+    fn intern_closure(r: Resolver, lambda: QualifiedName, slots: Int) -> Int {
+        if let Some(id) = r.closure_ids.get(lambda.clone()) {
+            return id;
+        }
+        let id = r.closures.len();
+        stats.resolver_closure_instance();
+        let captures: Vec[Set[Int]] = Vec.new();
+        for _ in 0..slots {
+            captures.push(Set.new());
+        }
+        r.closures.push(ClosureInstance(lambda.clone(), captures));
+        r.closure_ids.insert(lambda, id);
+        r.changed = True;
+        id
+    }
+
+    fn intern_instance(r: Resolver, fn_name: QualifiedName, inputs: Vec[Vec[Int]]) -> Int {
+        let key = InstanceKey(fn_name.clone(), inputs.clone());
+        if let Some(id) = r.instance_ids.get(key.clone()) {
+            return id;
+        }
+        let id = r.instances.len();
+        stats.resolver_function_instance();
+        r.instances.push(FnInstance(fn_name, inputs, Map.new(), Set.new()));
+        r.instance_ids.insert(key, id);
+        r.changed = True;
+        id
+    }
+
+    pub fn find_instance(r: Resolver, fn_name: QualifiedName, inputs: Vec[Vec[Int]]) -> Option[Int] {
+        r.instance_ids.get(InstanceKey(fn_name, inputs))
+    }
+
+    pub fn closure_id_for(r: Resolver, lambda: QualifiedName) -> Int {
+        r.closure_ids.get(lambda).expect("closure lowering v3: closure id not found")
+    }
+
+    fn class_set(r: Resolver, iid: Int, root: FlowNode) -> Set[Int] {
+        let inst = r.instances[iid];
+        match inst.class_sets.get(root.clone()) {
+            Some(s) => s,
+            None => {
+                let s: Set[Int] = Set.new();
+                inst.class_sets.insert(root, s);
+                s
+            }
+        }
+    }
+
+    pub fn node_set(r: Resolver, iid: Int, wd: WalkData, n: FlowNode) -> Set[Int] {
+        r.class_set(iid, wd.uf.find(n))
+    }
+
+    pub fn sorted_ids(r: Resolver, set: Set[Int]) -> Vec[Int] {
+        set.iter().cloned().collect()
+    }
+
+    fn add_all(r: Resolver, dst: Set[Int], src: Vec[Int]) -> Bool {
+        let grew = False;
+        for id in src {
+            if dst.insert(id) {
+                grew = True;
+            }
+        }
+        grew
+    }
+
+    fn add_all_set(r: Resolver, dst: Set[Int], src: Set[Int]) -> Bool {
+        let grew = False;
+        for id in src.iter() {
+            if dst.insert(id) {
+                grew = True;
+            }
+        }
+        grew
+    }
+
+    fn profile_nodes(r: Resolver, wd: WalkData, v: TypeVar) -> Vec[FlowNode] {
+        wd.profile_to_local.get(v).unwrap_or(Vec.new())
+    }
+
+    fn profile_set(r: Resolver, iid: Int, wd: WalkData, v: TypeVar) -> Set[Int] {
+        let out: Set[Int] = Set.new();
+        for n in r.profile_nodes(wd, v) {
+            for id in r.node_set(iid, wd, n) {
+                out.insert(id);
+            }
+        }
+        out
+    }
+
+    fn add_input_to_profile_var(r: Resolver, iid: Int, wd: WalkData, v: TypeVar, input: Vec[Int]) -> Bool {
+        let grew = False;
+        for n in r.profile_nodes(wd, v) {
+            if r.add_all(r.node_set(iid, wd, n), input.clone()) {
+                grew = True;
+            }
+        }
+        grew
+    }
+}
+
+fn profile_boundary_vars(profile: FunctionProfile) -> Vec[TypeVar] {
+    let vars: Vec[TypeVar] = Vec.new();
+    for arg in profile.arg_types.iter() {
+        vars.extend(signature_ty_vars(arg.clone()));
+    }
+    vars.extend(signature_opt_ty_vars(profile.result_type.clone()));
+    vars.extend(signature_opt_ty_vars(profile.yield_type.clone()));
+    vars
+}
+
+fn process_instance(r: Resolver, iid: Int) {
+    stats.resolver_process_instance();
+    stats.resolver_process_instance_start();
+    let fn_name = r.instances[iid].fn_name.clone();
+    let wd = r.walk_data(fn_name.clone());
+    r.instances[iid].children = Set.new();
+
+    let local_changed = True;
+    while local_changed {
+        stats.resolver_local_iteration();
+        local_changed = False;
+
+        let inputs = r.instances[iid].inputs.clone();
+        for (i, v) in wd.profile_boundary.iter().enumerate() {
+            if i < inputs.len() {
+                if r.add_input_to_profile_var(iid, wd, v.clone(), inputs[i].clone()) {
+                    local_changed = True;
+                    r.changed = True;
+                }
+            }
+        }
+
+        for cr in wd.creations.iter() {
+            stats.resolver_creation();
+            let flat: Vec[FlowNode] = Vec.new();
+            for ns in cr.captures.iter() {
+                flat.extend(ns.clone());
+            }
+            let cid = r.intern_closure(cr.lambda.clone(), flat.len());
+            for (i, n) in flat.iter().enumerate() {
+                let src = r.sorted_ids(r.node_set(iid, wd, n.clone()));
+                if i < r.closures[cid].captures.len() {
+                    if r.add_all(r.closures[cid].captures[i], src) {
+                        local_changed = True;
+                        r.changed = True;
+                    }
+                    if r.add_all_set(r.node_set(iid, wd, n.clone()), r.closures[cid].captures[i]) {
+                        local_changed = True;
+                        r.changed = True;
+                    }
+                }
+            }
+            for n in cr.value.iter() {
+                if r.node_set(iid, wd, n.clone()).insert(cid) {
+                    local_changed = True;
+                    r.changed = True;
+                }
+            }
+        }
+
+        for call in wd.calls.iter() {
+            stats.resolver_static_call();
+            let profile = r.profiles.get(call.callee.clone()).expect("closure lowering v3: callee has no profile");
+            let callee_boundary = profile_boundary_vars(profile.clone());
+            let child_inputs: Vec[Vec[Int]] = callee_boundary.iter().map(|v| {
+                match call.subst.get(v.clone()) {
+                    Some(n) => r.sorted_ids(r.node_set(iid, wd, n)),
+                    None => Vec.new(),
+                }
+            }).collect();
+            let child_id = r.intern_instance(call.callee.clone(), child_inputs);
+            r.instances[iid].children.insert(child_id);
+
+            let child_wd = r.walk_data(call.callee.clone());
+            for v in callee_boundary.iter() {
+                if let Some(n) = call.subst.get(v.clone()) {
+                    let child_set = r.profile_set(child_id, child_wd, v.clone());
+                    if r.add_all_set(r.node_set(iid, wd, n), child_set) {
+                        local_changed = True;
+                        r.changed = True;
+                    }
+                }
+            }
+        }
+
+        for ar in wd.applies.iter() {
+            stats.resolver_dynamic_call();
+            let callee_ids: Set[Int] = Set.new();
+            for n in ar.callee.iter() {
+                for id in r.node_set(iid, wd, n.clone()) {
+                    callee_ids.insert(id);
+                }
+            }
+            for cid in callee_ids {
+                let lambda = r.closures[cid].lambda.clone();
+                let ldef = match r.program.functions.get(lambda.clone()) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                if ldef.body.is_none() {
+                    continue;
+                }
+                let profile = r.profiles.get(lambda.clone()).expect("closure lowering v3: lambda has no profile");
+                let boundary = profile_boundary_vars(profile.clone());
+                let capture_arg_count = match ldef.kind {
+                    FunctionDefKind.Closure(n) => n,
+                    _ => 0,
+                };
+                let param_nodes: Vec[FlowNode] = Vec.new();
+                for ns in ar.args.iter() {
+                    param_nodes.extend(ns.clone());
+                }
+
+                let child_inputs: Vec[Vec[Int]] = Vec.new();
+                let cap_i = 0;
+                let param_i = 0;
+                let result_i = 0;
+                for arg_index in 0..profile.arg_types.len() {
+                    for _ in signature_ty_vars(profile.arg_types[arg_index].clone()) {
+                        if arg_index < capture_arg_count {
+                            if cap_i < r.closures[cid].captures.len() {
+                                child_inputs.push(r.sorted_ids(r.closures[cid].captures[cap_i]));
+                            } else {
+                                child_inputs.push(Vec.new());
+                            }
+                            cap_i += 1;
+                        } else {
+                            if param_i < param_nodes.len() {
+                                child_inputs.push(r.sorted_ids(r.node_set(iid, wd, param_nodes[param_i].clone())));
+                            } else {
+                                child_inputs.push(Vec.new());
+                            }
+                            param_i += 1;
+                        }
+                    }
+                }
+                for _ in signature_opt_ty_vars(profile.result_type.clone()) {
+                    if result_i < ar.result.len() {
+                        child_inputs.push(r.sorted_ids(r.node_set(iid, wd, ar.result[result_i].clone())));
+                    } else {
+                        child_inputs.push(Vec.new());
+                    }
+                    result_i += 1;
+                }
+                for _ in signature_opt_ty_vars(profile.yield_type.clone()) {
+                    child_inputs.push(Vec.new());
+                }
+
+                while child_inputs.len() < boundary.len() {
+                    child_inputs.push(Vec.new());
+                }
+
+                let child_id = r.intern_instance(lambda.clone(), child_inputs);
+                r.instances[iid].children.insert(child_id);
+
+                let child_wd = r.walk_data(lambda.clone());
+                let cap_i = 0;
+                let param_i = 0;
+                let result_i = 0;
+                for arg_index in 0..profile.arg_types.len() {
+                    for v in signature_ty_vars(profile.arg_types[arg_index].clone()) {
+                        let child_set = r.profile_set(child_id, child_wd, v.clone());
+                        if arg_index < capture_arg_count {
+                            if cap_i < r.closures[cid].captures.len() {
+                                if r.add_all_set(r.closures[cid].captures[cap_i], child_set) {
+                                    local_changed = True;
+                                    r.changed = True;
+                                }
+                            }
+                            cap_i += 1;
+                        } else {
+                            if param_i < param_nodes.len() {
+                                if r.add_all_set(r.node_set(iid, wd, param_nodes[param_i].clone()), child_set) {
+                                    local_changed = True;
+                                    r.changed = True;
+                                }
+                            }
+                            param_i += 1;
+                        }
+                    }
+                }
+                for v in signature_opt_ty_vars(profile.result_type.clone()) {
+                    let child_set = r.profile_set(child_id, child_wd, v.clone());
+                    if result_i < ar.result.len() {
+                        if r.add_all_set(r.node_set(iid, wd, ar.result[result_i].clone()), child_set) {
+                            local_changed = True;
+                            r.changed = True;
+                        }
+                    }
+                    result_i += 1;
+                }
+            }
+        }
+    }
+    stats.resolver_process_instance_end();
+}
+
+pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) -> Resolver {
+    stats.resolve_start();
+    let r = Resolver(
+        program: program,
+        profiles: profiles,
+        tables: build_tables(program),
+        walks: Map.new(),
+        closure_ids: Map.new(),
+        closures: Vec.new(),
+        instance_ids: Map.new(),
+        instances: Vec.new(),
+        main_instance: 0,
+        changed: False,
+    );
+
+    let main_base = B.get_main_entry_qn().base();
+    let main_qn = None;
+    for (q, _) in r.program.functions.iter() {
+        if q.base() == main_base {
+            main_qn = Some(q);
+        }
+    }
+    let main_qn = main_qn.expect("closure lowering v3: Main.main not found");
+    let main_profile = r.profiles.get(main_qn.clone()).expect("closure lowering v3: Main.main has no profile");
+    let main_inputs: Vec[Vec[Int]] = profile_boundary_vars(main_profile).iter().map(|_| Vec.new()).collect();
+    r.main_instance = r.intern_instance(main_qn, main_inputs);
+
+    let pass = 0;
+    loop {
+        pass += 1;
+        stats.resolve_pass();
+        r.changed = False;
+        let visited: Set[Int] = Set.new();
+        let queue: Vec[Int] = Vec.new();
+        queue.push(r.main_instance);
+        loop {
+            let iid = match queue.pop() {
+                Some(i) => i,
+                None => break,
+            };
+            if !visited.insert(iid) {
+                continue;
+            }
+            process_instance(r, iid);
+            for c in r.instances[iid].children.iter() {
+                queue.push(c);
+            }
+        }
+        if get_config().debug_closure_v3_mono {
+            println("closure-v3-mono: pass ${pass}: visited=${visited.len()} instances=${r.instances.len()} closures=${r.closures.len()}");
+        }
+        if !r.changed {
+            break;
+        }
+    }
+
+    stats.resolver_reachable_instances(reachable_instances(r).len());
+    stats.resolve_end();
+    r
+}
+
+fn format_ids(ids: Vec[Int]) -> String {
+    let parts: Vec[String] = ids.iter().map(|id| "c${id}").collect();
+    "{${Std.Vec.join(parts, ", ")}}"
+}
+
+fn format_var(v: TypeVar) -> String {
+    match v.name() {
+        Some(n) => I.resolve(n),
+        None => "?",
+    }
+}
+
+pub fn reachable_instances(r: Resolver) -> Vec[Int] {
+    let visited: Set[Int] = Set.new();
+    let stack: Vec[Int] = Vec.new();
+    stack.push(r.main_instance);
+    loop {
+        let iid = match stack.pop() {
+            Some(i) => i,
+            None => break,
+        };
+        if !visited.insert(iid) {
+            continue;
+        }
+        for c in r.instances[iid].children.iter() {
+            stack.push(c);
+        }
+    }
+    visited.iter().cloned().collect()
+}
+
+fn used_closure_ids(r: Resolver, reachable: Vec[Int]) -> Set[Int] {
+    let used: Set[Int] = Set.new();
+    let stack: Vec[Int] = Vec.new();
+    for iid in reachable.iter() {
+        for (_, set) in r.instances[iid].class_sets.iter() {
+            for id in set {
+                if used.insert(id) {
+                    stack.push(id);
+                }
+            }
+        }
+    }
+    loop {
+        let id = match stack.pop() {
+            Some(i) => i,
+            None => break,
+        };
+        for cs in r.closures[id].captures.iter() {
+            for id2 in cs {
+                if used.insert(id2) {
+                    stack.push(id2);
+                }
+            }
+        }
+    }
+    used
+}
+
+pub fn dump(r: Resolver) {
+    let reachable = reachable_instances(r);
+    let used = used_closure_ids(r, reachable);
+
+    println("=== ClosureLoweringV3: closure instances ===");
+    for (id, c) in r.closures.iter().enumerate() {
+        if !used.contains(id) {
+            continue;
+        }
+        let capture_parts: Vec[String] = c.captures.iter().map(|s| format_ids(r.sorted_ids(s.clone()))).collect();
+        println("c${id} = ${I.resolve(c.lambda.name())} captures=[${Std.Vec.join(capture_parts, ", ")}]");
+    }
+
+    println("=== ClosureLoweringV3: function instances ===");
+    for iid in reachable.iter() {
+        let inst = r.instances[iid];
+        let wd = r.walk_data(inst.fn_name.clone());
+        let parts: Vec[String] = Vec.new();
+        let printed: Set[TypeVar] = Set.new();
+        for v in wd.profile_boundary.iter() {
+            if !printed.insert(v.clone()) {
+                continue;
+            }
+            let set = r.profile_set(iid, wd, v.clone());
+            if !set.is_empty() {
+                parts.push("${format_var(v.clone())}=${format_ids(r.sorted_ids(set))}");
+            }
+        }
+        let suffix = if parts.is_empty() { "" } else { " [${Std.Vec.join(parts, ", ")}]" };
+        println("fn ${I.resolve(inst.fn_name.name())} #${iid}${suffix}");
+    }
+
+    let enum_sets: Set[Vec[Int]] = Set.new();
+    for iid in reachable.iter() {
+        for (_, set) in r.instances[iid].class_sets.iter() {
+            if !set.is_empty() {
+                enum_sets.insert(r.sorted_ids(set));
+            }
+        }
+    }
+
+    println("=== ClosureLoweringV3: closure enums ===");
+    for (i, set) in enum_sets.iter().enumerate() {
+        println("closure_${i} = ${format_ids(set.clone())}");
+    }
+}
+
+}

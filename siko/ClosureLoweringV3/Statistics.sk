@@ -1,0 +1,600 @@
+module Siko.ClosureLoweringV3.Statistics {
+
+import Std.Time
+
+pub implicit stats: Statistics
+
+fn format_microseconds_as_millis(us: I64) -> String {
+    let ms = us / 1000.as_i64();
+    let frac = (us % 1000.as_i64()).as_int().to_string();
+    while frac.len() < 3 {
+        frac = "0" + frac;
+    }
+    "${ms}.${frac}ms"
+}
+
+fn format_duration(total: Duration) -> String {
+    format_microseconds_as_millis(total.to_microseconds())
+}
+
+fn format_average_duration(total: Duration, count: Int) -> String {
+    if count == 0 {
+        return "0.000ms";
+    }
+    format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
+}
+
+fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
+    if enabled {
+        starts.push(Instant.now());
+    }
+}
+
+fn statistics_elapsed(enabled: Bool, starts: Vec[Instant]) -> Option[Duration] {
+    if !enabled {
+        return None;
+    }
+    match starts.pop() {
+        Some(start) => Some(start.elapsed()),
+        None => None,
+    }
+}
+
+fn print_time_stat(name: String, count: Int, total: Duration) {
+    println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}");
+}
+
+fn print_count_stat(name: String, count: Int) {
+    println("  ${name}: ${count}");
+}
+
+pub struct Statistics {
+    pub enabled: Bool,
+
+    pub generalized_datatype_sccs: Int,
+    pub generalized_datatypes: Int,
+    pub datatype_slots: Int,
+    pub generalized_functions: Int,
+    pub function_slots: Int,
+
+    pub profile_sccs: Int,
+    pub profile_flow_functions: Int,
+    pub profile_bodyless_functions: Int,
+    pub profiles_published: Int,
+    pub flow_unifications: Int,
+    pub flow_cross_unifications: Int,
+    pub flow_creations: Int,
+    pub flow_static_calls: Int,
+    pub flow_dynamic_calls: Int,
+
+    pub resolve_passes: Int,
+    pub resolver_process_instances: Int,
+    pub resolver_local_iterations: Int,
+    pub resolver_walk_data_builds: Int,
+    pub resolver_walk_data_hits: Int,
+    pub resolver_static_calls: Int,
+    pub resolver_dynamic_calls: Int,
+    pub resolver_creations: Int,
+    pub resolver_closure_instances: Int,
+    pub resolver_function_instances: Int,
+    pub resolver_reachable_instances: Int,
+
+    pub rewritten_functions: Int,
+    pub lowered_create_closures: Int,
+    pub lowered_dynamic_calls: Int,
+    pub retargeted_static_calls: Int,
+    pub retargeted_function_ptrs: Int,
+    pub instantiated_data_types: Int,
+    pub instantiated_structs: Int,
+    pub instantiated_enums: Int,
+    pub generated_closure_enums: Int,
+    pub generated_handlers: Int,
+
+    pub generalize_datatypes_calls: Int,
+    pub generalize_datatypes_time: Duration,
+    generalize_datatypes_starts: Vec[Instant],
+    pub generalize_functions_calls: Int,
+    pub generalize_functions_time: Duration,
+    generalize_functions_starts: Vec[Instant],
+    pub profile_build_calls: Int,
+    pub profile_build_time: Duration,
+    profile_build_starts: Vec[Instant],
+    pub profile_scc_calls: Int,
+    pub profile_scc_time: Duration,
+    profile_scc_starts: Vec[Instant],
+    pub profile_flow_calls: Int,
+    pub profile_flow_time: Duration,
+    profile_flow_starts: Vec[Instant],
+    pub profile_publish_calls: Int,
+    pub profile_publish_time: Duration,
+    profile_publish_starts: Vec[Instant],
+    pub resolve_calls: Int,
+    pub resolve_time: Duration,
+    resolve_starts: Vec[Instant],
+    pub resolver_walk_data_calls: Int,
+    pub resolver_walk_data_time: Duration,
+    resolver_walk_data_starts: Vec[Instant],
+    pub resolver_process_instance_calls: Int,
+    pub resolver_process_instance_time: Duration,
+    resolver_process_instance_starts: Vec[Instant],
+    pub rewrite_calls: Int,
+    pub rewrite_time: Duration,
+    rewrite_starts: Vec[Instant],
+    pub rewrite_function_calls: Int,
+    pub rewrite_function_time: Duration,
+    rewrite_function_starts: Vec[Instant],
+    pub generate_handler_calls: Int,
+    pub generate_handler_time: Duration,
+    generate_handler_starts: Vec[Instant],
+    pub generate_enum_calls: Int,
+    pub generate_enum_time: Duration,
+    generate_enum_starts: Vec[Instant],
+
+    pub fn new(enabled: Bool) -> Statistics {
+        Statistics(
+            enabled: enabled,
+            generalized_datatype_sccs: 0,
+            generalized_datatypes: 0,
+            datatype_slots: 0,
+            generalized_functions: 0,
+            function_slots: 0,
+            profile_sccs: 0,
+            profile_flow_functions: 0,
+            profile_bodyless_functions: 0,
+            profiles_published: 0,
+            flow_unifications: 0,
+            flow_cross_unifications: 0,
+            flow_creations: 0,
+            flow_static_calls: 0,
+            flow_dynamic_calls: 0,
+            resolve_passes: 0,
+            resolver_process_instances: 0,
+            resolver_local_iterations: 0,
+            resolver_walk_data_builds: 0,
+            resolver_walk_data_hits: 0,
+            resolver_static_calls: 0,
+            resolver_dynamic_calls: 0,
+            resolver_creations: 0,
+            resolver_closure_instances: 0,
+            resolver_function_instances: 0,
+            resolver_reachable_instances: 0,
+            rewritten_functions: 0,
+            lowered_create_closures: 0,
+            lowered_dynamic_calls: 0,
+            retargeted_static_calls: 0,
+            retargeted_function_ptrs: 0,
+            instantiated_data_types: 0,
+            instantiated_structs: 0,
+            instantiated_enums: 0,
+            generated_closure_enums: 0,
+            generated_handlers: 0,
+            generalize_datatypes_calls: 0,
+            generalize_datatypes_time: Duration.zero(),
+            generalize_datatypes_starts: Vec.new(),
+            generalize_functions_calls: 0,
+            generalize_functions_time: Duration.zero(),
+            generalize_functions_starts: Vec.new(),
+            profile_build_calls: 0,
+            profile_build_time: Duration.zero(),
+            profile_build_starts: Vec.new(),
+            profile_scc_calls: 0,
+            profile_scc_time: Duration.zero(),
+            profile_scc_starts: Vec.new(),
+            profile_flow_calls: 0,
+            profile_flow_time: Duration.zero(),
+            profile_flow_starts: Vec.new(),
+            profile_publish_calls: 0,
+            profile_publish_time: Duration.zero(),
+            profile_publish_starts: Vec.new(),
+            resolve_calls: 0,
+            resolve_time: Duration.zero(),
+            resolve_starts: Vec.new(),
+            resolver_walk_data_calls: 0,
+            resolver_walk_data_time: Duration.zero(),
+            resolver_walk_data_starts: Vec.new(),
+            resolver_process_instance_calls: 0,
+            resolver_process_instance_time: Duration.zero(),
+            resolver_process_instance_starts: Vec.new(),
+            rewrite_calls: 0,
+            rewrite_time: Duration.zero(),
+            rewrite_starts: Vec.new(),
+            rewrite_function_calls: 0,
+            rewrite_function_time: Duration.zero(),
+            rewrite_function_starts: Vec.new(),
+            generate_handler_calls: 0,
+            generate_handler_time: Duration.zero(),
+            generate_handler_starts: Vec.new(),
+            generate_enum_calls: 0,
+            generate_enum_time: Duration.zero(),
+            generate_enum_starts: Vec.new(),
+        )
+    }
+
+    pub fn inc(stats: Statistics, field: fn(Statistics) -> ()) {
+        if stats.enabled {
+            field(stats);
+        }
+    }
+
+    pub fn generalized_datatype_scc(stats: Statistics) {
+        if stats.enabled { stats.generalized_datatype_sccs += 1; }
+    }
+
+    pub fn generalized_datatype(stats: Statistics) {
+        if stats.enabled { stats.generalized_datatypes += 1; }
+    }
+
+    pub fn datatype_slot(stats: Statistics) {
+        if stats.enabled { stats.datatype_slots += 1; }
+    }
+
+    pub fn generalized_function(stats: Statistics) {
+        if stats.enabled { stats.generalized_functions += 1; }
+    }
+
+    pub fn function_slot(stats: Statistics) {
+        if stats.enabled { stats.function_slots += 1; }
+    }
+
+    pub fn profile_scc(stats: Statistics) {
+        if stats.enabled {
+            stats.profile_sccs += 1;
+        }
+    }
+
+    pub fn profile_flow_function(stats: Statistics) {
+        if stats.enabled { stats.profile_flow_functions += 1; }
+    }
+
+    pub fn profile_bodyless_function(stats: Statistics) {
+        if stats.enabled { stats.profile_bodyless_functions += 1; }
+    }
+
+    pub fn profile_published(stats: Statistics) {
+        if stats.enabled { stats.profiles_published += 1; }
+    }
+
+    pub fn flow_unification(stats: Statistics, cross: Bool) {
+        if stats.enabled {
+            stats.flow_unifications += 1;
+            if cross {
+                stats.flow_cross_unifications += 1;
+            }
+        }
+    }
+
+    pub fn flow_creation(stats: Statistics) {
+        if stats.enabled { stats.flow_creations += 1; }
+    }
+
+    pub fn flow_static_call(stats: Statistics) {
+        if stats.enabled { stats.flow_static_calls += 1; }
+    }
+
+    pub fn flow_dynamic_call(stats: Statistics) {
+        if stats.enabled { stats.flow_dynamic_calls += 1; }
+    }
+
+    pub fn resolve_pass(stats: Statistics) {
+        if stats.enabled { stats.resolve_passes += 1; }
+    }
+
+    pub fn resolver_process_instance(stats: Statistics) {
+        if stats.enabled { stats.resolver_process_instances += 1; }
+    }
+
+    pub fn resolver_local_iteration(stats: Statistics) {
+        if stats.enabled { stats.resolver_local_iterations += 1; }
+    }
+
+    pub fn resolver_walk_data_build(stats: Statistics) {
+        if stats.enabled { stats.resolver_walk_data_builds += 1; }
+    }
+
+    pub fn resolver_walk_data_hit(stats: Statistics) {
+        if stats.enabled { stats.resolver_walk_data_hits += 1; }
+    }
+
+    pub fn resolver_static_call(stats: Statistics) {
+        if stats.enabled { stats.resolver_static_calls += 1; }
+    }
+
+    pub fn resolver_dynamic_call(stats: Statistics) {
+        if stats.enabled { stats.resolver_dynamic_calls += 1; }
+    }
+
+    pub fn resolver_creation(stats: Statistics) {
+        if stats.enabled { stats.resolver_creations += 1; }
+    }
+
+    pub fn resolver_closure_instance(stats: Statistics) {
+        if stats.enabled { stats.resolver_closure_instances += 1; }
+    }
+
+    pub fn resolver_function_instance(stats: Statistics) {
+        if stats.enabled { stats.resolver_function_instances += 1; }
+    }
+
+    pub fn resolver_reachable_instances(stats: Statistics, count: Int) {
+        if stats.enabled { stats.resolver_reachable_instances = count; }
+    }
+
+    pub fn rewritten_function(stats: Statistics) {
+        if stats.enabled { stats.rewritten_functions += 1; }
+    }
+
+    pub fn lowered_create_closure(stats: Statistics) {
+        if stats.enabled { stats.lowered_create_closures += 1; }
+    }
+
+    pub fn lowered_dynamic_call(stats: Statistics) {
+        if stats.enabled { stats.lowered_dynamic_calls += 1; }
+    }
+
+    pub fn retargeted_static_call(stats: Statistics) {
+        if stats.enabled { stats.retargeted_static_calls += 1; }
+    }
+
+    pub fn retargeted_function_ptr(stats: Statistics) {
+        if stats.enabled { stats.retargeted_function_ptrs += 1; }
+    }
+
+    pub fn instantiated_data_type(stats: Statistics) {
+        if stats.enabled { stats.instantiated_data_types += 1; }
+    }
+
+    pub fn instantiated_struct(stats: Statistics) {
+        if stats.enabled { stats.instantiated_structs += 1; }
+    }
+
+    pub fn instantiated_enum(stats: Statistics) {
+        if stats.enabled { stats.instantiated_enums += 1; }
+    }
+
+    pub fn generated_closure_enum(stats: Statistics) {
+        if stats.enabled { stats.generated_closure_enums += 1; }
+    }
+
+    pub fn generated_handler(stats: Statistics) {
+        if stats.enabled { stats.generated_handlers += 1; }
+    }
+
+    pub fn generalize_datatypes_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.generalize_datatypes_starts);
+    }
+
+    pub fn generalize_datatypes_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.generalize_datatypes_starts) {
+            Some(elapsed) => {
+                stats.generalize_datatypes_calls += 1;
+                stats.generalize_datatypes_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn generalize_functions_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.generalize_functions_starts);
+    }
+
+    pub fn generalize_functions_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.generalize_functions_starts) {
+            Some(elapsed) => {
+                stats.generalize_functions_calls += 1;
+                stats.generalize_functions_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn profile_build_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.profile_build_starts);
+    }
+
+    pub fn profile_build_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.profile_build_starts) {
+            Some(elapsed) => {
+                stats.profile_build_calls += 1;
+                stats.profile_build_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn profile_scc_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.profile_scc_starts);
+    }
+
+    pub fn profile_scc_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.profile_scc_starts) {
+            Some(elapsed) => {
+                stats.profile_scc_calls += 1;
+                stats.profile_scc_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn profile_flow_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.profile_flow_starts);
+    }
+
+    pub fn profile_flow_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.profile_flow_starts) {
+            Some(elapsed) => {
+                stats.profile_flow_calls += 1;
+                stats.profile_flow_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn profile_publish_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.profile_publish_starts);
+    }
+
+    pub fn profile_publish_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.profile_publish_starts) {
+            Some(elapsed) => {
+                stats.profile_publish_calls += 1;
+                stats.profile_publish_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn resolve_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.resolve_starts);
+    }
+
+    pub fn resolve_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.resolve_starts) {
+            Some(elapsed) => {
+                stats.resolve_calls += 1;
+                stats.resolve_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn resolver_walk_data_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.resolver_walk_data_starts);
+    }
+
+    pub fn resolver_walk_data_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.resolver_walk_data_starts) {
+            Some(elapsed) => {
+                stats.resolver_walk_data_calls += 1;
+                stats.resolver_walk_data_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn resolver_process_instance_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.resolver_process_instance_starts);
+    }
+
+    pub fn resolver_process_instance_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.resolver_process_instance_starts) {
+            Some(elapsed) => {
+                stats.resolver_process_instance_calls += 1;
+                stats.resolver_process_instance_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn rewrite_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.rewrite_starts);
+    }
+
+    pub fn rewrite_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.rewrite_starts) {
+            Some(elapsed) => {
+                stats.rewrite_calls += 1;
+                stats.rewrite_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn rewrite_function_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.rewrite_function_starts);
+    }
+
+    pub fn rewrite_function_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.rewrite_function_starts) {
+            Some(elapsed) => {
+                stats.rewrite_function_calls += 1;
+                stats.rewrite_function_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn generate_handler_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.generate_handler_starts);
+    }
+
+    pub fn generate_handler_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.generate_handler_starts) {
+            Some(elapsed) => {
+                stats.generate_handler_calls += 1;
+                stats.generate_handler_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn generate_enum_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.generate_enum_starts);
+    }
+
+    pub fn generate_enum_end(stats: Statistics) {
+        match statistics_elapsed(stats.enabled, stats.generate_enum_starts) {
+            Some(elapsed) => {
+                stats.generate_enum_calls += 1;
+                stats.generate_enum_time += elapsed;
+            }
+            None => {}
+        }
+    }
+
+    pub fn dump(stats: Statistics) {
+        if !stats.enabled {
+            return;
+        }
+        println("Closure lowering v3 statistics:");
+        print_count_stat("generalized_datatype_sccs", stats.generalized_datatype_sccs);
+        print_count_stat("generalized_datatypes", stats.generalized_datatypes);
+        print_count_stat("datatype_slots", stats.datatype_slots);
+        print_count_stat("generalized_functions", stats.generalized_functions);
+        print_count_stat("function_slots", stats.function_slots);
+        print_count_stat("profile_sccs", stats.profile_sccs);
+        print_count_stat("profile_flow_functions", stats.profile_flow_functions);
+        print_count_stat("profile_bodyless_functions", stats.profile_bodyless_functions);
+        print_count_stat("profiles_published", stats.profiles_published);
+        print_count_stat("flow_unifications", stats.flow_unifications);
+        print_count_stat("flow_cross_unifications", stats.flow_cross_unifications);
+        print_count_stat("flow_creations", stats.flow_creations);
+        print_count_stat("flow_static_calls", stats.flow_static_calls);
+        print_count_stat("flow_dynamic_calls", stats.flow_dynamic_calls);
+        print_count_stat("resolve_passes", stats.resolve_passes);
+        print_count_stat("resolver_process_instances", stats.resolver_process_instances);
+        print_count_stat("resolver_local_iterations", stats.resolver_local_iterations);
+        print_count_stat("resolver_walk_data_builds", stats.resolver_walk_data_builds);
+        print_count_stat("resolver_walk_data_hits", stats.resolver_walk_data_hits);
+        print_count_stat("resolver_static_calls", stats.resolver_static_calls);
+        print_count_stat("resolver_dynamic_calls", stats.resolver_dynamic_calls);
+        print_count_stat("resolver_creations", stats.resolver_creations);
+        print_count_stat("resolver_closure_instances", stats.resolver_closure_instances);
+        print_count_stat("resolver_function_instances", stats.resolver_function_instances);
+        print_count_stat("resolver_reachable_instances", stats.resolver_reachable_instances);
+        print_count_stat("rewritten_functions", stats.rewritten_functions);
+        print_count_stat("lowered_create_closures", stats.lowered_create_closures);
+        print_count_stat("lowered_dynamic_calls", stats.lowered_dynamic_calls);
+        print_count_stat("retargeted_static_calls", stats.retargeted_static_calls);
+        print_count_stat("retargeted_function_ptrs", stats.retargeted_function_ptrs);
+        print_count_stat("instantiated_data_types", stats.instantiated_data_types);
+        print_count_stat("instantiated_structs", stats.instantiated_structs);
+        print_count_stat("instantiated_enums", stats.instantiated_enums);
+        print_count_stat("generated_closure_enums", stats.generated_closure_enums);
+        print_count_stat("generated_handlers", stats.generated_handlers);
+        print_time_stat("generalize_datatypes", stats.generalize_datatypes_calls, stats.generalize_datatypes_time);
+        print_time_stat("generalize_functions", stats.generalize_functions_calls, stats.generalize_functions_time);
+        print_time_stat("profile_build", stats.profile_build_calls, stats.profile_build_time);
+        print_time_stat("profile_scc", stats.profile_scc_calls, stats.profile_scc_time);
+        print_time_stat("profile_flow", stats.profile_flow_calls, stats.profile_flow_time);
+        print_time_stat("profile_publish", stats.profile_publish_calls, stats.profile_publish_time);
+        print_time_stat("resolve", stats.resolve_calls, stats.resolve_time);
+        print_time_stat("resolver_walk_data", stats.resolver_walk_data_calls, stats.resolver_walk_data_time);
+        print_time_stat("resolver_process_instance", stats.resolver_process_instance_calls, stats.resolver_process_instance_time);
+        print_time_stat("rewrite", stats.rewrite_calls, stats.rewrite_time);
+        print_time_stat("rewrite_function", stats.rewrite_function_calls, stats.rewrite_function_time);
+        print_time_stat("generate_handler", stats.generate_handler_calls, stats.generate_handler_time);
+        print_time_stat("generate_enum", stats.generate_enum_calls, stats.generate_enum_time);
+    }
+}
+
+}

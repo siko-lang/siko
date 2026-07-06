@@ -31,6 +31,9 @@ import Siko.ClosureLoweringV3.GeneralizeDataTypes as ClosureLoweringV3Generalize
 import Siko.ClosureLoweringV3.GeneralizeFunctions as ClosureLoweringV3GeneralizeFunctions
 import Siko.ClosureLoweringV3.ProfileBuilder as ClosureLoweringV3ProfileBuilder
 import Siko.ClosureLoweringV3.Debug as ClosureLoweringV3Debug
+import Siko.ClosureLoweringV3.Resolve as ClosureLoweringV3Resolve
+import Siko.ClosureLoweringV3.Lower as ClosureLoweringV3Lower
+import Siko.ClosureLoweringV3.Statistics as ClosureLoweringV3Statistics
 import Siko.CoroutineLowering
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
@@ -213,8 +216,11 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 label: "Lowering closures...",
                 run: |driver| {
                     if get_config().lower_closure_v3 {
-                        println("error: --lower-closure-v3 selected, but ClosureLoweringV3 is not implemented yet");
-                        Sys.exit(1.as_i32());
+                        let cl_stats = ClosureLoweringV3Statistics.Statistics.new(config.debug_closure_v3_stats);
+                        with ClosureLoweringV3Statistics.stats = cl_stats {
+                            ClosureLoweringV3Lower.lower_closures_v3(driver.program);
+                        }
+                        cl_stats.dump();
                     } else if get_config().lower_closure_v2 {
                         ClosureMergeLower.lower_closures_v2(driver.program);
                     } else {
@@ -315,26 +321,30 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
             name: "closure-lowering-v3-debug",
             label: "Closure lowering v3 (debug)...",
             run: |driver| {
-                let cloned = driver.program.clone();
-                let dump_all = !config.debug_closure_v3_datatypes && !config.debug_closure_v3_profiles && !config.debug_closure_v3_mono;
-                ClosureLoweringV3GeneralizeDataTypes.generalize_datatypes(cloned);
-                if config.debug_closure_v3_datatypes || dump_all {
-                    ClosureLoweringV3Debug.dump_datatypes(cloned);
-                }
-                if config.debug_closure_v3_profiles || dump_all || config.debug_closure_v3_mono {
-                    ClosureLoweringV3GeneralizeFunctions.generalize_functions(cloned);
-                    if dump_all {
-                        ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
+                let cl_stats = ClosureLoweringV3Statistics.Statistics.new(config.debug_closure_v3_stats);
+                with ClosureLoweringV3Statistics.stats = cl_stats {
+                    let cloned = driver.program.clone();
+                    let dump_all = !config.debug_closure_v3_datatypes && !config.debug_closure_v3_profiles && !config.debug_closure_v3_mono;
+                    ClosureLoweringV3GeneralizeDataTypes.generalize_datatypes(cloned);
+                    if config.debug_closure_v3_datatypes || dump_all {
+                        ClosureLoweringV3Debug.dump_datatypes(cloned);
                     }
-                    let result = ClosureLoweringV3ProfileBuilder.build_profiles(cloned);
-                    if config.debug_closure_v3_profiles || dump_all {
-                        ClosureLoweringV3Debug.dump_profiles(result.profiles);
+                    if config.debug_closure_v3_profiles || dump_all || config.debug_closure_v3_mono {
+                        ClosureLoweringV3GeneralizeFunctions.generalize_functions(cloned);
+                        if dump_all {
+                            ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
+                        }
+                        let result = ClosureLoweringV3ProfileBuilder.build_profiles(cloned);
+                        if config.debug_closure_v3_profiles || dump_all {
+                            ClosureLoweringV3Debug.dump_profiles(result.profiles.clone());
+                        }
+                        if config.debug_closure_v3_mono {
+                            let resolver = ClosureLoweringV3Resolve.resolve(cloned, result.profiles);
+                            ClosureLoweringV3Resolve.dump(resolver);
+                        }
                     }
                 }
-                if config.debug_closure_v3_mono {
-                    println("error: ClosureLoweringV3 profile mono is not implemented yet");
-                    Sys.exit(1.as_i32());
-                }
+                cl_stats.dump();
             },
             dump: Some(|driver| println(driver.program.format())),
         ));
