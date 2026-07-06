@@ -14,17 +14,17 @@ let RED: String = "\x1b[31m";
 let RESET: String = "\x1b[0m";
 
 pub enum Error {
-    Signal(I32),
+    Signal(signal: I32),
     Timeout,
-    BuildFailed(String),
-    ProgramFailed(String),
-    ExpectedFailureSucceeded(String),
-    SnapshotMismatch(String, String, String),
-    IoError(String, String),
+    BuildFailed(output: String),
+    ProgramFailed(output: String),
+    ExpectedFailureSucceeded(output: String),
+    SnapshotMismatch(path: String, expected: String, actual: String),
+    IoError(context: String, message: String),
 
     pub fn is_segfault(e: Error) -> Bool {
         match e {
-            Signal(sig) => sig == 11.as_i32(),
+            Signal(signal: sig) => sig == 11.as_i32(),
             _ => False,
         }
     }
@@ -33,7 +33,7 @@ pub enum Error {
 instance ToString[Error] {
     fn to_string(e: Error) -> String {
         match e {
-            Signal(sig) => {
+            Signal(signal: sig) => {
                 if sig == 11.as_i32() {
                     "SEGFAULT (signal 11)"
                 } else {
@@ -45,11 +45,11 @@ instance ToString[Error] {
                 let t = TIMEOUT_SECS;
                 "timed out after ${t}s"
             }
-            BuildFailed(out) => "siko.bin exited non-zero:\n${out}",
-            ProgramFailed(out) => "program exited non-zero:\n${out}",
-            ExpectedFailureSucceeded(out) => "expected compiler to fail but it succeeded\nstdout:\n${out}",
-            SnapshotMismatch(path, expected, actual) => "output differs from snapshot (${path})\n--- expected ---\n${expected}--- actual ---\n${actual}",
-            IoError(ctx, msg) => "${ctx}: ${msg}",
+            BuildFailed(output: out) => "siko.bin exited non-zero:\n${out}",
+            ProgramFailed(output: out) => "program exited non-zero:\n${out}",
+            ExpectedFailureSucceeded(output: out) => "expected compiler to fail but it succeeded\nstdout:\n${out}",
+            SnapshotMismatch(path: path, expected: expected, actual: actual) => "output differs from snapshot (${path})\n--- expected ---\n${expected}--- actual ---\n${actual}",
+            IoError(context: ctx, message: msg) => "${ctx}: ${msg}",
         }
     }
 }
@@ -64,18 +64,394 @@ pub struct Stats {
     }
 }
 
+pub enum Timing {
+    BuildExec(build_ms: I64, exec_ms: I64),
+    Pass(name: String, elapsed_ms: I64),
+    Failure(elapsed_ms: I64),
+
+    pub fn build_exec(build_ms: I64, exec_ms: I64) -> Timing {
+        Timing.BuildExec(build_ms: build_ms, exec_ms: exec_ms)
+    }
+
+    pub fn pass(name: String, elapsed_ms: I64) -> Timing {
+        Timing.Pass(name: name, elapsed_ms: elapsed_ms)
+    }
+
+    pub fn failure(elapsed_ms: I64) -> Timing {
+        Timing.Failure(elapsed_ms: elapsed_ms)
+    }
+
+    pub fn format(t: Timing) -> String {
+        match t {
+            BuildExec(build_ms: build_ms, exec_ms: exec_ms) => "build: ${format_duration(build_ms)} exec: ${format_duration(exec_ms)}",
+            Pass(name: name, elapsed_ms: elapsed_ms) => "pass ${name}: ${format_duration(elapsed_ms)}",
+            Failure(elapsed_ms: elapsed_ms) => format_duration(elapsed_ms),
+        }
+    }
+}
+
+pub struct PassTest {
+    name: String,
+    args: Vec[String],
+    args_path: String,
+    snapshot: String,
+    args_error: Option[Error],
+}
+
+pub struct TestCase {
+    path: String,
+    input: String,
+    nostd: Bool,
+    has_package: Bool,
+    snapshot: String,
+    has_snapshot: Bool,
+    skipped: Bool,
+    pass_tests: Vec[PassTest],
+}
+
+pub struct TestRunner {
+    compiler: String,
+    bless: Bool,
+    valgrind: Bool,
+    cwd: String,
+    stats: Stats,
+    skipped: Int,
+
+    pub fn new(compiler: String, bless: Bool, valgrind: Bool, cwd: String) -> TestRunner {
+        TestRunner(
+            compiler: compiler,
+            bless: bless,
+            valgrind: valgrind,
+            cwd: cwd,
+            stats: Stats.new(),
+            skipped: 0,
+        )
+    }
+
+    fn compare_or_bless(r: TestRunner, snapshot: String, actual: String) -> Result[(), Error] {
+        if r.bless {
+            write_if_changed(snapshot, actual)
+        } else {
+            let expected = match Std.Fs.File.read_file(snapshot) {
+                Ok(s) => s,
+                Err(e) => return Err(IoError(context: "cannot read ${snapshot}", message: e.to_string())),
+            };
+            if actual != expected {
+                return Err(SnapshotMismatch(path: snapshot, expected: expected, actual: actual));
+            }
+            Ok(())
+        }
+    }
+
+    fn invoke_testprogram_success(r: TestRunner, testprogram: String, work_dir: String) -> Result[String, Error] {
+        let cmd = if r.valgrind {
+            let supp = "${r.cwd}/.github/valgrind.supp";
+            Command.new("valgrind")
+                .with_path()
+                .arg("--error-exitcode=1")
+                .arg("--leak-check=no")
+                .arg("--suppressions=${supp}")
+                .arg(testprogram)
+                .work_dir(work_dir)
+                .with_capture_stdout()
+        } else {
+            Command.new(testprogram)
+                .work_dir(work_dir)
+                .with_capture_stdout()
+        };
+
+        let result = match wait_with_timeout(cmd.spawn()) {
+            Ok(r) => r,
+            Err(e) => return Err(e),
+        };
+
+        if !result.success() {
+            return Err(ProgramFailed(output: result.captured_stdout()));
+        }
+        Ok(result.captured_stdout())
+    }
+
+    fn invoke_compiler_success(r: TestRunner, args: Vec[String]) -> Result[String, Error] {
+        let cmd = Command.new(r.compiler).args(args).with_capture_stdout().run();
+        if !cmd.success() {
+            match cmd.status().signal() {
+                Some(sig) => return Err(Signal(signal: sig)),
+                None => {}
+            }
+            return Err(BuildFailed(output: cmd.captured_stdout()));
+        }
+        Ok(cmd.captured_stdout())
+    }
+
+    fn invoke_compiler_failure(r: TestRunner, args: Vec[String]) -> Result[String, Error] {
+        let cmd = Command.new(r.compiler).args(args).with_capture_stdout().run();
+        if cmd.success() {
+            return Err(ExpectedFailureSucceeded(output: cmd.captured_stdout()));
+        }
+        match cmd.status().signal() {
+            Some(sig) => return Err(Signal(signal: sig)),
+            None => {}
+        }
+        Ok(cmd.captured_stdout())
+    }
+
+    fn build_and_run(r: TestRunner, test: TestCase) -> Result[Timing, Error] {
+        let bin = "${test.path}/test_selfhost.bin";
+        let abs_bin = "${r.cwd}/${bin}";
+
+        let build_args = base_build_args(test);
+        build_args.push("-o");
+        build_args.push(bin);
+
+        let build_start = Instant.now();
+        let build_result = r.invoke_compiler_success(build_args);
+        let build_ms = build_start.elapsed().to_millis();
+
+        match build_result {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        let exec_start = Instant.now();
+        let actual = match r.invoke_testprogram_success(abs_bin, test.path) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+        let exec_ms = exec_start.elapsed().to_millis();
+
+        match r.compare_or_bless(test.snapshot, actual) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        Ok(Timing.build_exec(build_ms, exec_ms))
+    }
+
+    fn run_pass_test(r: TestRunner, test: TestCase, pass_test: PassTest) -> Result[Timing, Error] {
+        match pass_test.args_error {
+            Some(e) => return Err(e),
+            None => {}
+        }
+        let args = base_build_args(test);
+        for arg in pass_test.args {
+            args.push(arg);
+        }
+
+        let start = Instant.now();
+        let actual = match r.invoke_compiler_success(args) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+        let elapsed_ms = start.elapsed().to_millis();
+
+        match r.compare_or_bless(pass_test.snapshot, actual) {
+            Ok(_) => {}
+            Err(e) => return Err(e),
+        }
+
+        Ok(Timing.pass(pass_test.name, elapsed_ms))
+    }
+
+    fn report_success_case_failure(r: TestRunner, case: String, e: Error) {
+        r.stats.failed = r.stats.failed + 1;
+        r.stats.failed_names.push(case);
+        if e.is_segfault() {
+            println(" ${RED}FAIL - SEGFAULT${RESET}");
+        } else {
+            println(" ${RED}FAIL${RESET}");
+            print_indented(e.to_string());
+        }
+    }
+
+    fn bless_success_case(r: TestRunner, test: TestCase) {
+        print("  ${test.path} ...");
+        flush();
+        let result: Result[(), Error] = if test.has_snapshot {
+            match r.build_and_run(test) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        } else if test.pass_tests.is_empty() {
+            Err(IoError(context: "cannot read ${test.snapshot}", message: "file not found"))
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(_) => {
+                for pass_test in test.pass_tests {
+                    match r.run_pass_test(test, pass_test) {
+                        Ok(_) => {}
+                        Err(e) => {
+                            eprintln_str("  [pass] failed for ${test.path}:\n${e}");
+                            println(" ${RED}FAILED${RESET}");
+                            return;
+                        }
+                    }
+                }
+                println(" ${GREEN}BLESSED${RESET}");
+            }
+            Err(e) => {
+                eprintln_str("  [build] failed for ${test.path}:\n${e}");
+                println(" ${RED}FAILED${RESET}");
+            }
+        }
+    }
+
+    fn bless_failure_case(r: TestRunner, test: TestCase) {
+        print("  ${test.path} ...");
+        flush();
+        let args: Vec[String] = Vec.new();
+        args.push("build");
+        args.push(test.input);
+        match r.invoke_compiler_failure(args) {
+            Ok(output) => {
+                match write_if_changed(test.snapshot, output) {
+                    Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
+                    Err(e) => {
+                        eprintln_str("  ${e}");
+                        println(" ${RED}FAILED${RESET}");
+                    }
+                }
+            }
+            Err(e) => {
+                eprintln_str("  [build] failed for ${test.path}:\n${e}");
+                println(" ${RED}FAILED${RESET}");
+            }
+        }
+    }
+
+    fn run_success_case(r: TestRunner, test: TestCase) {
+        r.stats.total = r.stats.total + 1;
+        print("  ${test.path} ...");
+        flush();
+
+        if !file_exists(r.compiler) {
+            println(" ${RED}FAIL${RESET} (compiler not found)");
+            r.stats.failed = r.stats.failed + 1;
+            r.stats.failed_names.push(test.path);
+            return;
+        }
+
+        let timings: Vec[Timing] = Vec.new();
+        let result: Result[(), Error] = if test.has_snapshot {
+            match r.build_and_run(test) {
+                Ok(timing) => {
+                    timings.push(timing);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else if test.pass_tests.is_empty() {
+            Err(IoError(context: "cannot read ${test.snapshot}", message: "file not found"))
+        } else {
+            Ok(())
+        };
+
+        match result {
+            Ok(_) => {
+                for pass_test in test.pass_tests {
+                    match r.run_pass_test(test, pass_test) {
+                        Ok(timing) => timings.push(timing),
+                        Err(e) => {
+                            r.report_success_case_failure(test.path, e);
+                            return;
+                        }
+                    }
+                }
+                println(" ${GREEN}PASS${RESET} (${format_timings(timings)})");
+            }
+            Err(e) => {
+                r.report_success_case_failure(test.path, e);
+            }
+        }
+    }
+
+    fn run_success_cases(r: TestRunner, cases: Vec[TestCase]) {
+        for test in cases {
+            if test.skipped {
+                r.skip_case(test);
+                continue;
+            }
+            if r.bless {
+                r.bless_success_case(test);
+            } else {
+                r.run_success_case(test);
+            }
+        }
+    }
+
+    fn failure_snapshot_test(r: TestRunner, args: Vec[String], snapshot: String) -> Result[(), Error] {
+        let actual = match r.invoke_compiler_failure(args) {
+            Ok(s) => s,
+            Err(e) => return Err(e),
+        };
+        let expected = match Std.Fs.File.read_file(snapshot) {
+            Ok(s) => s,
+            Err(e) => return Err(IoError(context: "cannot read ${snapshot}", message: e.to_string())),
+        };
+        if actual != expected {
+            return Err(SnapshotMismatch(path: snapshot, expected: expected, actual: actual));
+        }
+        Ok(())
+    }
+
+    fn run_failure_case(r: TestRunner, test: TestCase) {
+        r.stats.total = r.stats.total + 1;
+        print("  ${test.path} ...");
+        flush();
+
+        let args: Vec[String] = Vec.new();
+        args.push("build");
+        args.push(test.input);
+
+        let self_start = Instant.now();
+        let result = r.failure_snapshot_test(args, test.snapshot);
+        let timing = Timing.failure(self_start.elapsed().to_millis());
+
+        match result {
+            Ok(_) => {
+                println(" ${GREEN}PASS${RESET} (${timing.format()})");
+            }
+            Err(e) => {
+                r.stats.failed = r.stats.failed + 1;
+                r.stats.failed_names.push(test.path);
+                if e.is_segfault() {
+                    println(" ${RED}FAIL - SEGFAULT${RESET} (${timing.format()})");
+                } else {
+                    println(" ${RED}FAIL${RESET} (${timing.format()})");
+                    print_indented(e.to_string());
+                }
+            }
+        }
+    }
+
+    fn skip_case(r: TestRunner, test: TestCase) {
+        println("  SKIP  ${test.path} (SKIP file present)");
+        r.skipped = r.skipped + 1;
+    }
+
+    fn report_final(r: TestRunner) {
+        if !r.bless {
+            let passed = r.stats.total - r.stats.failed;
+            if r.skipped > 0 {
+                println("\n${r.skipped} skipped");
+            }
+            println("${passed}/${r.stats.total} passed");
+            if r.stats.failed > 0 {
+                println("\nfailed tests:");
+                for name in r.stats.failed_names {
+                    println("  ${name}");
+                }
+                Sys.exit(1.as_i32());
+            }
+        }
+    }
+}
+
 fn file_exists(path: String) -> Bool {
     match Std.Fs.Stat.stat(path) {
         Ok(_) => True,
         Err(_) => False,
-    }
-}
-
-fn case_input(case: String) -> String {
-    if file_exists("${case}/package.toml") {
-        case
-    } else {
-        "${case}/main.sk"
     }
 }
 
@@ -88,7 +464,100 @@ fn any_filter_matches(path: String, filters: Vec[String]) -> Bool {
     False
 }
 
-fn collect_cases(dir: String, out: Vec[String], filters: Vec[String]) {
+fn format_duration(ms: I64) -> String {
+    let mins = ms / 60000.as_i64();
+    let secs = (ms % 60000.as_i64()) / 1000.as_i64();
+    let millis = ms % 1000.as_i64();
+    if mins > 0.as_i64() {
+        "${mins}m ${secs}s ${millis}ms"
+    } else {
+        if secs > 0.as_i64() {
+            "${secs}s ${millis}ms"
+        } else {
+            "${millis}ms"
+        }
+    }
+}
+
+fn format_timings(timings: Vec[Timing]) -> String {
+    Std.Vec.join(timings.iter().map(|t| t.format()).collect(), ", ")
+}
+
+fn split_pass_args(content: String) -> Vec[String] {
+    let args: Vec[String] = Vec.new();
+    let normalized = content.replace("\n", " ").replace("\r", " ").replace("\t", " ");
+    for arg in normalized.split(" ") {
+        if !arg.is_empty() {
+            args.push(arg);
+        }
+    }
+    args
+}
+
+fn discover_pass_tests(case: String) -> Vec[PassTest] {
+    let names: Vec[String] = Vec.new();
+    let iter = match Std.Fs.Directory.list_dir(case) {
+        Ok(it) => it,
+        Err(_) => return Vec.new(),
+    };
+    for entry_result in iter {
+        match entry_result {
+            Ok(entry) => {
+                if entry.is_file() {
+                    let name = entry.name();
+                    if name.starts_with("pass-") && name.ends_with(".txt") {
+                        names.push(name.substring(5, name.len() - 4));
+                    }
+                }
+            }
+            Err(_) => {}
+        }
+    }
+    names.sort();
+
+    let pass_tests: Vec[PassTest] = Vec.new();
+    for name in names {
+        let args_path = "${case}/pass-${name}.txt";
+        let args: Vec[String] = Vec.new();
+        let args_error = match Std.Fs.File.read_file(args_path) {
+            Ok(s) => {
+                args = split_pass_args(s);
+                None
+            }
+            Err(e) => Some(IoError(context: "cannot read ${args_path}", message: e.to_string())),
+        };
+        pass_tests.push(PassTest(
+            name: name,
+            args: args,
+            args_path: args_path,
+            snapshot: "${case}/output-${name}.txt",
+            args_error: args_error,
+        ));
+    }
+    pass_tests
+}
+
+fn build_test_case(path: String, nostd: Bool) -> TestCase {
+    let has_package = file_exists("${path}/package.toml");
+    let input = if has_package {
+        path
+    } else {
+        "${path}/main.sk"
+    };
+    let snapshot = "${path}/output.txt";
+    TestCase(
+        path: path,
+        input: input,
+        nostd: nostd,
+        has_package: has_package,
+        snapshot: snapshot,
+        has_snapshot: file_exists(snapshot),
+        skipped: file_exists("${path}/SKIP"),
+        pass_tests: discover_pass_tests(path),
+    )
+}
+
+fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: Bool) {
     let subdirs: Vec[String] = Vec.new();
     let iter = match Std.Fs.Directory.list_dir(dir) {
         Ok(it) => it,
@@ -111,33 +580,18 @@ fn collect_cases(dir: String, out: Vec[String], filters: Vec[String]) {
     for subdir in subdirs {
         if file_exists("${subdir}/main.sk") {
             if filters.is_empty() || any_filter_matches(subdir, filters) {
-                out.push(subdir);
+                out.push(build_test_case(subdir, nostd));
             }
         } else {
-            collect_cases(subdir, out, filters);
+            collect_cases(subdir, out, filters, nostd);
         }
     }
 }
 
-fn discover_cases(root: String, filters: Vec[String]) -> Vec[String] {
-    let cases: Vec[String] = Vec.new();
-    collect_cases(root, cases, filters);
+fn discover_cases(root: String, filters: Vec[String], nostd: Bool) -> Vec[TestCase] {
+    let cases: Vec[TestCase] = Vec.new();
+    collect_cases(root, cases, filters, nostd);
     cases
-}
-
-fn format_duration(ms: I64) -> String {
-    let mins = ms / 60000.as_i64();
-    let secs = (ms % 60000.as_i64()) / 1000.as_i64();
-    let millis = ms % 1000.as_i64();
-    if mins > 0.as_i64() {
-        "${mins}m ${secs}s ${millis}ms"
-    } else {
-        if secs > 0.as_i64() {
-            "${secs}s ${millis}ms"
-        } else {
-            "${millis}ms"
-        }
-    }
 }
 
 fn write_if_changed(path: String, content: String) -> Result[(), Error] {
@@ -151,7 +605,7 @@ fn write_if_changed(path: String, content: String) -> Result[(), Error] {
     }
     match Std.Fs.File.write_file(path, content) {
         Ok(_) => Ok(()),
-        Err(e) => Err(IoError("cannot write ${path}", e.to_string())),
+        Err(e) => Err(IoError(context: "cannot write ${path}", message: e.to_string())),
     }
 }
 
@@ -174,232 +628,19 @@ fn wait_with_timeout(child: ChildProcess) -> Result[CommandResult, Error] {
     }
 }
 
-fn invoke_success(compiler: String, cwd: String, valgrind: Bool) -> Result[String, Error] {
-    let cmd = if valgrind {
-        let cwd_abs = match Std.Fs.Directory.get_current_dir() {
-            Ok(d) => d,
-            Err(e) => return Err(IoError("cannot get cwd", e.to_string())),
-        };
-        let supp = "${cwd_abs}/.github/valgrind.supp";
-        Command.new("valgrind")
-            .with_path()
-            .arg("--error-exitcode=1")
-            .arg("--leak-check=no")
-            .arg("--suppressions=${supp}")
-            .arg(compiler)
-            .work_dir(cwd)
-            .with_capture_stdout()
-    } else {
-        Command.new(compiler)
-            .work_dir(cwd)
-            .with_capture_stdout()
-    };
-
-    let result = match wait_with_timeout(cmd.spawn()) {
-        Ok(r) => r,
-        Err(e) => return Err(e),
-    };
-
-    if !result.success() {
-        return Err(ProgramFailed(result.captured_stdout()));
+fn base_build_args(test: TestCase) -> Vec[String] {
+    let args: Vec[String] = Vec.new();
+    args.push("build");
+    if test.nostd && !test.has_package {
+        args.push("--no-std");
     }
-    Ok(result.captured_stdout())
-}
-
-fn invoke_failure(compiler: String, args: Vec[String]) -> Result[String, Error] {
-    let cmd = Command.new(compiler).args(args).with_capture_stdout().run();
-    if cmd.success() {
-        return Err(ExpectedFailureSucceeded(cmd.captured_stdout()));
-    }
-    match cmd.status().signal() {
-        Some(sig) => return Err(Signal(sig)),
-        None => {}
-    }
-    Ok(cmd.captured_stdout())
-}
-
-fn build_run(
-    compiler: String,
-    case: String,
-    nostd: Bool,
-    bless: Bool,
-    valgrind: Bool,
-    cwd: String,
-) -> Result[String, Error] {
-    let bin = "${case}/test_selfhost.bin";
-    let abs_bin = "${cwd}/${bin}";
-    let input = case_input(case);
-
-    let build_args: Vec[String] = Vec.new();
-    build_args.push("build");
-    if nostd && !file_exists("${case}/package.toml") {
-        build_args.push("--no-std");
-    }
-    build_args.push(input);
-    build_args.push("-o");
-    build_args.push(bin);
-
-    let build_start = Instant.now();
-    let build_cmd = Command.new(compiler).args(build_args).with_capture_stdout().run();
-    let build_ms = build_start.elapsed().to_millis();
-
-    if !build_cmd.success() {
-        match build_cmd.status().signal() {
-            Some(sig) => return Err(Signal(sig)),
-            None => {}
-        }
-        return Err(BuildFailed(build_cmd.captured_stdout()));
-    }
-
-    let exec_start = Instant.now();
-    let actual = match invoke_success(abs_bin, case, valgrind) {
-        Ok(s) => s,
-        Err(e) => return Err(e),
-    };
-    let exec_ms = exec_start.elapsed().to_millis();
-
-    let snapshot = "${case}/output.txt";
-    if bless {
-        match write_if_changed(snapshot, actual) {
-            Ok(_) => {}
-            Err(e) => return Err(e),
-        }
-    } else {
-        let expected = match Std.Fs.File.read_file(snapshot) {
-            Ok(s) => s,
-            Err(e) => return Err(IoError("cannot read ${snapshot}", e.to_string())),
-        };
-        if actual != expected {
-            return Err(SnapshotMismatch(snapshot, expected, actual));
-        }
-    }
-
-    Ok("build: ${format_duration(build_ms)} exec: ${format_duration(exec_ms)}")
+    args.push(test.input);
+    args
 }
 
 fn print_indented(msg: String) {
     for line in msg.split("\n") {
         println("          ${line}");
-    }
-}
-
-fn bless_success_case(compiler: String, case: String, nostd: Bool, cwd: String) {
-    print("  ${case} ...");
-    flush();
-    match build_run(compiler, case, nostd, True, False, cwd) {
-        Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
-        Err(e) => {
-            eprintln_str("  [build] failed for ${case}:\n${e}");
-            println(" ${RED}FAILED${RESET}");
-        }
-    }
-}
-
-fn bless_failure_case(compiler: String, case: String) {
-    print("  ${case} ...");
-    flush();
-    let input = case_input(case);
-    let args: Vec[String] = Vec.new();
-    args.push("build");
-    args.push(input);
-    match invoke_failure(compiler, args) {
-        Ok(output) => {
-            let path = "${case}/output.txt";
-            match write_if_changed(path, output) {
-                Ok(_) => println(" ${GREEN}BLESSED${RESET}"),
-                Err(e) => {
-                    eprintln_str("  ${e}");
-                    println(" ${RED}FAILED${RESET}");
-                }
-            }
-        }
-        Err(e) => {
-            eprintln_str("  [build] failed for ${case}:\n${e}");
-            println(" ${RED}FAILED${RESET}");
-        }
-    }
-}
-
-fn run_success_case(
-    compiler: String,
-    case: String,
-    stats: Stats,
-    nostd: Bool,
-    valgrind: Bool,
-    cwd: String,
-) {
-    stats.total = stats.total + 1;
-    print("  ${case} ...");
-    flush();
-
-    if !file_exists(compiler) {
-        println(" ${RED}FAIL${RESET} (compiler not found)");
-        stats.failed = stats.failed + 1;
-        stats.failed_names.push(case);
-        return;
-    }
-
-    match build_run(compiler, case, nostd, False, valgrind, cwd) {
-        Ok(timing) => {
-            println(" ${GREEN}PASS${RESET} (${timing})");
-        }
-        Err(e) => {
-            stats.failed = stats.failed + 1;
-            stats.failed_names.push(case);
-            if e.is_segfault() {
-                println(" ${RED}FAIL - SEGFAULT${RESET}");
-            } else {
-                println(" ${RED}FAIL${RESET}");
-                print_indented(e.to_string());
-            }
-        }
-    }
-}
-
-fn failure_snapshot_test(compiler: String, args: Vec[String], snapshot: String) -> Result[(), Error] {
-    let actual = match invoke_failure(compiler, args) {
-        Ok(s) => s,
-        Err(e) => return Err(e),
-    };
-    let expected = match Std.Fs.File.read_file(snapshot) {
-        Ok(s) => s,
-        Err(e) => return Err(IoError("cannot read ${snapshot}", e.to_string())),
-    };
-    if actual != expected {
-        return Err(SnapshotMismatch(snapshot, expected, actual));
-    }
-    Ok(())
-}
-
-fn run_failure_case(compiler: String, case: String, stats: Stats) {
-    stats.total = stats.total + 1;
-    print("  ${case} ...");
-    flush();
-
-    let snapshot = "${case}/output.txt";
-    let input = case_input(case);
-    let args: Vec[String] = Vec.new();
-    args.push("build");
-    args.push(input);
-
-    let self_start = Instant.now();
-    let result = failure_snapshot_test(compiler, args, snapshot);
-    let timing = format_duration(self_start.elapsed().to_millis());
-
-    match result {
-        Ok(_) => {
-            println(" ${GREEN}PASS${RESET} (${timing})");
-        }
-        Err(e) => {
-            stats.failed = stats.failed + 1;
-            stats.failed_names.push(case);
-            if e.is_segfault() {
-                println(" ${RED}FAIL - SEGFAULT${RESET} (${timing})");
-            } else {
-                println(" ${RED}FAIL${RESET} (${timing})");
-                print_indented(e.to_string());
-            }
-        }
     }
 }
 
@@ -452,73 +693,36 @@ fn main() {
         println("blessing snapshots...");
     }
 
-    let stats = Stats.new();
-    let skipped = 0;
+    let runner = TestRunner.new(compiler, bless, valgrind, cwd);
 
     // nostd success cases
-    let nostd_cases = discover_cases("test/success/nostd", filters);
+    let nostd_cases = discover_cases("test/success/nostd", filters, True);
     println("=== success (${nostd_cases.len()} cases) nostd ===");
-    for case in nostd_cases {
-        if file_exists("${case}/SKIP") {
-            println("  SKIP  ${case} (SKIP file present)");
-            skipped = skipped + 1;
-            continue;
-        }
-        if bless {
-            bless_success_case(compiler, case, True, cwd);
-        } else {
-            run_success_case(compiler, case, stats, True, valgrind, cwd);
-        }
-    }
+    runner.run_success_cases(nostd_cases);
 
     // std success cases
-    let std_cases = discover_cases("test/success/std", filters);
+    let std_cases = discover_cases("test/success/std", filters, False);
     println("=== success (${std_cases.len()} cases) std ===");
-    for case in std_cases {
-        if file_exists("${case}/SKIP") {
-            println("  SKIP  ${case} (SKIP file present)");
-            skipped = skipped + 1;
-            continue;
-        }
-        if bless {
-            bless_success_case(compiler, case, False, cwd);
-        } else {
-            run_success_case(compiler, case, stats, False, valgrind, cwd);
-        }
-    }
+    runner.run_success_cases(std_cases);
 
     // failure cases
     if file_exists("test/failure") {
-        let failure_cases = discover_cases("test/failure", filters);
+        let failure_cases = discover_cases("test/failure", filters, False);
         println("\n=== failure (${failure_cases.len()} cases) ===");
-        for case in failure_cases {
-            if file_exists("${case}/SKIP") {
-                println("  SKIP  ${case} (SKIP file present)");
-                skipped = skipped + 1;
+        for test in failure_cases {
+            if test.skipped {
+                runner.skip_case(test);
                 continue;
             }
-            if bless {
-                bless_failure_case(compiler, case);
+            if runner.bless {
+                runner.bless_failure_case(test);
             } else {
-                run_failure_case(compiler, case, stats);
+                runner.run_failure_case(test);
             }
         }
     }
 
-    if !bless {
-        let passed = stats.total - stats.failed;
-        if skipped > 0 {
-            println("\n${skipped} skipped");
-        }
-        println("${passed}/${stats.total} passed");
-        if stats.failed > 0 {
-            println("\nfailed tests:");
-            for name in stats.failed_names {
-                println("  ${name}");
-            }
-            Sys.exit(1.as_i32());
-        }
-    }
+    runner.report_final();
 }
 
 }
