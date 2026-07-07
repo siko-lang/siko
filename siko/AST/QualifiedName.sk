@@ -41,6 +41,11 @@ pub enum BaseName {
     // identity is unique per enum instantiation and never collides with user
     // structs.
     VariantPayload(enum_name: I.String, variant_name: I.String),
+    // The generated constructor function of a struct or enum variant.
+    // owner is the hashed monomorphic name of what it constructs, so the
+    // ctor identity is unique per instantiation and never collides with
+    // user functions.
+    Ctor(owner: I.String),
 
     pub fn name(bn: BaseName) -> I.String {
         match bn {
@@ -72,6 +77,7 @@ pub enum BaseName {
             Tuple(args) => I.intern("__tuple_" + format_types(args) + "_"),
             EffectAssociatedType(m, e, t) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(t)),
             VariantPayload(e, v) => I.intern(I.resolve(e) + "." + I.resolve(v) + ".payload"),
+            Ctor(owner) => I.intern(I.resolve(owner) + ".ctor"),
         }
     }
 }
@@ -297,6 +303,11 @@ pub enum QualifiedName {
 
     pub fn new_variant_payload(enum_name: I.String, variant_name: I.String) -> QualifiedName {
         Base(BaseNameInfo.new(BaseName.VariantPayload(enum_name, variant_name)))
+    }
+
+    // The generated constructor function for a struct or enum variant.
+    pub fn new_ctor(owner: QualifiedName) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Ctor(I.intern(owner.hashed()))))
     }
 
     // Returns the short identifier name: the last component of the base name

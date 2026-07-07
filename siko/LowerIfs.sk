@@ -1,0 +1,127 @@
+module Siko.LowerIfs {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.Type
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Constants.Builtins as B
+
+// Rewrites every If into a Bool match:
+//
+//   if c { t } else { e }   =>   match c { True => t, _ => e }
+//
+// Runs immediately before lower-basic-block, after the last pass that can
+// create or restructure Ifs (lower-match decision trees, &&/|| desugar, and
+// the normalizer re-runs inside closure/coroutine lowering). From here on
+// the only conditional construct is the enum match, so basic block lowering
+// needs a single terminator shape (Switch) and no downstream stage ever
+// reads a Bool tag specially.
+
+struct IfLowerer {
+    true_qname: QualifiedName,
+
+    fn lower_if(l: IfLowerer, cond: Expr, then_branch: Expr, else_branch: Option[Expr], loc: Location, ty: Option[TypeDef]) -> ExprKind {
+        let cond = l.lower_expr(cond);
+        let then_body = l.lower_expr(then_branch);
+        let else_body = match else_branch {
+            Some(e) => l.lower_expr(e),
+            None => Expr(ExprKind.Block(BlockInfo(Vec.new())), loc.clone(), ty),
+        };
+        let true_pat = Pattern(
+            PatternKind.Named(NamedPatternInfo(Name.inner(l.true_qname.clone()), Vec.new(), Vec.new(), False)),
+            loc.clone(),
+            cond.ty.clone(),
+        );
+        let wild_pat = Pattern(PatternKind.Wildcard, loc, cond.ty.clone());
+        let arms: Vec[MatchArm] = Vec.new();
+        arms.push(MatchArm(true_pat, then_body));
+        arms.push(MatchArm(wild_pat, else_body));
+        ExprKind.Match(MatchInfo(cond, arms))
+    }
+
+    fn lower_exprs(l: IfLowerer, exprs: Vec[Expr]) -> Vec[Expr] {
+        let out: Vec[Expr] = Vec.new();
+        for expr in exprs {
+            out.push(l.lower_expr(expr));
+        }
+        out
+    }
+
+    fn lower_expr(l: IfLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let kind = match expr.kind {
+            ExprKind.If(cond, then_branch, else_branch) =>
+                return Expr(l.lower_if(cond, then_branch, else_branch, loc.clone(), expr.ty.clone()), loc, expr.ty),
+            ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+                let new_arms: Vec[MatchArm] = Vec.new();
+                for arm in arms {
+                    arm.body = l.lower_expr(arm.body);
+                    new_arms.push(arm);
+                }
+                ExprKind.Match(MatchInfo(l.lower_expr(scrutinee), new_arms))
+            }
+            ExprKind.Return(inner) => ExprKind.Return(l.lower_expr(inner)),
+            ExprKind.Paren(inner) => ExprKind.Paren(l.lower_expr(inner)),
+            ExprKind.BinaryOp(op, lhs, rhs) => ExprKind.BinaryOp(op, l.lower_expr(lhs), l.lower_expr(rhs)),
+            ExprKind.UnaryOp(op, inner) => ExprKind.UnaryOp(op, l.lower_expr(inner)),
+            ExprKind.FunctionCall(info) => {
+                info.args = l.lower_exprs(info.args);
+                ExprKind.FunctionCall(info)
+            }
+            ExprKind.DynamicCall(callee, args) => ExprKind.DynamicCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.FunctionPtrCall(callee, args) => ExprKind.FunctionPtrCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.FieldAccess(receiver, field) => ExprKind.FieldAccess(l.lower_expr(receiver), field),
+            ExprKind.Transmute(inner) => ExprKind.Transmute(l.lower_expr(inner)),
+            ExprKind.Discriminator(inner) => ExprKind.Discriminator(l.lower_expr(inner)),
+            ExprKind.Deref(inner) => ExprKind.Deref(l.lower_expr(inner)),
+            ExprKind.AddrOf(inner) => ExprKind.AddrOf(l.lower_expr(inner)),
+            ExprKind.Index(base, index) => ExprKind.Index(l.lower_expr(base), l.lower_expr(index)),
+            ExprKind.Tuple(items) => ExprKind.Tuple(l.lower_exprs(items)),
+            // Leaves (literals, vars, gotos, labels, break/continue, sizeof, ...):
+            // post-normalizer, an If can only sit in the containers above.
+            _ => expr.kind,
+        };
+        Expr(kind, loc, expr.ty)
+    }
+
+    fn lower_stmts(l: IfLowerer, stmts: Vec[S.Statement]) -> Vec[S.Statement] {
+        let out: Vec[S.Statement] = Vec.new();
+        for stmt in stmts {
+            let new_stmt = match stmt {
+                S.Statement.Let(info) => {
+                    info.rhs = l.lower_expr(info.rhs);
+                    S.Statement.Let(info)
+                }
+                S.Statement.Declare(_) => stmt,
+                S.Statement.Assign(lhs, rhs) => S.Statement.Assign(l.lower_expr(lhs), l.lower_expr(rhs)),
+                S.Statement.Expr(e) => S.Statement.Expr(l.lower_expr(e)),
+                S.Statement.TrailingExpr(e) => S.Statement.TrailingExpr(l.lower_expr(e)),
+                S.Statement.Loop(body) => S.Statement.Loop(l.lower_stmts(body)),
+                _ => panic("lower-ifs: unexpected statement kind"),
+            };
+            out.push(new_stmt);
+        }
+        out
+    }
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+pub fn lower_ifs(program: Program) {
+    let l = IfLowerer(B.get_bool_true_qn().as_mono());
+    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in keys {
+        let func = program.functions.get(key).unwrap();
+        if let Some(body) = func.body {
+            func.body = Some(l.lower_expr(body));
+            program.functions.insert(key, func);
+        }
+    }
+}
+
+}

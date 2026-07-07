@@ -71,6 +71,8 @@ struct Normalizer {
             ExprKind.Name(_) | ExprKind.Var(_) | ExprKind.ImplicitRef(_) |
             ExprKind.CreateClosure(_) | ExprKind.SizeOf(_) => Some(expr),
 
+            ExprKind.Alloc(_) => panic("normalizer: Alloc exists before lower-enums"),
+
             ExprKind.Discriminator(inner) => {
                 let lowered = match norm.lower_expr(inner, out) {
                     None => return None,

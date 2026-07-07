@@ -35,7 +35,10 @@ import Siko.ClosureLoweringV3.Resolve as ClosureLoweringV3Resolve
 import Siko.ClosureLoweringV3.Lower as ClosureLoweringV3Lower
 import Siko.ClosureLoweringV3.Statistics as ClosureLoweringV3Statistics
 import Siko.CoroutineLowering
+import Siko.LowerIfs
 import Siko.LowerBasicBlock
+import Siko.LowerPointers
+import Siko.LowerEnums
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
 import Siko.ValueTypes as ValueTypes
@@ -265,9 +268,27 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 }),
             ),
             Pass(
+                name: "lower-ifs",
+                label: "Lowering ifs...",
+                run: |driver| { lower_ifs(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
                 name: "lower-basic-block",
                 label: "Lowering basic blocks...",
                 run: |driver| { lower_basic_blocks(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-pointers",
+                label: "Lowering pointers...",
+                run: |driver| { lower_pointers(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-enums",
+                label: "Lowering enums...",
+                run: |driver| { lower_enums(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
             ),
             Pass(

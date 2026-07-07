@@ -80,18 +80,6 @@ fn format_type(f: Formatter, ty: CType) {
             format_type(f, elem);
             f.push("[${n}]");
         }
-        CType.Union(fields) => {
-            f.push("union {\n");
-            f.indent = f.indent + 1;
-            for field in fields {
-                f.emit_indent();
-                format_named_decl(f, field.ty, field.name);
-                f.push(";\n");
-            }
-            f.indent = f.indent - 1;
-            f.emit_indent();
-            f.push("}");
-        }
     }
 }
 
@@ -419,11 +407,6 @@ fn collect_hard_deps(ty: CType, deps: Vec[String]) {
         CType.Named(s)        => deps.push(s),
         CType.Ptr(_)          => {},
         CType.Array(elem, _)  => collect_hard_deps(elem, deps),
-        CType.Union(fields)   => {
-            for field in fields {
-                collect_hard_deps(field.ty, deps);
-            }
-        }
         _ => {},
     }
 }
@@ -525,6 +508,14 @@ pub fn format(program: CProgram) -> String {
     f.push("\n");
 
     format_structs(f, program.structs);
+
+    for a in program.asserts {
+        f.push("_Static_assert(sizeof(struct ${a.struct_name}) == ${a.size}, \"sizeof ${a.struct_name}\");\n");
+        f.push("_Static_assert(_Alignof(struct ${a.struct_name}) == ${a.align}, \"alignof ${a.struct_name}\");\n");
+    }
+    if !program.asserts.is_empty() {
+        f.push("\n");
+    }
 
     format_globals(f, program.globals);
     if !program.globals.is_empty() {

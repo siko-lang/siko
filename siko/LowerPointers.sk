@@ -1,0 +1,213 @@
+module Siko.LowerPointers {
+
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Constants.Builtins as B
+import Siko.Format.Utils
+
+// Makes heap representation explicit in the types: after this pass a
+// TypeDef.Named always means an inline (by-value) struct and every heap
+// (non-value-type) datatype appears as TypeDef.Ptr(Named). Until now that
+// decision was implicit and re-derived by the C backend from the value_type
+// flags; making it structural lets later passes (enum layout, LLVM lowering)
+// compute sizes and alignments from the type alone.
+//
+// Runs after lower-basic-block, so it only has to handle the flat
+// basic-block statement/expression grammar. It rewrites types only; heap
+// values are still created exclusively by constructor calls, so no
+// allocation expressions are needed here.
+
+struct PointerLowerer {
+    program: Program,
+    // Builtin integer types lower to C scalars regardless of their
+    // value_type flag; mirror the backend's precedence exactly.
+    builtin_scalars: Set[QualifiedName],
+
+    // ─── Types ────────────────────────────────────────────────────────────────
+
+    fn is_heap(l: PointerLowerer, qname: QualifiedName) -> Bool {
+        if l.builtin_scalars.contains(qname) {
+            return False;
+        }
+        if let Some(s) = l.program.structs.get(qname) {
+            return !s.value_type;
+        }
+        if let Some(e) = l.program.enums.get(qname) {
+            return !e.value_type;
+        }
+        // Unknown named types were pointers in the old backend rule; keep that.
+        True
+    }
+
+    fn lower_type(l: PointerLowerer, ty: TypeDef) -> TypeDef {
+        match ty {
+            TypeDef.Named(NamedInfo(name, args)) => {
+                // Type args are instantiation metadata (the mono qname already
+                // encodes them); representation applies to the type itself only.
+                let named = TypeDef.Named(NamedInfo(name, args));
+                if l.is_heap(name.resolved()) {
+                    TypeDef.Ptr(named)
+                } else {
+                    named
+                }
+            }
+            TypeDef.Ptr(inner) => TypeDef.Ptr(l.lower_type(inner)),
+            TypeDef.FnPtr(params, ret) => {
+                let new_params: Vec[TypeDef] = Vec.new();
+                for param in params {
+                    new_params.push(l.lower_type(param));
+                }
+                TypeDef.FnPtr(new_params, l.lower_type(ret))
+            }
+            TypeDef.Array(inner, n) => TypeDef.Array(l.lower_type(inner), n),
+            TypeDef.Paren(inner) => l.lower_type(inner),
+            TypeDef.Never(_) | TypeDef.Void | TypeDef.VoidPtr | TypeDef.Numeric(_) => ty,
+            ty => panic("lower-pointers: unexpected type ${format_type(ty)}"),
+        }
+    }
+
+    fn lower_type_opt(l: PointerLowerer, ty: Option[TypeDef]) -> Option[TypeDef] {
+        match ty {
+            Some(t) => Some(l.lower_type(t)),
+            None => None,
+        }
+    }
+
+    // ─── Expressions ──────────────────────────────────────────────────────────
+
+    fn lower_exprs(l: PointerLowerer, exprs: Vec[Expr]) -> Vec[Expr] {
+        let out: Vec[Expr] = Vec.new();
+        for expr in exprs {
+            out.push(l.lower_expr(expr));
+        }
+        out
+    }
+
+    fn lower_expr(l: PointerLowerer, expr: Expr) -> Expr {
+        let kind = match expr.kind {
+            ExprKind.IntLiteral(_) |
+            ExprKind.StringLiteral(_) |
+            ExprKind.CharLiteral(_) |
+            ExprKind.Var(_) |
+            ExprKind.FunctionPtr(_) |
+            ExprKind.Goto(_) |
+            ExprKind.Label(_) => expr.kind,
+            ExprKind.BinaryOp(op, lhs, rhs) => ExprKind.BinaryOp(op, l.lower_expr(lhs), l.lower_expr(rhs)),
+            ExprKind.UnaryOp(op, inner) => ExprKind.UnaryOp(op, l.lower_expr(inner)),
+            ExprKind.FieldAccess(receiver, field) => ExprKind.FieldAccess(l.lower_expr(receiver), field),
+            ExprKind.FunctionCall(info) => {
+                info.args = l.lower_exprs(info.args);
+                ExprKind.FunctionCall(info)
+            }
+            ExprKind.DynamicCall(callee, args) => ExprKind.DynamicCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.FunctionPtrCall(callee, args) => ExprKind.FunctionPtrCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.Return(inner) => ExprKind.Return(l.lower_expr(inner)),
+            ExprKind.Switch(tag, arms) => ExprKind.Switch(l.lower_expr(tag), l.lower_exprs(arms)),
+            ExprKind.EnumTag(inner) => ExprKind.EnumTag(l.lower_expr(inner)),
+            ExprKind.ReadVariant(value, tag) => ExprKind.ReadVariant(l.lower_expr(value), l.lower_expr(tag)),
+            ExprKind.Transmute(inner) => ExprKind.Transmute(l.lower_expr(inner)),
+            ExprKind.SizeOf(ty) => ExprKind.SizeOf(l.lower_type(ty)),
+            ExprKind.Discriminator(inner) => ExprKind.Discriminator(l.lower_expr(inner)),
+            ExprKind.Deref(inner) => ExprKind.Deref(l.lower_expr(inner)),
+            ExprKind.AddrOf(inner) => ExprKind.AddrOf(l.lower_expr(inner)),
+            ExprKind.Paren(inner) => ExprKind.Paren(l.lower_expr(inner)),
+            ExprKind.Index(base, index) => ExprKind.Index(l.lower_expr(base), l.lower_expr(index)),
+            ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
+            _ => panic("lower-pointers: unexpected expression kind after basic block lowering"),
+        };
+        Expr(kind, expr.location, l.lower_type_opt(expr.ty))
+    }
+
+    // ─── Statements ───────────────────────────────────────────────────────────
+
+    fn lower_stmts(l: PointerLowerer, stmts: Vec[S.Statement]) -> Vec[S.Statement] {
+        let out: Vec[S.Statement] = Vec.new();
+        for stmt in stmts {
+            let new_stmt = match stmt {
+                S.Statement.Let(info) => {
+                    info.ty = l.lower_type_opt(info.ty);
+                    info.rhs = l.lower_expr(info.rhs);
+                    S.Statement.Let(info)
+                }
+                S.Statement.Declare(info) => {
+                    info.ty = l.lower_type_opt(info.ty);
+                    S.Statement.Declare(info)
+                }
+                S.Statement.Assign(lhs, rhs) => S.Statement.Assign(l.lower_expr(lhs), l.lower_expr(rhs)),
+                S.Statement.Expr(e) => S.Statement.Expr(l.lower_expr(e)),
+                _ => panic("lower-pointers: unexpected statement after basic block lowering"),
+            };
+            out.push(new_stmt);
+        }
+        out
+    }
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+pub fn lower_pointers(program: Program) {
+    let builtin_scalars: Set[QualifiedName] = Set.new();
+    builtin_scalars.insert(B.get_int_type_qn().as_mono());
+    builtin_scalars.insert(B.get_i8_type_qn().as_mono());
+    builtin_scalars.insert(B.get_i16_type_qn().as_mono());
+    builtin_scalars.insert(B.get_i32_type_qn().as_mono());
+    builtin_scalars.insert(B.get_i64_type_qn().as_mono());
+    builtin_scalars.insert(B.get_u8_type_qn().as_mono());
+    builtin_scalars.insert(B.get_u16_type_qn().as_mono());
+    builtin_scalars.insert(B.get_u32_type_qn().as_mono());
+    builtin_scalars.insert(B.get_u64_type_qn().as_mono());
+    let l = PointerLowerer(program, builtin_scalars);
+
+    let struct_keys: Vec[QualifiedName] = program.structs.keys().cloned().collect();
+    for key in struct_keys {
+        let sdef = program.structs.get(key).unwrap();
+        let new_fields: Vec[FieldDef] = Vec.new();
+        for field in sdef.fields {
+            field.ty = l.lower_type(field.ty);
+            new_fields.push(field);
+        }
+        sdef.fields = new_fields;
+        program.structs.insert(key, sdef);
+    }
+
+    let enum_keys: Vec[QualifiedName] = program.enums.keys().cloned().collect();
+    for key in enum_keys {
+        let edef = program.enums.get(key).unwrap();
+        let new_variants: Vec[VariantDef] = Vec.new();
+        for variant in edef.variants {
+            let new_items: Vec[ItemInfo] = Vec.new();
+            for item in variant.items {
+                item.ty = l.lower_type(item.ty);
+                new_items.push(item);
+            }
+            variant.items = new_items;
+            new_variants.push(variant);
+        }
+        edef.variants = new_variants;
+        program.enums.insert(key, edef);
+    }
+
+    let fn_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in fn_keys {
+        let func = program.functions.get(key).unwrap();
+        let new_args: Vec[FunctionArg] = Vec.new();
+        for arg in func.args {
+            arg.type_def = l.lower_type(arg.type_def);
+            new_args.push(arg);
+        }
+        func.args = new_args;
+        func.result_type = l.lower_type_opt(func.result_type);
+        if let Some(body) = func.body {
+            func.body = Some(l.lower_expr(body));
+        }
+        program.functions.insert(key, func);
+    }
+}
+
+}

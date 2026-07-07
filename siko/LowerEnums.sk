@@ -1,0 +1,429 @@
+module Siko.LowerEnums {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.AST.Data
+import Siko.AST.Function
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Constants.Builtins as B
+import Siko.VariantPayloads as VP
+import Siko.Layout
+import Siko.Utils.VarAllocator
+import Siko.Interner as I
+
+// Converts enums into plain structs. Every enum becomes a container struct
+// { tag: U32, payload: uintN[count] } where N is the maximum alignment of the
+// stored variant payloads and count * N covers the largest payload including
+// its padding (heap enums store a pointer to the payload, so their buffer is
+// one uint64). The container is inserted into Program.structs under the
+// enum's own qname; Program.enums is kept as metadata for the C backend's
+// variant constructor synthesis.
+//
+// Expression rewrites (bodies are in post-lower-pointers basic block form):
+//   EnumTag(v)         -> Transmute(v.tag): Int
+//   Discriminator(v)   -> same as EnumTag for enums, literal 0 otherwise
+//   ReadVariant(v, _)  -> *(P*)&v.payload   (Deref(Transmute(AddrOf(FieldAccess))))
+//
+// The pass also materializes every struct and variant constructor as a real
+// Program function (under QualifiedName.new_ctor) and rewrites ctor call
+// sites to plain UserDefined calls, so the backend synthesizes no function
+// bodies at all. Heap construction uses ExprKind.Alloc.
+//
+// After this pass no downstream stage knows what an enum is: the C backend
+// needs no unions, and match dispatch is a switch on an ordinary field.
+
+struct EnumLowerer {
+    program: Program,
+    int_ty: TypeDef,
+    u32_ty: TypeDef,
+    // Container payload field type per enum; absent when the enum has no payload.
+    payload_types: Map[QualifiedName, TypeDef],
+
+    // ─── Rewrite helpers ──────────────────────────────────────────────────────
+
+    // `expr.tag` as a Siko Int, matching what EnumTag used to produce.
+    fn tag_read(l: EnumLowerer, inner: Expr, loc: Location) -> Expr {
+        let fa = Expr(
+            ExprKind.FieldAccess(inner, Identifier.new(VP.container_tag_name(), loc.clone())),
+            loc.clone(),
+            Some(l.u32_ty.clone()),
+        );
+        Expr(ExprKind.Transmute(fa), loc, Some(l.int_ty.clone()))
+    }
+
+    // `*(P*)&value.payload` typed as the ReadVariant result (P inline for
+    // value enums, P* for heap enums; the extra Ptr level falls out of the
+    // types themselves).
+    fn payload_read(l: EnumLowerer, value: Expr, result_ty: TypeDef, loc: Location) -> Expr {
+        let enum_qname = match named_qname(value.ty) {
+            Some(qname) => qname,
+            None => panic("lower-enums: ReadVariant scrutinee is not an enum type"),
+        };
+        let payload_ty = match l.payload_types.get(enum_qname) {
+            Some(ty) => ty,
+            None => panic("lower-enums: ReadVariant on payload-less enum"),
+        };
+        let fa = Expr(
+            ExprKind.FieldAccess(value, Identifier.new(VP.container_payload_name(), loc.clone())),
+            loc.clone(),
+            Some(payload_ty.clone()),
+        );
+        let addr = Expr(ExprKind.AddrOf(fa), loc.clone(), Some(TypeDef.Ptr(payload_ty)));
+        let cast = Expr(ExprKind.Transmute(addr), loc.clone(), Some(TypeDef.Ptr(result_ty.clone())));
+        Expr(ExprKind.Deref(cast), loc, Some(result_ty))
+    }
+
+    // ─── Expressions ──────────────────────────────────────────────────────────
+
+    fn lower_exprs(l: EnumLowerer, exprs: Vec[Expr]) -> Vec[Expr] {
+        let out: Vec[Expr] = Vec.new();
+        for expr in exprs {
+            out.push(l.lower_expr(expr));
+        }
+        out
+    }
+
+    fn lower_expr(l: EnumLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let kind = match expr.kind {
+            ExprKind.EnumTag(inner) => return l.tag_read(l.lower_expr(inner), loc),
+            ExprKind.Discriminator(inner) => {
+                let is_enum = match named_qname(inner.ty) {
+                    Some(qname) => l.program.enums.contains_key(qname),
+                    None => False,
+                };
+                if is_enum {
+                    return l.tag_read(l.lower_expr(inner), loc);
+                }
+                return Expr(ExprKind.IntLiteral("0"), loc, Some(l.int_ty.clone()));
+            }
+            ExprKind.ReadVariant(value, _) => {
+                let result_ty = expr.ty.expect("lower-enums: ReadVariant has no type");
+                return l.payload_read(l.lower_expr(value), result_ty, loc);
+            }
+            ExprKind.IntLiteral(_) |
+            ExprKind.StringLiteral(_) |
+            ExprKind.CharLiteral(_) |
+            ExprKind.Var(_) |
+            ExprKind.FunctionPtr(_) |
+            ExprKind.Goto(_) |
+            ExprKind.Label(_) |
+            ExprKind.SizeOf(_) => expr.kind,
+            ExprKind.BinaryOp(op, lhs, rhs) => ExprKind.BinaryOp(op, l.lower_expr(lhs), l.lower_expr(rhs)),
+            ExprKind.UnaryOp(op, inner) => ExprKind.UnaryOp(op, l.lower_expr(inner)),
+            ExprKind.FieldAccess(receiver, field) => ExprKind.FieldAccess(l.lower_expr(receiver), field),
+            ExprKind.FunctionCall(info) => {
+                info.args = l.lower_exprs(info.args);
+                match info.kind {
+                    FunctionKind.StructCtor | FunctionKind.VariantCtor => {
+                        info.qname = QualifiedName.new_ctor(info.qname);
+                        info.kind = FunctionKind.UserDefined;
+                    }
+                    _ => {}
+                }
+                ExprKind.FunctionCall(info)
+            }
+            ExprKind.DynamicCall(callee, args) => ExprKind.DynamicCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.FunctionPtrCall(callee, args) => ExprKind.FunctionPtrCall(l.lower_expr(callee), l.lower_exprs(args)),
+            ExprKind.Return(inner) => ExprKind.Return(l.lower_expr(inner)),
+            ExprKind.Switch(tag, arms) => ExprKind.Switch(l.lower_expr(tag), l.lower_exprs(arms)),
+            ExprKind.Transmute(inner) => ExprKind.Transmute(l.lower_expr(inner)),
+            ExprKind.Deref(inner) => ExprKind.Deref(l.lower_expr(inner)),
+            ExprKind.AddrOf(inner) => ExprKind.AddrOf(l.lower_expr(inner)),
+            ExprKind.Paren(inner) => ExprKind.Paren(l.lower_expr(inner)),
+            ExprKind.Index(base, index) => ExprKind.Index(l.lower_expr(base), l.lower_expr(index)),
+            ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
+            _ => panic("lower-enums: unexpected expression kind after basic block lowering"),
+        };
+        Expr(kind, loc, expr.ty)
+    }
+
+    // ─── Statements ───────────────────────────────────────────────────────────
+
+    fn lower_stmts(l: EnumLowerer, stmts: Vec[S.Statement]) -> Vec[S.Statement] {
+        let out: Vec[S.Statement] = Vec.new();
+        for stmt in stmts {
+            let new_stmt = match stmt {
+                S.Statement.Let(info) => {
+                    info.rhs = l.lower_expr(info.rhs);
+                    S.Statement.Let(info)
+                }
+                S.Statement.Declare(_) => stmt,
+                S.Statement.Assign(lhs, rhs) => S.Statement.Assign(l.lower_expr(lhs), l.lower_expr(rhs)),
+                S.Statement.Expr(e) => S.Statement.Expr(l.lower_expr(e)),
+                _ => panic("lower-enums: unexpected statement after basic block lowering"),
+            };
+            out.push(new_stmt);
+        }
+        out
+    }
+}
+
+// ─── Constructor generation ───────────────────────────────────────────────────
+//
+// Bodies are straight-line statement lists in the post-basic-block form the
+// backend consumes: Declare/Let + field assigns + Return. Params and locals
+// are allocator temps, so names never collide.
+
+struct CtorBuilder {
+    var_alloc: VarAllocator,
+    stmts: Vec[S.Statement],
+    loc: Location,
+
+    fn var_expr(b: CtorBuilder, name: VariableName, ty: TypeDef) -> Expr {
+        Expr(ExprKind.Var(name), b.loc.clone(), Some(ty))
+    }
+
+    fn field_access(b: CtorBuilder, receiver: Expr, name: I.String, ty: TypeDef) -> Expr {
+        Expr(
+            ExprKind.FieldAccess(receiver, Identifier.new(name, b.loc.clone())),
+            b.loc.clone(),
+            Some(ty),
+        )
+    }
+
+    // Declares (or allocates, for heap types) a fresh local of type `ty`.
+    fn new_local(b: CtorBuilder, ty: TypeDef, is_heap: Bool) -> VariableName {
+        let name = b.var_alloc.allocate_temp();
+        if is_heap {
+            let pointee = match ty.clone() {
+                TypeDef.Ptr(inner) => inner,
+                _ => panic("lower-enums: heap ctor local is not Ptr typed"),
+            };
+            let alloc = Expr(ExprKind.Alloc(pointee), b.loc.clone(), Some(ty.clone()));
+            b.stmts.push(S.Statement.Let(S.LetInfo(name.clone(), Some(ty), alloc)));
+        } else {
+            b.stmts.push(S.Statement.Declare(S.DeclareInfo(name.clone(), Some(ty))));
+        }
+        name
+    }
+
+    fn assign_field(b: CtorBuilder, receiver: Expr, field: I.String, value: Expr) {
+        let field_ty = value.ty.clone().expect("lower-enums: ctor field value has no type");
+        b.stmts.push(S.Statement.Assign(b.field_access(receiver, field, field_ty), value));
+    }
+
+    fn ret(b: CtorBuilder, value: Expr) {
+        b.stmts.push(S.Statement.Expr(Expr(ExprKind.Return(value), b.loc.clone(), Some(TypeDef.Void))));
+    }
+}
+
+// Shared scaffolding: builds the FunctionDef around a generated ctor body.
+fn make_ctor_fn(owner: QualifiedName, module_name: I.String, params: Vec[FunctionArg], ret_ty: TypeDef, b: CtorBuilder) -> (QualifiedName, FunctionDef) {
+    let ctor_qn = QualifiedName.new_ctor(owner);
+    let body = Expr(ExprKind.Block(BlockInfo(b.stmts)), b.loc.clone(), Some(ret_ty.clone()));
+    let fdef = FunctionDef(
+        annotations: Vec.new(),
+        public: False,
+        name: Identifier.new(I.intern("ctor"), b.loc.clone()),
+        qualified_name: Some(ctor_qn.clone()),
+        kind: FunctionDefKind.Regular,
+        type_arg_defs: None,
+        args: params,
+        yield_type: None,
+        result_type: Some(ret_ty),
+        body: Some(body),
+        module_name: module_name,
+        var_allocator: b.var_alloc,
+        is_varargs: False,
+        default_value_names: Vec.new(),
+        source_package: None,
+    );
+    (ctor_qn, fdef)
+}
+
+fn generate_struct_ctor(sdef: StructDef) -> (QualifiedName, FunctionDef) {
+    let qname = sdef.qualified_name.unwrap();
+    let is_heap = !sdef.value_type;
+    let struct_ty = TypeDef.Named(NamedInfo(Name.inner(qname.clone()), []));
+    let ret_ty = if is_heap { TypeDef.Ptr(struct_ty.clone()) } else { struct_ty };
+    let b = CtorBuilder(VarAllocator.new(), Vec.new(), sdef.name.location.clone());
+    let params: Vec[FunctionArg] = Vec.new();
+    let param_names: Vec[VariableName] = Vec.new();
+    for field in sdef.fields.iter() {
+        let name = b.var_alloc.allocate_temp();
+        params.push(FunctionArg(name: name.clone(), type_def: field.ty.clone(), default_value: None));
+        param_names.push(name);
+    }
+    let result = b.new_local(ret_ty.clone(), is_heap);
+    for (i, field) in sdef.fields.iter().enumerate() {
+        b.assign_field(
+            b.var_expr(result.clone(), ret_ty.clone()),
+            field.name.name(),
+            b.var_expr(param_names[i].clone(), field.ty.clone()),
+        );
+    }
+    b.ret(b.var_expr(result, ret_ty.clone()));
+    make_ctor_fn(qname, sdef.module_name, params, ret_ty, b)
+}
+
+fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_types: Map[QualifiedName, TypeDef], u32_ty: TypeDef) -> (QualifiedName, FunctionDef) {
+    let enum_qname = edef.qualified_name.unwrap();
+    let is_heap = !edef.value_type;
+    let enum_named = TypeDef.Named(NamedInfo(Name.inner(enum_qname.clone()), []));
+    let ret_ty = if is_heap { TypeDef.Ptr(enum_named.clone()) } else { enum_named };
+    let payload_named = VP.payload_type(enum_qname.clone(), variant);
+    let payload_repr = if is_heap { TypeDef.Ptr(payload_named.clone()) } else { payload_named.clone() };
+    let has_payload = !variant.items.is_empty();
+
+    let b = CtorBuilder(VarAllocator.new(), Vec.new(), variant.name.location.clone());
+    let params: Vec[FunctionArg] = Vec.new();
+    let param_names: Vec[VariableName] = Vec.new();
+    for item in variant.items.iter() {
+        let name = b.var_alloc.allocate_temp();
+        params.push(FunctionArg(name: name.clone(), type_def: item.ty.clone(), default_value: None));
+        param_names.push(name);
+    }
+
+    let variant_var: Option[VariableName] = None;
+    if has_payload {
+        let v = b.new_local(payload_repr.clone(), is_heap);
+        for (i, item) in variant.items.iter().enumerate() {
+            b.assign_field(
+                b.var_expr(v.clone(), payload_repr.clone()),
+                VP.payload_field_name(i),
+                b.var_expr(param_names[i].clone(), item.ty.clone()),
+            );
+        }
+        variant_var = Some(v);
+    }
+
+    let result = b.new_local(ret_ty.clone(), is_heap);
+    b.assign_field(
+        b.var_expr(result.clone(), ret_ty.clone()),
+        VP.container_tag_name(),
+        Expr(ExprKind.IntLiteral("${tag}"), b.loc.clone(), Some(u32_ty)),
+    );
+    if let Some(v) = variant_var {
+        // *(P*)&result.payload = variant  (P* is P** for heap enums)
+        let buffer_ty = payload_types
+            .get(enum_qname)
+            .expect("lower-enums: variant with payload but container has no payload field");
+        let fa = b.field_access(b.var_expr(result.clone(), ret_ty.clone()), VP.container_payload_name(), buffer_ty.clone());
+        let addr = Expr(ExprKind.AddrOf(fa), b.loc.clone(), Some(TypeDef.Ptr(buffer_ty)));
+        let cast = Expr(ExprKind.Transmute(addr), b.loc.clone(), Some(TypeDef.Ptr(payload_repr.clone())));
+        let slot = Expr(ExprKind.Deref(cast), b.loc.clone(), Some(payload_repr.clone()));
+        b.stmts.push(S.Statement.Assign(slot, b.var_expr(v, payload_repr)));
+    }
+    b.ret(b.var_expr(result, ret_ty.clone()));
+    make_ctor_fn(variant.qualified_name.unwrap(), edef.module_name, params, ret_ty, b)
+}
+
+// The named type behind a (possibly Ptr-wrapped) type.
+fn named_qname(ty: Option[TypeDef]) -> Option[QualifiedName] {
+    match ty {
+        Some(TypeDef.Named(NamedInfo(name, _))) => Some(name.resolved()),
+        Some(TypeDef.Ptr(TypeDef.Named(NamedInfo(name, _)))) => Some(name.resolved()),
+        _ => None,
+    }
+}
+
+fn builtin_ty(qname: QualifiedName) -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(qname), []))
+}
+
+fn payload_elem_ty(elem_align: Int) -> TypeDef {
+    let qname = match elem_align {
+        1 => B.get_u8_type_qn().as_mono(),
+        2 => B.get_u16_type_qn().as_mono(),
+        4 => B.get_u32_type_qn().as_mono(),
+        8 => B.get_u64_type_qn().as_mono(),
+        n => panic("lower-enums: unsupported payload alignment ${n}"),
+    };
+    builtin_ty(qname)
+}
+
+// ─── Entry point ──────────────────────────────────────────────────────────────
+
+pub fn lower_enums(program: Program) {
+    let engine = LayoutEngine.new(program);
+    let int_ty = builtin_ty(B.get_int_type_qn().as_mono());
+    let u32_ty = builtin_ty(B.get_u32_type_qn().as_mono());
+
+    // Build one container struct per enum.
+    let payload_types: Map[QualifiedName, TypeDef] = Map.new();
+    let containers: Map[QualifiedName, StructDef] = Map.new();
+    for edef in program.enums.values() {
+        let qname = edef.qualified_name.unwrap();
+        let shape = engine.payload_shape(edef);
+        let loc = edef.name.location.clone();
+        let fields: Vec[FieldDef] = Vec.new();
+        fields.push(FieldDef(
+            False,
+            Identifier.new(VP.container_tag_name(), loc.clone()),
+            u32_ty.clone(),
+            None,
+        ));
+        if shape.count > 0 {
+            let payload_ty = TypeDef.Array(payload_elem_ty(shape.elem_align), shape.count);
+            fields.push(FieldDef(
+                False,
+                Identifier.new(VP.container_payload_name(), loc.clone()),
+                payload_ty.clone(),
+                None,
+            ));
+            payload_types.insert(qname.clone(), payload_ty);
+        }
+        containers.insert(
+            qname.clone(),
+            StructDef(
+                annotations: [],
+                public: False,
+                name: Identifier.new(qname.name(), loc),
+                qualified_name: Some(qname),
+                type_arg_defs: None,
+                fields: fields,
+                all_fields_public: False,
+                methods: [],
+                method_map: MethodMap.new(),
+                module_name: I.intern(""),
+                default_value_names: Vec.new(),
+                value_type: edef.value_type,
+            ),
+        );
+    }
+    program.structs.extend(containers);
+
+    // Rewrite every function body.
+    let l = EnumLowerer(program, int_ty, u32_ty, payload_types.clone());
+    let fn_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    for key in fn_keys {
+        let func = program.functions.get(key).unwrap();
+        if let Some(body) = func.body {
+            func.body = Some(l.lower_expr(body));
+            program.functions.insert(key, func);
+        }
+    }
+
+    // Materialize every constructor as a real function; call sites were
+    // rewritten to UserDefined calls against these qnames above.
+    let ctor_fns: Map[QualifiedName, FunctionDef] = Map.new();
+    for sdef in program.structs.values() {
+        if sdef.is_builtin() {
+            continue;
+        }
+        let qname = sdef.qualified_name.unwrap();
+        // Payload structs are only built inside variant ctors; enum
+        // containers are built by them.
+        if VP.is_payload_qname(qname) || program.enums.contains_key(qname) {
+            continue;
+        }
+        let (ctor_qn, fdef) = generate_struct_ctor(sdef);
+        ctor_fns.insert(ctor_qn, fdef);
+    }
+    for edef in program.enums.values() {
+        for (tag, variant) in edef.variants.iter().enumerate() {
+            let (ctor_qn, fdef) = generate_variant_ctor(edef, variant, tag, payload_types, u32_ty.clone());
+            ctor_fns.insert(ctor_qn, fdef);
+        }
+    }
+    program.functions.extend(ctor_fns);
+}
+
+}

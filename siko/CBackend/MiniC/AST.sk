@@ -32,9 +32,6 @@ pub enum CType {
     // Fixed-size array. The `[N]` is placed after the declared name by the
     // printer's declarator logic, e.g. `int data[5];`.
     Array(CType, Int),
-    // Anonymous inline union: `union { fields... }`.
-    // Used as the type of the `payload` field in enum container structs.
-    Union(Vec[CField]),
 }
 
 // ─── Expressions ─────────────────────────────────────────────────────────────
@@ -151,8 +148,8 @@ pub struct CField {
 }
 
 // A struct is just a name and a list of fields.
-// An enum container is a regular struct whose fields happen to include
-// a CType.Union — no special case needed:
+// Enum containers are regular structs too: lower-enums already turned their
+// payloads into fixed-size uint arrays, so no union type exists in MiniC.
 @derive(Clone)
 pub struct CStructDef {
     pub name: String,
@@ -226,9 +223,20 @@ pub enum CDirective {
 //     forward-declared and defined (so mutual recursion always resolves).
 //   - Globals: emitted after types, before functions.
 
+// A compile-time check that the Siko-side layout engine and the C compiler
+// agree on a struct's size and alignment. Printed right after the struct
+// definitions, so a layout bug is a C compile error instead of corruption.
+@derive(Clone)
+pub struct CStaticAssert {
+    pub struct_name: String,
+    pub size: Int,
+    pub align: Int,
+}
+
 pub struct CProgram {
     pub directives: Vec[CDirective],
     pub structs: Vec[CStructDef],
+    pub asserts: Vec[CStaticAssert],
     pub globals: Vec[CGlobalVar],
     pub functions: Vec[CFnDef],
 }

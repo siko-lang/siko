@@ -1,0 +1,186 @@
+module Siko.Layout {
+
+import Std.Map
+import Siko.AST.Type
+import Siko.AST.Data
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Constants.Builtins as B
+import Siko.VariantPayloads as VP
+import Siko.Format.Utils
+import Siko.Interner as I
+
+// C layout rules for the 64-bit targets the backend supports (LP64
+// macOS/Linux): sizes, alignments and struct padding exactly as clang lays
+// them out. Runs after lower-pointers, so representation is structural: a
+// Named type is always an inline struct and every heap value is an explicit
+// Ptr. The one exception is types embedded in mono qnames (array elements),
+// which never pass through lower-pointers; repr_layout_of re-derives their
+// representation from the value_type flags.
+//
+// The C backend emits _Static_asserts comparing these results against the
+// compiler that builds the generated C, so a layout bug here is a compile
+// error there, not memory corruption.
+
+pub struct Layout {
+    pub size: Int,
+    pub align: Int,
+}
+
+// The payload buffer of an enum container: `count` elements of an unsigned
+// int with size/alignment `elem_align`. count == 0 means the enum needs no
+// payload field at all (every variant is empty).
+pub struct PayloadShape {
+    pub elem_align: Int,
+    pub count: Int,
+}
+
+fn align_up(value: Int, align: Int) -> Int {
+    (value + align - 1) / align * align
+}
+
+fn int_max(a: Int, b: Int) -> Int {
+    if a > b { a } else { b }
+}
+
+pub struct LayoutEngine {
+    program: Program,
+    scalars: Map[QualifiedName, Int],
+    cache: Map[QualifiedName, Layout],
+
+    pub fn new(program: Program) -> LayoutEngine {
+        let scalars: Map[QualifiedName, Int] = Map.new();
+        scalars.insert(B.get_int_type_qn().as_mono(), 8);
+        scalars.insert(B.get_i8_type_qn().as_mono(),  1);
+        scalars.insert(B.get_i16_type_qn().as_mono(), 2);
+        scalars.insert(B.get_i32_type_qn().as_mono(), 4);
+        scalars.insert(B.get_i64_type_qn().as_mono(), 8);
+        scalars.insert(B.get_u8_type_qn().as_mono(),  1);
+        scalars.insert(B.get_u16_type_qn().as_mono(), 2);
+        scalars.insert(B.get_u32_type_qn().as_mono(), 4);
+        scalars.insert(B.get_u64_type_qn().as_mono(), 8);
+        LayoutEngine(program, scalars, Map.new())
+    }
+
+    pub fn layout_of(e: LayoutEngine, ty: TypeDef) -> Layout {
+        match ty {
+            TypeDef.Named(NamedInfo(name, _)) => e.layout_of_named(name.resolved()),
+            TypeDef.Ptr(_) | TypeDef.VoidPtr | TypeDef.FnPtr(_, _) => Layout(8, 8),
+            TypeDef.Array(inner, n) => {
+                let elem = e.layout_of(inner);
+                Layout(elem.size * n, elem.align)
+            }
+            ty => panic("layout: unexpected type ${format_type(ty)}"),
+        }
+    }
+
+    pub fn layout_of_named(e: LayoutEngine, qname: QualifiedName) -> Layout {
+        if let Some(size) = e.scalars.get(qname) {
+            return Layout(size, size);
+        }
+        if let Some(cached) = e.cache.get(qname) {
+            return cached;
+        }
+        let layout = if qname.base_name() == B.get_array_type_qn() {
+            e.array_layout(qname)
+        } else if let Some(sdef) = e.program.structs.get(qname) {
+            e.struct_layout(sdef)
+        } else if let Some(edef) = e.program.enums.get(qname) {
+            e.enum_layout(edef)
+        } else {
+            panic("layout: unknown named type ${qname.hashed()}")
+        };
+        e.cache.insert(qname, layout);
+        layout
+    }
+
+    // Types embedded in a mono qname's type args (array elements) still have
+    // implicit heap representation; mirror the old backend rule.
+    pub fn repr_layout_of(e: LayoutEngine, ty: TypeDef) -> Layout {
+        if let TypeDef.Named(NamedInfo(name, _)) = ty {
+            let qname = name.resolved();
+            if e.scalars.get(qname).is_none() && !e.is_value_type(qname) {
+                return Layout(8, 8);
+            }
+        }
+        e.layout_of(ty)
+    }
+
+    fn is_value_type(e: LayoutEngine, qname: QualifiedName) -> Bool {
+        if let Some(s) = e.program.structs.get(qname) {
+            return s.value_type;
+        }
+        if let Some(en) = e.program.enums.get(qname) {
+            return en.value_type;
+        }
+        False
+    }
+
+    fn array_layout(e: LayoutEngine, qname: QualifiedName) -> Layout {
+        let args = qname.type_args();
+        let elem = e.repr_layout_of(args[0]);
+        let n = match args[1] {
+            TypeDef.Numeric(n) => n,
+            _ => panic("layout: Array second type arg is not Numeric"),
+        };
+        Layout(elem.size * n, elem.align)
+    }
+
+    fn struct_layout(e: LayoutEngine, sdef: StructDef) -> Layout {
+        if sdef.is_builtin() {
+            panic("layout: builtin struct ${I.resolve(sdef.qualified_name.unwrap().name())} has no layout");
+        }
+        if sdef.is_packed() {
+            let size = 0;
+            for field in sdef.fields.iter() {
+                size = size + e.layout_of(field.ty).size;
+            }
+            return Layout(size, 1);
+        }
+        let offset = 0;
+        let align = 1;
+        for field in sdef.fields.iter() {
+            let fl = e.layout_of(field.ty);
+            offset = align_up(offset, fl.align) + fl.size;
+            align = int_max(align, fl.align);
+        }
+        Layout(align_up(offset, align), align)
+    }
+
+    // Must agree with the container struct lower-enums builds from
+    // payload_shape: { uint32_t tag; uintN payload[count]; }.
+    fn enum_layout(e: LayoutEngine, edef: EnumDef) -> Layout {
+        let shape = e.payload_shape(edef);
+        if shape.count == 0 {
+            return Layout(4, 4);
+        }
+        let align = int_max(4, shape.elem_align);
+        let offset = align_up(4, shape.elem_align);
+        Layout(align_up(offset + shape.elem_align * shape.count, align), align)
+    }
+
+    pub fn payload_shape(e: LayoutEngine, edef: EnumDef) -> PayloadShape {
+        let has_items = edef.variants.iter().any(|v| !v.items.is_empty());
+        if !has_items {
+            return PayloadShape(0, 0);
+        }
+        if !edef.value_type {
+            // Heap enums store a pointer to the heap-allocated payload struct.
+            return PayloadShape(8, 1);
+        }
+        let enum_qname = edef.qualified_name.unwrap();
+        let max_size = 0;
+        let max_align = 1;
+        for variant in edef.variants.iter() {
+            let lay = e.layout_of_named(VP.payload_qname(enum_qname, variant));
+            max_size = int_max(max_size, lay.size);
+            max_align = int_max(max_align, lay.align);
+        }
+        // A variant can have items that are all zero-sized; ReadVariant still
+        // needs a buffer to point into, so never emit a zero-length array.
+        let count = int_max(1, (max_size + max_align - 1) / max_align);
+        PayloadShape(max_align, count)
+    }
+}
+
+}

@@ -18,6 +18,17 @@ pub fn payload_field_name(index: Int) -> I.String {
     I.intern("item${index}")
 }
 
+// Field names of the container struct lower-enums generates per enum:
+// { tag: U32, payload: uintN[count] }. LowerEnums creates the fields and
+// rewrites tag/payload reads; the C backend's variant ctors write them.
+pub fn container_tag_name() -> I.String {
+    I.intern("tag")
+}
+
+pub fn container_payload_name() -> I.String {
+    I.intern("payload")
+}
+
 pub fn payload_qname(enum_qname: QualifiedName, variant: VariantDef) -> QualifiedName {
     QualifiedName.new_variant_payload(I.intern(enum_qname.hashed()), variant.name.name())
 }

@@ -18,10 +18,10 @@ import Siko.Interner as I
 
 // Flattens every function body into one flat statement list where Label
 // statements split the list into implicit basic blocks and Return/Goto/
-// If-of-gotos/Switch-of-gotos terminators connect them. Loops, break/continue
-// and enum matches are lowered away; enum matches become EnumTag + Switch +
-// ReadVariant + field lets. Runs after value-types, immediately before the C
-// backend.
+// Switch-of-gotos terminators connect them. Loops, break/continue and enum
+// matches are lowered away; enum matches become EnumTag + Switch +
+// ReadVariant + field lets. Ifs were already rewritten into Bool matches by
+// lower-ifs. Runs after value-types, before lower-pointers and the C backend.
 
 struct LoopLabels {
     continue_label: String,
@@ -133,7 +133,7 @@ struct BlockLowerer {
         let loc = expr.location.clone();
         match expr.kind {
             ExprKind.Block(BlockInfo(stmts)) => l.lower_stmts(stmts),
-            ExprKind.If(cond, then_branch, else_branch) => l.lower_if(cond, then_branch, else_branch, loc),
+            ExprKind.If(_, _, _) => panic("lower-basic-block: If reached basic block lowering; lower-ifs should have rewritten it"),
             ExprKind.Match(MatchInfo(scrutinee, arms)) => l.lower_match(scrutinee, arms, loc),
             ExprKind.Return(value) => {
                 check_value_expr(value, "return value");
@@ -201,55 +201,6 @@ struct BlockLowerer {
         // infinite loop must not leave a dangling fallthrough block.
         if ll.break_used {
             l.emit_label(break_label, loc);
-        }
-    }
-
-    // ─── If ───────────────────────────────────────────────────────────────────
-
-    fn lower_if(l: BlockLowerer, cond: Expr, then_branch: Expr, else_branch: Option[Expr], loc: Location) {
-        check_value_expr(cond, "if condition");
-        let then_label = l.fresh_label("then");
-        match else_branch {
-            Some(else_body) => {
-                let else_label = l.fresh_label("else");
-                l.out.push(S.Statement.Expr(Expr(
-                    ExprKind.If(cond, l.goto_expr(then_label.clone(), loc.clone()), Some(l.goto_expr(else_label.clone(), loc.clone()))),
-                    loc.clone(),
-                    Some(TypeDef.Void),
-                )));
-                l.terminated = True;
-                let join_label = l.fresh_label("join");
-                let join_used = False;
-                l.emit_label(then_label, loc.clone());
-                l.lower_branch(then_branch);
-                if !l.terminated {
-                    l.emit_goto(join_label.clone(), loc.clone());
-                    join_used = True;
-                }
-                l.emit_label(else_label, loc.clone());
-                l.lower_branch(else_body);
-                if !l.terminated {
-                    l.emit_goto(join_label.clone(), loc.clone());
-                    join_used = True;
-                }
-                if join_used {
-                    l.emit_label(join_label, loc);
-                }
-            }
-            None => {
-                // No else: the false edge is the join.
-                let join_label = l.fresh_label("join");
-                l.out.push(S.Statement.Expr(Expr(
-                    ExprKind.If(cond, l.goto_expr(then_label.clone(), loc.clone()), Some(l.goto_expr(join_label.clone(), loc.clone()))),
-                    loc.clone(),
-                    Some(TypeDef.Void),
-                )));
-                l.terminated = True;
-                l.emit_label(then_label, loc.clone());
-                l.lower_branch(then_branch);
-                l.emit_goto(join_label.clone(), loc.clone());
-                l.emit_label(join_label, loc);
-            }
         }
     }
 
@@ -470,12 +421,6 @@ fn collect_labels_expr(expr: Expr, labels: Set[String]) {
     match expr.kind {
         ExprKind.Label(label) => { labels.insert(label); }
         ExprKind.Block(BlockInfo(stmts)) => collect_labels_stmts(stmts, labels),
-        ExprKind.If(_, then_branch, else_branch) => {
-            collect_labels_expr(then_branch, labels);
-            if let Some(e) = else_branch {
-                collect_labels_expr(e, labels);
-            }
-        }
         ExprKind.Match(MatchInfo(_, arms)) => {
             for arm in arms {
                 collect_labels_expr(arm.body, labels);
@@ -571,28 +516,7 @@ fn validate_function(l: BlockLowerer, body: Expr) {
                         terminated = True;
                     }
                     ExprKind.Return(_) => { terminated = True; }
-                    ExprKind.If(_, then_branch, else_branch) => {
-                        if !is_goto(then_branch) {
-                            panic("lower-basic-block validator: If terminator then-branch is not a Goto");
-                        }
-                        match else_branch {
-                            Some(else_expr) => {
-                                if !is_goto(else_expr) {
-                                    panic("lower-basic-block validator: If terminator else-branch is not a Goto");
-                                }
-                            }
-                            None => panic("lower-basic-block validator: If terminator has no else branch"),
-                        }
-                        if let ExprKind.Goto(target) = then_branch.kind {
-                            goto_targets.push(target);
-                        }
-                        if let Some(else_expr) = else_branch {
-                            if let ExprKind.Goto(target) = else_expr.kind {
-                                goto_targets.push(target);
-                            }
-                        }
-                        terminated = True;
-                    }
+                    ExprKind.If(_, _, _) => panic("lower-basic-block validator: If in lowered body"),
                     ExprKind.Switch(_, arms) => {
                         for arm in arms {
                             match arm.kind {

@@ -373,6 +373,8 @@ pub struct Collector {
                 ExprKind.SizeOf(inner_ty)
             }
 
+            ExprKind.Alloc(_) => panic("typechecker: Alloc exists before lower-enums"),
+
             ExprKind.Discriminator(inner) => {
                 let (_, new_inner) = c.collect_expr(inner, env);
                 c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: std_int()), loc);
