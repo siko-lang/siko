@@ -84,11 +84,11 @@ struct Lowerer {
     instance_names: Map[Int, QualifiedName],
 
     fn intern_enum(l: Lowerer, set: Vec[Int]) -> Int {
-        if let Some(id) = l.enum_ids.get(set.clone()) {
+        if let Some(id) = l.enum_ids.get(set) {
             return id;
         }
         let id = l.enum_sets.len();
-        l.enum_sets.push(set.clone());
+        l.enum_sets.push(set);
         l.enum_ids.insert(set, id);
         id
     }
@@ -114,7 +114,7 @@ struct Lowerer {
             let flat_pos = 0;
             let i = 0;
             while i < ncap {
-                for v in signature_ty_vars(ldef.args[i].type_def.clone()) {
+                for v in signature_ty_vars(ldef.args[i].type_def) {
                     var_sets.insert(v, l.r.sorted_ids(closure.captures[flat_pos]));
                     flat_pos += 1;
                 }
@@ -123,12 +123,12 @@ struct Lowerer {
             let items: Vec[TypeDef] = Vec.new();
             let i = 0;
             while i < ncap {
-                items.push(l.subst_type(ldef.args[i].type_def.clone(), var_sets));
+                items.push(l.subst_type(ldef.args[i].type_def, var_sets));
                 i += 1;
             }
             payloads.push(items);
         }
-        l.enum_payloads.insert(enum_id, payloads.clone());
+        l.enum_payloads.insert(enum_id, payloads);
         payloads
     }
 
@@ -137,7 +137,7 @@ struct Lowerer {
             TypeDef.Fn(ClosureInfo(_, _, Some(v))) => l.enum_type(var_sets.get(v).unwrap_or(Vec.new())),
             TypeDef.Fn(ClosureInfo(_, _, None)) => panic("closure lowering: untagged fn type"),
             TypeDef.Named(NamedInfo(n, targs)) => {
-                let tuple: Vec[Vec[Int]] = targs.iter().map(|t| l.targ_set(t.clone(), var_sets)).collect();
+                let tuple: Vec[Vec[Int]] = targs.iter().map(|t| l.targ_set(t, var_sets)).collect();
                 let dq = l.instantiate_data(n.resolved(), tuple);
                 TypeDef.Named(NamedInfo(Name.inner(dq), []))
             }
@@ -171,36 +171,36 @@ struct Lowerer {
 
     fn instantiate_data(l: Lowerer, qname: QualifiedName, tuple: Vec[Vec[Int]]) -> QualifiedName {
         stats.rewrite_instantiate_data_start();
-        let key = DataKey(qname.clone(), tuple.clone());
-        if let Some(n) = l.data_names.get(key.clone()) {
+        let key = DataKey(qname, tuple);
+        if let Some(n) = l.data_names.get(key) {
             stats.rewrite_instantiate_data_end();
             return n;
         }
-        let idx = l.data_counters.get(qname.clone()).unwrap_or(0);
-        l.data_counters.insert(qname.clone(), idx + 1);
+        let idx = l.data_counters.get(qname).unwrap_or(0);
+        l.data_counters.insert(qname, idx + 1);
         let new_qn = qname.with_closure_instance(idx);
         stats.instantiated_data_type();
-        l.data_names.insert(key.clone(), new_qn.clone());
+        l.data_names.insert(key, new_qn);
         l.data_indices.insert(key, idx);
 
-        if let Some(sdef) = l.r.program.structs.get(qname.clone()) {
+        if let Some(sdef) = l.r.program.structs.get(qname) {
             stats.instantiated_struct();
             let sdef = sdef.clone();
-            let var_sets = pool_var_sets(sdef.type_arg_defs.clone(), tuple);
+            let var_sets = pool_var_sets(sdef.type_arg_defs, tuple);
             let fields: Vec[FieldDef] = Vec.new();
             for field in sdef.fields.iter() {
                 let field = field.clone();
-                field.ty = l.subst_type(field.ty, var_sets.clone());
+                field.ty = l.subst_type(field.ty, var_sets);
                 fields.push(field);
             }
             sdef.fields = fields;
-            sdef.qualified_name = Some(new_qn.clone());
+            sdef.qualified_name = Some(new_qn);
             sdef.type_arg_defs = None;
-            l.out_structs.insert(new_qn.clone(), sdef);
-        } else if let Some(edef) = l.r.program.enums.get(qname.clone()) {
+            l.out_structs.insert(new_qn, sdef);
+        } else if let Some(edef) = l.r.program.enums.get(qname) {
             stats.instantiated_enum();
             let edef = edef.clone();
-            let var_sets = pool_var_sets(edef.type_arg_defs.clone(), tuple);
+            let var_sets = pool_var_sets(edef.type_arg_defs, tuple);
             let variants: Vec[VariantDef] = Vec.new();
             for variant in edef.variants.iter() {
                 let variant = variant.clone();
@@ -208,18 +208,18 @@ struct Lowerer {
                 let items: Vec[ItemInfo] = Vec.new();
                 for item in variant.items.iter() {
                     let item = item.clone();
-                    item.ty = l.subst_type(item.ty, var_sets.clone());
+                    item.ty = l.subst_type(item.ty, var_sets);
                     items.push(item);
                 }
                 variant.items = items;
-                variant.qualified_name = Some(new_vq.clone());
-                l.out_variant_map.insert(new_vq, new_qn.clone());
+                variant.qualified_name = Some(new_vq);
+                l.out_variant_map.insert(new_vq, new_qn);
                 variants.push(variant);
             }
             edef.variants = variants;
-            edef.qualified_name = Some(new_qn.clone());
+            edef.qualified_name = Some(new_qn);
             edef.type_arg_defs = None;
-            l.out_enums.insert(new_qn.clone(), edef);
+            l.out_enums.insert(new_qn, edef);
         } else {
             panic("closure lowering: unknown datatype ${I.resolve(qname.name())}");
         }
@@ -228,11 +228,11 @@ struct Lowerer {
     }
 
     fn intern_handler(l: Lowerer, key: HandlerKey, param_types: Vec[TypeDef], result_type: TypeDef) -> Int {
-        if let Some(id) = l.handler_ids.get(key.clone()) {
+        if let Some(id) = l.handler_ids.get(key) {
             return id;
         }
         let id = l.handlers.len();
-        l.handlers.push(HandlerRecord(key.clone(), param_types, result_type));
+        l.handlers.push(HandlerRecord(key, param_types, result_type));
         l.handler_ids.insert(key, id);
         id
     }
@@ -244,7 +244,7 @@ fn pool_var_sets(tad: Option[TypeArgDefs], tuple: Vec[Vec[Int]]) -> Map[TypeVar,
         Some(tad) => {
             for (i, id) in tad.type_args.iter().enumerate() {
                 if i < tuple.len() {
-                    var_sets.insert(TypeVar.Named(id.name), tuple[i].clone());
+                    var_sets.insert(TypeVar.Named(id.name), tuple[i]);
                 }
             }
         }
@@ -263,7 +263,7 @@ pub struct RwCtx {
 
     fn var_set(c: RwCtx, v: TypeVar) -> Vec[Int] {
         stats.rewrite_var_set_start();
-        let result = c.l.r.sorted_ids(c.l.r.node_set(c.iid, c.wd, FlowNode(c.fn_name.clone(), v)));
+        let result = c.l.r.sorted_ids(c.l.r.node_set(c.iid, c.wd, FlowNode(c.fn_name, v)));
         stats.rewrite_var_set_end();
         result
     }
@@ -271,7 +271,7 @@ pub struct RwCtx {
     fn type_var_sets(c: RwCtx, ty: TypeDef) -> Map[TypeVar, Vec[Int]] {
         let var_sets: Map[TypeVar, Vec[Int]] = Map.new();
         for v in signature_ty_vars(ty) {
-            var_sets.insert(v.clone(), c.var_set(v));
+            var_sets.insert(v, c.var_set(v));
         }
         var_sets
     }
@@ -279,7 +279,7 @@ pub struct RwCtx {
     fn data_tuple(c: RwCtx, targs: Vec[TypeDef]) -> Vec[Vec[Int]] {
         targs.iter().map(|t| {
             let ids: Set[Int] = Set.new();
-            for v in signature_ty_vars(t.clone()) {
+            for v in signature_ty_vars(t) {
                 for id in c.var_set(v) {
                     ids.insert(id);
                 }
@@ -358,16 +358,16 @@ instance Rw[TypeDef] {
     fn rw(ty: TypeDef, c: RwCtx) -> TypeDef {
         stats.rewrite_type_start();
         stats.rewrite_type_request();
-        if let Some(cached) = c.ty_cache.get(ty.clone()) {
+        if let Some(cached) = c.ty_cache.get(ty) {
             stats.rewrite_type_end();
             return cached;
         }
         stats.rewrite_type_cache_miss();
         stats.rewrite_type_miss_start();
-        let var_sets = c.type_var_sets(ty.clone());
-        let result = c.l.subst_type(ty.clone(), var_sets);
+        let var_sets = c.type_var_sets(ty);
+        let result = c.l.subst_type(ty, var_sets);
         stats.rewrite_type_miss_end();
-        c.ty_cache.insert(ty, result.clone());
+        c.ty_cache.insert(ty, result);
         stats.rewrite_type_end();
         result
     }
@@ -376,7 +376,7 @@ instance Rw[TypeDef] {
 fn is_empty_dynamic_call(expr: E.Expr, c: RwCtx) -> Bool {
     match expr.kind {
         E.ExprKind.DynamicCall(callee, _) => {
-            let callee_ty = callee.ty.clone().expect("closure lowering: dynamic call callee has no type");
+            let callee_ty = callee.ty.expect("closure lowering: dynamic call callee has no type");
             let callee_v = ty_vars(callee_ty)[0];
             c.var_set(callee_v).is_empty()
         }
@@ -388,8 +388,8 @@ instance Rw[S.Statement] {
     fn rw(stmt: S.Statement, c: RwCtx) -> S.Statement {
         match stmt {
             S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
-                let new_ty = rw(ty.clone(), c);
-                if is_empty_dynamic_call(rhs.clone(), c) {
+                let new_ty = rw(ty, c);
+                if is_empty_dynamic_call(rhs, c) {
                     let declare_ty = new_ty.expect("closure lowering: empty dynamic call let has no annotation");
                     S.Statement.Declare(S.DeclareInfo(name, Some(declare_ty)))
                 } else {
@@ -402,7 +402,7 @@ instance Rw[S.Statement] {
             S.Statement.Declare(info) => S.Statement.Declare(rw(info, c)),
             S.Statement.Assign(lhs, rhs) => S.Statement.Assign(rw(lhs, c), rw(rhs, c)),
             S.Statement.Expr(expr) => {
-                if is_empty_dynamic_call(expr.clone(), c) {
+                if is_empty_dynamic_call(expr, c) {
                     S.Statement.Expr(E.Expr(E.ExprKind.Tuple([]), expr.location, Some(TypeDef.Tuple(Vec.new()))))
                 } else {
                     S.Statement.Expr(rw(expr, c))
@@ -418,11 +418,11 @@ instance Rw[S.Statement] {
 
 instance Rw[Pattern] {
     fn rw(pat: Pattern, c: RwCtx) -> Pattern {
-        let orig_ty = pat.ty.clone();
-        let new_ty = rw(orig_ty.clone(), c);
+        let orig_ty = pat.ty;
+        let new_ty = rw(orig_ty, c);
         let kind = match pat.kind {
             PatternKind.Named(info) => {
-                let new_name = retarget_data_name(c, info.name.clone(), orig_ty);
+                let new_name = retarget_data_name(c, info.name, orig_ty);
                 PatternKind.Named(NamedPatternInfo(
                     name: new_name,
                     args: rw(info.args, c),
@@ -451,12 +451,12 @@ fn retarget_data_name(c: RwCtx, name: Name, orig_ty: Option[TypeDef]) -> Name {
         None => Vec.new(),
     };
     let result = if targs.is_empty() {
-        let _ = c.l.instantiate_data(owner.clone(), Vec.new());
+        let _ = c.l.instantiate_data(owner, Vec.new());
         let idx = c.l.data_indices.get(DataKey(owner, Vec.new())).unwrap_or(0);
         Name.inner(resolved.with_closure_instance(idx))
     } else {
         let tuple = c.data_tuple(targs);
-        let dq = c.l.instantiate_data(owner.clone(), tuple.clone());
+        let dq = c.l.instantiate_data(owner, tuple);
         let idx = c.l.data_indices.get(DataKey(owner, tuple)).unwrap_or(0);
         if is_variant {
             Name.inner(resolved.with_closure_instance(idx))
@@ -471,24 +471,24 @@ fn retarget_data_name(c: RwCtx, name: Name, orig_ty: Option[TypeDef]) -> Name {
 instance Rw[E.Expr] {
     fn rw(expr: E.Expr, c: RwCtx) -> E.Expr {
         c.expr_count += 1;
-        let loc = expr.location.clone();
-        let orig_ty = expr.ty.clone();
-        let new_ty = rw(orig_ty.clone(), c);
+        let loc = expr.location;
+        let orig_ty = expr.ty;
+        let new_ty = rw(orig_ty, c);
         match expr.kind {
             E.ExprKind.CreateClosure(info) => {
                 stats.lowered_create_closure();
                 stats.rewrite_create_closure_start();
-                let v = ty_vars(orig_ty.clone().unwrap())[0];
+                let v = ty_vars(orig_ty.unwrap())[0];
                 let set = c.var_set(v);
-                let eid = c.l.intern_enum(set.clone());
-                let cid = c.l.r.closure_id_for(info.name.clone());
+                let eid = c.l.intern_enum(set);
+                let cid = c.l.r.closure_id_for(info.name);
                 let vidx = index_of(set, cid);
                 let variant_qn = QualifiedName.new_closure_variant(eid, vidx).as_mono();
                 let cap_tys = c.l.payload_types(eid)[vidx];
                 let args: Vec[E.Expr] = info.params
                     .iter()
                     .enumerate()
-                    .map(|(i, p)| E.Expr(E.ExprKind.Var(p.clone()), loc.clone(), Some(cap_tys[i].clone())))
+                    .map(|(i, p)| E.Expr(E.ExprKind.Var(p), loc, Some(cap_tys[i])))
                     .collect();
                 let result = E.Expr(E.ExprKind.FunctionCall(E.FunctionCallInfo(
                     qname: variant_qn,
@@ -501,7 +501,7 @@ instance Rw[E.Expr] {
             E.ExprKind.DynamicCall(callee, args) => {
                 stats.lowered_dynamic_call();
                 stats.rewrite_dynamic_call_start();
-                let callee_v = ty_vars(callee.ty.clone().unwrap())[0];
+                let callee_v = ty_vars(callee.ty.unwrap())[0];
                 let callee_set = c.var_set(callee_v);
                 if callee_set.is_empty() {
                     panic("closure lowering: empty dynamic call outside normalized let");
@@ -509,15 +509,15 @@ instance Rw[E.Expr] {
                 let eid = c.l.intern_enum(callee_set);
                 let param_sets: Vec[Vec[Int]] = Vec.new();
                 for a in args.iter() {
-                    for v in signature_ty_vars(a.ty.clone().unwrap()) {
+                    for v in signature_ty_vars(a.ty.unwrap()) {
                         param_sets.push(c.var_set(v));
                     }
                 }
-                let result_sets: Vec[Vec[Int]] = signature_opt_ty_vars(orig_ty.clone()).iter().map(|v| c.var_set(v.clone())).collect();
+                let result_sets: Vec[Vec[Int]] = signature_opt_ty_vars(orig_ty).iter().map(|v| c.var_set(v)).collect();
                 let callee2 = rw(callee, c);
                 let args2 = rw(args, c);
-                let param_types: Vec[TypeDef] = args2.iter().map(|a| a.ty.clone().unwrap()).collect();
-                let hid = c.l.intern_handler(HandlerKey(eid, param_sets, result_sets), param_types, new_ty.clone().unwrap());
+                let param_types: Vec[TypeDef] = args2.iter().map(|a| a.ty.unwrap()).collect();
+                let hid = c.l.intern_handler(HandlerKey(eid, param_sets, result_sets), param_types, new_ty.unwrap());
                 let call_args: Vec[E.Expr] = Vec.new();
                 call_args.push(callee2);
                 call_args.extend(args2);
@@ -530,18 +530,18 @@ instance Rw[E.Expr] {
                 result
             }
             E.ExprKind.FunctionPtr(info) => {
-                let new_name = retarget_fn_ptr(c, info.clone(), orig_ty.clone());
+                let new_name = retarget_fn_ptr(c, info, orig_ty);
                 E.Expr(E.ExprKind.FunctionPtr(E.FunctionPtrInfo(new_name, info.witnesses)), loc, new_ty)
             }
             E.ExprKind.FunctionCall(info) => {
                 let new_qname = match info.kind {
-                    E.FunctionKind.UserDefined => retarget_call(c, info.clone(), orig_ty.clone()),
-                    E.FunctionKind.Builtin => retarget_call(c, info.clone(), orig_ty.clone()),
-                    E.FunctionKind.Extern(_) => retarget_call(c, info.clone(), orig_ty.clone()),
-                    E.FunctionKind.VariantCtor => match retarget_data_name(c, Name.inner(info.qname.clone()), orig_ty.clone()) {
+                    E.FunctionKind.UserDefined => retarget_call(c, info, orig_ty),
+                    E.FunctionKind.Builtin => retarget_call(c, info, orig_ty),
+                    E.FunctionKind.Extern(_) => retarget_call(c, info, orig_ty),
+                    E.FunctionKind.VariantCtor => match retarget_data_name(c, Name.inner(info.qname), orig_ty) {
                         n => n.resolved(),
                     },
-                    E.FunctionKind.StructCtor => match retarget_data_name(c, Name.inner(info.qname.clone()), orig_ty.clone()) {
+                    E.FunctionKind.StructCtor => match retarget_data_name(c, Name.inner(info.qname), orig_ty) {
                         n => n.resolved(),
                     },
                 };
@@ -562,43 +562,43 @@ instance Rw[E.Expr] {
 fn profile_boundary_vars(profile: FunctionProfile) -> Vec[TypeVar] {
     let vars: Vec[TypeVar] = Vec.new();
     for arg in profile.arg_types.iter() {
-        vars.extend(signature_ty_vars(arg.clone()));
+        vars.extend(signature_ty_vars(arg));
     }
-    vars.extend(signature_opt_ty_vars(profile.result_type.clone()));
-    vars.extend(signature_opt_ty_vars(profile.yield_type.clone()));
+    vars.extend(signature_opt_ty_vars(profile.result_type));
+    vars.extend(signature_opt_ty_vars(profile.yield_type));
     vars
 }
 
 fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
     stats.retargeted_static_call();
     stats.rewrite_retarget_static_call_start();
-    let profile = c.l.r.profiles.get(info.qname.clone()).expect("closure lowering: callee profile not found");
+    let profile = c.l.r.profiles.get(info.qname).expect("closure lowering: callee profile not found");
     let subst: Map[TypeVar, TypeVar] = Map.new();
     for (i, arg) in info.args.iter().enumerate() {
         if i < profile.arg_types.len() {
-            fill_var_subst(subst, signature_ty_vars(profile.arg_types[i].clone()), signature_opt_ty_vars(arg.ty.clone()));
+            fill_var_subst(subst, signature_ty_vars(profile.arg_types[i]), signature_opt_ty_vars(arg.ty));
         }
     }
-    let co_ty = match orig_ty.clone() {
+    let co_ty = match orig_ty {
         Some(TypeDef.Co(CoroutineInfo(y, r2))) if info.is_coroutine_create => Some((y, r2)),
         _ => None,
     };
     match co_ty {
         Some((y, r2)) => {
-            fill_var_subst(subst, signature_opt_ty_vars(profile.yield_type.clone()), signature_ty_vars(y));
-            fill_var_subst(subst, signature_opt_ty_vars(profile.result_type.clone()), signature_ty_vars(r2));
+            fill_var_subst(subst, signature_opt_ty_vars(profile.yield_type), signature_ty_vars(y));
+            fill_var_subst(subst, signature_opt_ty_vars(profile.result_type), signature_ty_vars(r2));
         }
         None => {
-            fill_var_subst(subst, signature_opt_ty_vars(profile.result_type.clone()), signature_opt_ty_vars(orig_ty));
+            fill_var_subst(subst, signature_opt_ty_vars(profile.result_type), signature_opt_ty_vars(orig_ty));
         }
     }
     let inputs: Vec[Vec[Int]] = profile_boundary_vars(profile).iter().map(|v| {
-        match subst.get(v.clone()) {
+        match subst.get(v) {
             Some(cv) => c.var_set(cv),
             None => Vec.new(),
         }
     }).collect();
-    let iid2 = c.l.r.find_instance(info.qname.clone(), inputs).expect("closure lowering: call target instance not found");
+    let iid2 = c.l.r.find_instance(info.qname, inputs).expect("closure lowering: call target instance not found");
     let result = c.l.instance_names.get(iid2).expect("closure lowering: call target instance not named");
     stats.rewrite_retarget_static_call_end();
     result
@@ -607,16 +607,16 @@ fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -
 fn retarget_fn_ptr(c: RwCtx, info: E.FunctionPtrInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
     stats.retargeted_function_ptr();
     stats.rewrite_retarget_fn_ptr_start();
-    let profile = c.l.r.profiles.get(info.name.clone()).expect("closure lowering: fn ptr target profile not found");
+    let profile = c.l.r.profiles.get(info.name).expect("closure lowering: fn ptr target profile not found");
     let subst: Map[TypeVar, TypeVar] = Map.new();
     fill_var_subst(subst, profile_boundary_vars(profile), signature_opt_ty_vars(orig_ty));
     let inputs: Vec[Vec[Int]] = profile_boundary_vars(profile).iter().map(|v| {
-        match subst.get(v.clone()) {
+        match subst.get(v) {
             Some(cv) => c.var_set(cv),
             None => Vec.new(),
         }
     }).collect();
-    let iid2 = c.l.r.find_instance(info.name.clone(), inputs).expect("closure lowering: fn ptr target instance not found");
+    let iid2 = c.l.r.find_instance(info.name, inputs).expect("closure lowering: fn ptr target instance not found");
     let result = c.l.instance_names.get(iid2).expect("closure lowering: fn ptr target instance not named");
     stats.rewrite_retarget_fn_ptr_end();
     result
@@ -626,7 +626,7 @@ fn fill_var_subst(subst: Map[TypeVar, TypeVar], callee_vars: Vec[TypeVar], calle
     let n = callee_vars.len().min(caller_vars.len());
     let i = 0;
     while i < n {
-        subst.insert(callee_vars[i].clone(), caller_vars[i].clone());
+        subst.insert(callee_vars[i], caller_vars[i]);
         i += 1;
     }
 }
@@ -724,13 +724,13 @@ fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
         let param_i = 0;
         let result_i = 0;
         for arg_index in 0..profile.arg_types.len() {
-            for _ in signature_ty_vars(profile.arg_types[arg_index].clone()) {
+            for _ in signature_ty_vars(profile.arg_types[arg_index]) {
                 if arg_index < capture_arg_count {
                     inputs.push(l.r.sorted_ids(closure.captures[cap_i]));
                     cap_i += 1;
                 } else {
                     if param_i < rec.key.param_sets.len() {
-                        inputs.push(rec.key.param_sets[param_i].clone());
+                        inputs.push(rec.key.param_sets[param_i]);
                     } else {
                         inputs.push(Vec.new());
                     }
@@ -738,18 +738,18 @@ fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
                 }
             }
         }
-        for _ in signature_opt_ty_vars(profile.result_type.clone()) {
+        for _ in signature_opt_ty_vars(profile.result_type) {
             if result_i < rec.key.result_sets.len() {
-                inputs.push(rec.key.result_sets[result_i].clone());
+                inputs.push(rec.key.result_sets[result_i]);
             } else {
                 inputs.push(Vec.new());
             }
             result_i += 1;
         }
-        for _ in signature_opt_ty_vars(profile.yield_type.clone()) {
+        for _ in signature_opt_ty_vars(profile.yield_type) {
             inputs.push(Vec.new());
         }
-        let target_iid = l.r.find_instance(closure.lambda.clone(), inputs).expect("closure lowering: handler target lambda instance missing");
+        let target_iid = l.r.find_instance(closure.lambda, inputs).expect("closure lowering: handler target lambda instance missing");
         let target = l.instance_names.get(target_iid).expect("closure lowering: handler target not named");
 
         let call_args: Vec[E.Expr] = Vec.new();
@@ -817,9 +817,9 @@ fn rewrite_program(r: Resolver, program: Program) {
     let reachable = reachable_instances(r);
     let counters: Map[QualifiedName, Int] = Map.new();
     for iid in reachable.iter() {
-        let fnq = r.instances[iid].fn_name.clone();
-        let idx = counters.get(fnq.clone()).unwrap_or(0);
-        counters.insert(fnq.clone(), idx + 1);
+        let fnq = r.instances[iid].fn_name;
+        let idx = counters.get(fnq).unwrap_or(0);
+        counters.insert(fnq, idx + 1);
         l.instance_names.insert(iid, fnq.with_closure_instance(idx));
     }
 
@@ -830,13 +830,13 @@ fn rewrite_program(r: Resolver, program: Program) {
         let inst = r.instances[iid];
         let func = r.program.functions.get(inst.fn_name).unwrap();
         stats.rewrite_function_walk_data_start();
-        let wd = r.walk_data(inst.fn_name.clone());
+        let wd = r.walk_data(inst.fn_name);
         stats.rewrite_function_walk_data_end();
         let ctx = RwCtx(
             l: l,
             iid: iid,
             wd: wd,
-            fn_name: inst.fn_name.clone(),
+            fn_name: inst.fn_name,
             ty_cache: Map.new(),
             expr_count: 0,
         );
@@ -845,7 +845,7 @@ fn rewrite_program(r: Resolver, program: Program) {
         stats.rewrite_function_rw_end();
         stats.rewrite_function_exprs(ctx.expr_count);
         let new_name = l.instance_names.get(iid).unwrap();
-        new_func.qualified_name = Some(new_name.clone());
+        new_func.qualified_name = Some(new_name);
         new_functions.insert(new_name, new_func);
         stats.rewrite_function_end();
     }

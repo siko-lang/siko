@@ -14,45 +14,45 @@ import Siko.Config
 import Siko.HIR.Program
 import Siko.Utils.TypeVarAllocator
 
-fn fresh_published_var(var_map: Map[FlowNode, TypeVar], alloc: TypeVarAllocator, root: FlowNode) -> TypeVar {
-    match var_map.get(root.clone()) {
+fn fresh_published_var(var_map: Map[Int, TypeVar], alloc: TypeVarAllocator, root: Int) -> TypeVar {
+    match var_map.get(root) {
         Some(existing) => existing,
         None => {
             let published = TypeVar.Named(alloc.allocate_name());
-            var_map.insert(root, published.clone());
+            var_map.insert(root, published);
             published
         }
     }
 }
 
-fn canonical_var(qname: QualifiedName, ctx: FlowCtx, var_map: Map[FlowNode, TypeVar], alloc: TypeVarAllocator, v: TypeVar) -> TypeVar {
+fn canonical_var(qname: QualifiedName, ctx: FlowCtx, var_map: Map[Int, TypeVar], alloc: TypeVarAllocator, v: TypeVar) -> TypeVar {
     let root = ctx.uf.find(FlowNode(qname, v));
     fresh_published_var(var_map, alloc, root)
 }
 
-fn canonical_type(qname: QualifiedName, ctx: FlowCtx, var_map: Map[FlowNode, TypeVar], alloc: TypeVarAllocator, ty: TypeDef) -> TypeDef {
+fn canonical_type(qname: QualifiedName, ctx: FlowCtx, var_map: Map[Int, TypeVar], alloc: TypeVarAllocator, ty: TypeDef) -> TypeDef {
     match ty {
         TypeDef.Named(NamedInfo(name, args)) => {
-            TypeDef.Named(NamedInfo(name, args.into_iter().map(|a| canonical_type(qname.clone(), ctx, var_map, alloc, a)).collect()))
+            TypeDef.Named(NamedInfo(name, args.into_iter().map(|a| canonical_type(qname, ctx, var_map, alloc, a)).collect()))
         }
-        TypeDef.Tuple(elems) => TypeDef.Tuple(elems.into_iter().map(|e| canonical_type(qname.clone(), ctx, var_map, alloc, e)).collect()),
+        TypeDef.Tuple(elems) => TypeDef.Tuple(elems.into_iter().map(|e| canonical_type(qname, ctx, var_map, alloc, e)).collect()),
         TypeDef.Paren(inner) => TypeDef.Paren(canonical_type(qname, ctx, var_map, alloc, inner)),
         TypeDef.Fn(ClosureInfo(args, ret, closure_var)) => {
-            let args = args.into_iter().map(|a| canonical_type(qname.clone(), ctx, var_map, alloc, a)).collect();
-            let ret = canonical_type(qname.clone(), ctx, var_map, alloc, ret);
-            let closure_var = closure_var.map(|v| canonical_var(qname.clone(), ctx, var_map, alloc, v));
+            let args = args.into_iter().map(|a| canonical_type(qname, ctx, var_map, alloc, a)).collect();
+            let ret = canonical_type(qname, ctx, var_map, alloc, ret);
+            let closure_var = closure_var.map(|v| canonical_var(qname, ctx, var_map, alloc, v));
             TypeDef.Fn(ClosureInfo(args, ret, closure_var))
         }
         TypeDef.FnPtr(args, ret) => {
             TypeDef.FnPtr(
-                args.into_iter().map(|a| canonical_type(qname.clone(), ctx, var_map, alloc, a)).collect(),
+                args.into_iter().map(|a| canonical_type(qname, ctx, var_map, alloc, a)).collect(),
                 canonical_type(qname, ctx, var_map, alloc, ret),
             )
         }
         TypeDef.Var(v) => TypeDef.Var(canonical_var(qname, ctx, var_map, alloc, v)),
         TypeDef.Ptr(inner) => TypeDef.Ptr(canonical_type(qname, ctx, var_map, alloc, inner)),
         TypeDef.Array(inner, n) => TypeDef.Array(canonical_type(qname, ctx, var_map, alloc, inner), n),
-        TypeDef.Co(CoroutineInfo(y, r)) => TypeDef.Co(CoroutineInfo(canonical_type(qname.clone(), ctx, var_map, alloc, y), canonical_type(qname, ctx, var_map, alloc, r))),
+        TypeDef.Co(CoroutineInfo(y, r)) => TypeDef.Co(CoroutineInfo(canonical_type(qname, ctx, var_map, alloc, y), canonical_type(qname, ctx, var_map, alloc, r))),
         TypeDef.Never(b) => TypeDef.Never(b),
         TypeDef.Wildcard => TypeDef.Wildcard,
         TypeDef.Void => TypeDef.Void,
@@ -61,15 +61,15 @@ fn canonical_type(qname: QualifiedName, ctx: FlowCtx, var_map: Map[FlowNode, Typ
     }
 }
 
-fn canonical_opt_type(qname: QualifiedName, ctx: FlowCtx, var_map: Map[FlowNode, TypeVar], alloc: TypeVarAllocator, ty: Option[TypeDef]) -> Option[TypeDef] {
+fn canonical_opt_type(qname: QualifiedName, ctx: FlowCtx, var_map: Map[Int, TypeVar], alloc: TypeVarAllocator, ty: Option[TypeDef]) -> Option[TypeDef] {
     ty.map(|t| canonical_type(qname, ctx, var_map, alloc, t))
 }
 
-fn boundary_classes(qname: QualifiedName, ctx: FlowCtx, func: FunctionDef) -> Map[FlowNode, Vec[TypeVar]] {
-    let class_vars: Map[FlowNode, Vec[TypeVar]] = Map.new();
+fn boundary_classes(qname: QualifiedName, ctx: FlowCtx, func: FunctionDef) -> Map[Int, Vec[TypeVar]] {
+    let class_vars: Map[Int, Vec[TypeVar]] = Map.new();
     for v in boundary_vars(func) {
-        let root = ctx.uf.find(FlowNode(qname.clone(), v.clone()));
-        let vars = class_vars.get(root.clone()).unwrap_or(Vec.new());
+        let root = ctx.uf.find(FlowNode(qname, v));
+        let vars = class_vars.get(root).unwrap_or(Vec.new());
         vars.push(v);
         class_vars.insert(root, vars);
     }
@@ -78,16 +78,16 @@ fn boundary_classes(qname: QualifiedName, ctx: FlowCtx, func: FunctionDef) -> Ma
 
 fn published_vars_for_nodes(
     ctx: FlowCtx,
-    class_vars: Map[FlowNode, Vec[TypeVar]],
-    var_map: Map[FlowNode, TypeVar],
+    class_vars: Map[Int, Vec[TypeVar]],
+    var_map: Map[Int, TypeVar],
     alloc: TypeVarAllocator,
     nodes: Vec[FlowNode],
 ) -> Vec[TypeVar] {
     let vars: Vec[TypeVar] = Vec.new();
     for n in nodes {
         let root = ctx.uf.find(n);
-        if class_vars.contains_key(root.clone()) {
-            vars.push(fresh_published_var(var_map, alloc, root.clone()));
+        if class_vars.contains_key(root) {
+            vars.push(fresh_published_var(var_map, alloc, root));
         }
     }
     vars
@@ -95,8 +95,8 @@ fn published_vars_for_nodes(
 
 fn first_published_var_for_nodes(
     ctx: FlowCtx,
-    class_vars: Map[FlowNode, Vec[TypeVar]],
-    var_map: Map[FlowNode, TypeVar],
+    class_vars: Map[Int, Vec[TypeVar]],
+    var_map: Map[Int, TypeVar],
     alloc: TypeVarAllocator,
     nodes: Vec[FlowNode],
 ) -> Option[TypeVar] {
@@ -106,8 +106,8 @@ fn first_published_var_for_nodes(
 fn captures_for_lambda(
     ctx: FlowCtx,
     qname: QualifiedName,
-    class_vars: Map[FlowNode, Vec[TypeVar]],
-    var_map: Map[FlowNode, TypeVar],
+    class_vars: Map[Int, Vec[TypeVar]],
+    var_map: Map[Int, TypeVar],
     alloc: TypeVarAllocator,
     lambda: QualifiedName,
 ) -> Vec[TypeVar] {
@@ -115,7 +115,7 @@ fn captures_for_lambda(
     for creation in ctx.creations.iter() {
         if creation.owner == qname && creation.lambda == lambda {
             for capture in creation.captures.iter() {
-                captures.extend(published_vars_for_nodes(ctx, class_vars, var_map, alloc, capture.clone()));
+                captures.extend(published_vars_for_nodes(ctx, class_vars, var_map, alloc, capture));
             }
         }
     }
@@ -126,42 +126,42 @@ fn publish_profile(ctx: FlowCtx, qname: QualifiedName) -> FunctionProfile {
     stats.profile_publish_start();
     let func = ctx.program.functions.get(qname).unwrap();
     let alloc = TypeVarAllocator.new();
-    let var_map: Map[FlowNode, TypeVar] = Map.new();
-    let class_vars = boundary_classes(qname.clone(), ctx, func.clone());
+    let var_map: Map[Int, TypeVar] = Map.new();
+    let class_vars = boundary_classes(qname, ctx, func);
 
-    let arg_types = func.args.iter().map(|a| canonical_type(qname.clone(), ctx, var_map, alloc, a.type_def.clone())).collect();
-    let result_type = canonical_opt_type(qname.clone(), ctx, var_map, alloc, func.result_type.clone());
-    let yield_type = canonical_opt_type(qname.clone(), ctx, var_map, alloc, func.yield_type.clone());
+    let arg_types = func.args.iter().map(|a| canonical_type(qname, ctx, var_map, alloc, a.type_def)).collect();
+    let result_type = canonical_opt_type(qname, ctx, var_map, alloc, func.result_type);
+    let yield_type = canonical_opt_type(qname, ctx, var_map, alloc, func.yield_type);
 
     let contains: Vec[ContainsLambdaRule] = Vec.new();
     for (root, _) in class_vars.iter() {
-        let lambdas = ctx.uf.lambdas.get(root.clone()).unwrap_or(Set.new());
+        let lambdas = ctx.uf.lambdas.get(root).unwrap_or(Set.new());
         for lambda in lambdas.iter() {
-            let target = fresh_published_var(var_map, alloc, root.clone());
-            let captures = captures_for_lambda(ctx, qname.clone(), class_vars, var_map, alloc, lambda.clone());
-            contains.push(ContainsLambdaRule(target, lambda.clone(), captures));
+            let target = fresh_published_var(var_map, alloc, root);
+            let captures = captures_for_lambda(ctx, qname, class_vars, var_map, alloc, lambda);
+            contains.push(ContainsLambdaRule(target, lambda, captures));
         }
     }
 
     let applies: Vec[ApplyRule] = Vec.new();
     for record in ctx.applies.iter() {
         if record.owner == qname {
-            let callee = match first_published_var_for_nodes(ctx, class_vars, var_map, alloc, record.callee.clone()) {
+            let callee = match first_published_var_for_nodes(ctx, class_vars, var_map, alloc, record.callee) {
                 Some(v) => v,
                 None => continue,
             };
             let args: Vec[TypeVar] = Vec.new();
             for arg in record.args.iter() {
-                args.extend(published_vars_for_nodes(ctx, class_vars, var_map, alloc, arg.clone()));
+                args.extend(published_vars_for_nodes(ctx, class_vars, var_map, alloc, arg));
             }
-            let results = published_vars_for_nodes(ctx, class_vars, var_map, alloc, record.result.clone());
+            let results = published_vars_for_nodes(ctx, class_vars, var_map, alloc, record.result);
             applies.push(ApplyRule(callee, args, results));
         }
     }
 
     let profile = FunctionProfile(arg_types, result_type, yield_type, Vec.new(), contains, applies);
     stats.profile_published();
-    stats.profile_size(qname, profile.clone());
+    stats.profile_size(qname, profile);
     stats.profile_publish_end();
     profile
 }
@@ -203,32 +203,32 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
             stats.profile_flow_function();
             stats.profile_flow_start();
             let func = ctx.program.functions.get(q).unwrap();
-            ctx.current_fn = q.clone();
+            ctx.current_fn = q;
             let body = match func.body {
                 Some(b) => b,
                 None => {
                     stats.profile_bodyless_function();
-                    bodyless_signature_edges(ctx, func.clone());
+                    bodyless_signature_edges(ctx, func);
                     stats.profile_flow_end();
                     continue;
                 }
             };
             ctx.env = Map.new();
             for arg in func.args.iter() {
-                ctx.env.insert(arg.name.clone(), signature_ty_vars(arg.type_def.clone()));
+                ctx.env.insert(arg.name, signature_ty_vars(arg.type_def));
             }
-            ctx.result_vars = signature_opt_ty_vars(func.result_type.clone());
-            ctx.yield_vars = signature_opt_ty_vars(func.yield_type.clone());
+            ctx.result_vars = signature_opt_ty_vars(func.result_type);
+            ctx.yield_vars = signature_opt_ty_vars(func.yield_type);
 
             if func.is_closure_alias() {
-                ctx.alias_types = alias_sig_types(func.clone());
-                apply_closure_alias(ctx, func.clone());
+                ctx.alias_types = alias_sig_types(func);
+                apply_closure_alias(ctx, func);
             } else {
                 ctx.alias_types = Vec.new();
             }
 
-            flow(body.clone(), ctx);
-            ctx.unify(ctx.nodes(signature_opt_ty_vars(body.ty.clone())), ctx.nodes(ctx.result_vars.clone()));
+            flow(body, ctx);
+            ctx.unify(ctx.nodes(signature_opt_ty_vars(body.ty)), ctx.nodes(ctx.result_vars));
             stats.profile_flow_end();
         }
 
@@ -237,7 +237,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
         }
 
         for q in scc.iter() {
-            ctx.profiles.insert(q.clone(), publish_profile(ctx, q.clone()));
+            ctx.profiles.insert(q, publish_profile(ctx, q));
         }
         stats.profile_scc_end();
     }
