@@ -5,25 +5,45 @@ import Std.Httpd.FileServer
 import Std.Effects.Network
 import Std.Effects.Filesystem
 import Std.Effects.Console
+import Std.Effects.Spawn
+import Std.IO.Async.Scheduler as Async
 import Std.Sys.Process as Sys
 
 fn main() {
-    with TcpNetwork = Tcp, FileSystem = RealFs, Console = StdConsole {
-        let args = Sys.get_args();
-        if args.len() < 3 {
-            println("usage: httpd <root-dir> <port>");
+    let args = Sys.get_args();
+    if args.len() < 3 {
+        Std.Console.println("usage: httpd <root-dir> <port> [threads|async]");
+        Sys.exit(1.as_i32());
+    }
+    let root = args[1];
+    let port_str = args[2];
+    let port = match port_str.parse_int(10) {
+        Ok(p) => p.as_u16(),
+        Err(_) => {
+            Std.Console.println("error: invalid port: ${port_str}");
             Sys.exit(1.as_i32());
         }
-        let root = args[1];
-        let port_str = args[2];
-        let port = match port_str.parse_int(10) {
-            Ok(p) => p.as_u16(),
-            Err(_) => {
-                println("error: invalid port: ${port_str}");
-                Sys.exit(1.as_i32());
-            }
-        };
-        run(make_handler(root), port);
+    };
+    let mode = if args.len() > 3 { args[3] } else { "threads" };
+    if mode == "async" {
+        // Single-threaded event loop: every connection is a task on the scheduler.
+        let s = Async.Scheduler.new();
+        with Async.current = s,
+             TcpNetwork = AsyncTcp,
+             Spawn = AsyncSpawn,
+             FileSystem = RealFs,
+             Console = StdConsole {
+            spawn(|| { run(make_handler(root), port); });
+            s.run_tasks();
+        }
+    } else {
+        // One OS thread per connection.
+        with TcpNetwork = Tcp,
+             Spawn = ThreadSpawn,
+             FileSystem = RealFs,
+             Console = StdConsole {
+            run(make_handler(root), port);
+        }
     }
 }
 

@@ -433,11 +433,11 @@ struct Normalizer {
                     }
                     return None;
                 }
-                S.Statement.Loop(body) => {
+                S.Statement.Loop(BlockInfo(body)) => {
                     if reachable {
                         let loop_out = Vec.new();
                         norm.lower_stmts(body, loop_out, loc);
-                        out.push(S.Statement.Loop(loop_out));
+                        out.push(S.Statement.Loop(BlockInfo(loop_out)));
                     }
                 }
                 S.Statement.UnresolvedLet(_, _, _) => panic("normalizer: UnresolvedLet"),
@@ -677,7 +677,7 @@ struct Normalizer {
                     match stmts[n - 1] {
                         S.Statement.TrailingExpr(_) => {
                             match stmts[n - 2] {
-                                S.Statement.Loop(loop_body) => {
+                                S.Statement.Loop(BlockInfo(loop_body)) => {
                                     if !loop_body_has_break(loop_body) {
                                         stmts.pop();
                                     }
@@ -689,7 +689,7 @@ struct Normalizer {
                     }
                 }
                 match stmts.last() {
-                    Some(S.Statement.Loop(loop_body)) => {
+                    Some(S.Statement.Loop(BlockInfo(loop_body))) => {
                         if !loop_body_has_break(loop_body) {
                             return Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type());
                         }

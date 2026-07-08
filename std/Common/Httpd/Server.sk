@@ -2,6 +2,7 @@ module Std.Httpd.Server {
 
 import Std.Effects.Network
 import Std.Effects.Console
+import Std.Effects.Spawn
 import Std.IO.Buffered as Buffered
 import Std.IO.Reader
 import Std.IO.Writer
@@ -85,7 +86,7 @@ pub fn run(handler: fn(Request) -> Response, port: U16) -> Result[(), Error] {
                 continue;
             }
         };
-        serve(socket, handler);
+        spawn(|| serve(socket, handler));
     }
     Ok(())
 }

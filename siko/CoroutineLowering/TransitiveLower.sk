@@ -136,7 +136,7 @@ instance TransitiveLower[S.Statement] {
                     None => S.Statement.Expr(lower_transitive(e, ctx)),
                 }
             }
-            S.Statement.Loop(stmts)            => S.Statement.Loop(lower_transitive(stmts, ctx)),
+            S.Statement.Loop(block)            => S.Statement.Loop(lower_transitive(block, ctx)),
             S.Statement.UnresolvedLet(_, _, _) => panic("TransitiveLower: UnresolvedLet"),
             S.Statement.TrailingExpr(_)        => panic("TransitiveLower: TrailingExpr"),
             S.Statement.ForLoop(_, _, _)       => panic("TransitiveLower: ForLoop"),
@@ -293,7 +293,7 @@ fn build_expansion_stmts(
     // than a stale C-local alias.
     let stmts: Vec[S.Statement] = Vec.new();
     stmts.push(S.Statement.Let(S.LetInfo(co_tmp, Some(co_ty), co_create_expr)));
-    stmts.push(S.Statement.Loop(build_drive_loop(co_tmp_expr, result_lhs, return_ty, ctx, loc)));
+    stmts.push(S.Statement.Loop(BlockInfo(build_drive_loop(co_tmp_expr, result_lhs, return_ty, ctx, loc))));
     stmts
 }
 

@@ -116,7 +116,7 @@ struct BlockLowerer {
             }
             S.Statement.Expr(e) => l.lower_stmt_expr(e),
             S.Statement.TrailingExpr(_) => panic("lower-basic-block: TrailingExpr reached basic block lowering"),
-            S.Statement.Loop(body) => l.lower_loop(body),
+            S.Statement.Loop(BlockInfo(body)) => l.lower_loop(body),
             S.Statement.UnresolvedLet(_, _, _) => panic("lower-basic-block: UnresolvedLet reached basic block lowering"),
             S.Statement.ForLoop(_, _, _) => panic("lower-basic-block: ForLoop reached basic block lowering"),
             S.Statement.WhileLoop(_, _) => panic("lower-basic-block: WhileLoop reached basic block lowering"),
@@ -418,7 +418,7 @@ fn collect_labels_stmts(stmts: Vec[S.Statement], labels: Set[String]) {
 fn collect_labels_stmt(stmt: S.Statement, labels: Set[String]) {
     match stmt {
         S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => collect_labels_expr(e, labels),
-        S.Statement.Loop(body) => collect_labels_stmts(body, labels),
+        S.Statement.Loop(BlockInfo(body)) => collect_labels_stmts(body, labels),
         _ => {}
     }
 }
@@ -447,7 +447,7 @@ fn stmt_location(stmt: S.Statement) -> Location {
         S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => e.location.clone(),
         S.Statement.Let(info) => info.rhs.location.clone(),
         S.Statement.Assign(lhs, _) => lhs.location.clone(),
-        S.Statement.Loop(body) => stmts_location(body),
+        S.Statement.Loop(BlockInfo(body)) => stmts_location(body),
         _ => Location.empty(),
     }
 }

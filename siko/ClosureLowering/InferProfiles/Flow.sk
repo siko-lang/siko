@@ -529,6 +529,8 @@ instance Flow[E.Expr] {
                 flow(e, ctx);
                 ctx.unify(ctx.nodes(esignature_vars(e)), ctx.nodes(ctx.result_vars));
             }
+            E.ExprKind.Break => {}
+            E.ExprKind.Continue => {}
             E.ExprKind.Yield(E.YieldInfo(arg)) => {
                 flow(arg, ctx);
                 ctx.unify(ctx.nodes(esignature_vars(arg)), ctx.nodes(ctx.yield_vars));
@@ -620,7 +622,7 @@ instance Flow[S.Statement] {
             }
             S.Expr(e) => flow(e, ctx),
             S.TrailingExpr(e) => flow(e, ctx),
-            S.Loop(stmts) => flow(stmts, ctx),
+            S.Loop(E.BlockInfo(stmts)) => flow(stmts, ctx),
             S.ForLoop(pat, iter, stmts) => {
                 flow(iter, ctx);
                 flow(pat, ctx);
