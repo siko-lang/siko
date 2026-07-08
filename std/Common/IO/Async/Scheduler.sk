@@ -37,7 +37,7 @@ struct Scheduler {
         s.ready_queue.push_back(task);
     }
 
-    fn spawn_task(s: Scheduler, f: fn(Int) -> ()) {
+    fn spawn_task(s: Scheduler, f: fn() -> ()) {
         let task = Task(None);
         let task_co = co run(f);
         task.coroutine = Some(task_co);
@@ -52,8 +52,8 @@ struct Scheduler {
     }
 }
 
-fn run(f: fn(Int) -> ()) {
-    f(5);
+fn run(f: fn() -> ()) {
+    f();
 }
 
 struct Task {
@@ -62,7 +62,7 @@ struct Task {
 
 pub implicit current: Scheduler
 
-pub fn spawn(f: fn(Int) -> ()) {
+pub fn spawn(f: fn() -> ()) {
     current.spawn_task(f);
 }
 

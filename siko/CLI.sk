@@ -35,7 +35,7 @@ pub fn parse_cli_args() -> Option[Config] {
     let debug_co= False;
     let debug_closure = False;
     let lower_closure_v2 = False;
-    let lower_closure_v3 = False;
+    let lower_closure_v3 = True;
     let debug_closure_v3 = False;
     let debug_closure_v3_datatypes = False;
     let debug_closure_v3_profiles = False;
@@ -101,6 +101,12 @@ pub fn parse_cli_args() -> Option[Config] {
             }
         }
         i += 1;
+    }
+    match Sys.getenv("CLOSURE_LOWERING") {
+        Some("v3") => {
+            lower_closure_v3 = True;
+        }
+        _ => {}
     }
     if lower_closure_v2 && lower_closure_v3 {
         println("error: --lower-closure-v2 and --lower-closure-v3 cannot be used together");

@@ -40,7 +40,7 @@ struct State {
         s.ready_queue.push_back(task);
     }
 
-    fn spawn_task(s: State, f: fn(Int) -> ()) {
+    fn spawn_task(s: State, f: fn() -> ()) {
         let task = Task(None);
         let task_co = co run(f);
         task.coroutine = Some(task_co);
@@ -55,8 +55,8 @@ struct State {
     }
 }
 
-fn run(f: fn(Int) -> ()) {
-    f(5);
+fn run(f: fn() -> ()) {
+    f();
 }
 
 implicit current: State
@@ -65,7 +65,7 @@ struct Task {
     coroutine: Option[co(()) -> ()]
 }
 
-fn spawn(f: fn(Int) -> ()) {
+fn spawn(f: fn() -> ()) {
     current.spawn_task(f);
 }
 
@@ -109,7 +109,7 @@ fn server(port: U16) {
     await_readable(fd);
     let conn = listener.accept().unwrap();
     conn.set_nonblocking(True).unwrap();
-    spawn(|_| handler(conn));
+    spawn(|| handler(conn));
 }
 
 fn client(port: U16) {
@@ -128,8 +128,8 @@ fn main() {
     let port = 19877.as_u16();
     let s = State.new();
     with current = s {
-        spawn(|_| server(port));
-        spawn(|_| client(port));
+        spawn(|| server(port));
+        spawn(|| client(port));
         s.run_tasks();
     }
 }

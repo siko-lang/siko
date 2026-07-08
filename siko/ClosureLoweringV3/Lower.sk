@@ -326,7 +326,6 @@ instance Rw[E.WithInfo]          = auto(Map)
 instance Rw[S.LetInfo]           = auto(Map)
 instance Rw[S.DeclareInfo]       = auto(Map)
 instance Rw[E.BlockInfo]         = auto(Map)
-instance Rw[S.Statement]         = auto(Map)
 instance Rw[E.ExprKind]          = auto(Map)
 
 instance[T: Rw[T]] Rw[Option[T]] {
@@ -357,6 +356,49 @@ instance Rw[TypeDef] {
         c.ty_cache.insert(ty, result.clone());
         stats.rewrite_type_end();
         result
+    }
+}
+
+fn is_empty_dynamic_call(expr: E.Expr, c: RwCtx) -> Bool {
+    match expr.kind {
+        E.ExprKind.DynamicCall(callee, _) => {
+            let callee_ty = callee.ty.clone().expect("closure lowering v3: dynamic call callee has no type");
+            let callee_v = ty_vars(callee_ty)[0];
+            c.var_set(callee_v).is_empty()
+        }
+        _ => False,
+    }
+}
+
+instance Rw[S.Statement] {
+    fn rw(stmt: S.Statement, c: RwCtx) -> S.Statement {
+        match stmt {
+            S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
+                let new_ty = rw(ty.clone(), c);
+                if is_empty_dynamic_call(rhs.clone(), c) {
+                    let declare_ty = new_ty.expect("closure lowering v3: empty dynamic call let has no annotation");
+                    S.Statement.Declare(S.DeclareInfo(name, Some(declare_ty)))
+                } else {
+                    S.Statement.Let(S.LetInfo(name, new_ty, rw(rhs, c)))
+                }
+            }
+            S.Statement.UnresolvedLet(pat, ty, rhs) => {
+                S.Statement.UnresolvedLet(rw(pat, c), rw(ty, c), rw(rhs, c))
+            }
+            S.Statement.Declare(info) => S.Statement.Declare(rw(info, c)),
+            S.Statement.Assign(lhs, rhs) => S.Statement.Assign(rw(lhs, c), rw(rhs, c)),
+            S.Statement.Expr(expr) => {
+                if is_empty_dynamic_call(expr.clone(), c) {
+                    S.Statement.Expr(E.Expr(E.ExprKind.Tuple([]), expr.location, Some(TypeDef.Tuple(Vec.new()))))
+                } else {
+                    S.Statement.Expr(rw(expr, c))
+                }
+            }
+            S.Statement.TrailingExpr(expr) => S.Statement.TrailingExpr(rw(expr, c)),
+            S.Statement.Loop(stmts) => S.Statement.Loop(rw(stmts, c)),
+            S.Statement.ForLoop(pat, iter, stmts) => S.Statement.ForLoop(rw(pat, c), rw(iter, c), rw(stmts, c)),
+            S.Statement.WhileLoop(cond, stmts) => S.Statement.WhileLoop(rw(cond, c), rw(stmts, c)),
+        }
     }
 }
 
@@ -446,7 +488,11 @@ instance Rw[E.Expr] {
                 stats.lowered_dynamic_call();
                 stats.rewrite_dynamic_call_start();
                 let callee_v = ty_vars(callee.ty.clone().unwrap())[0];
-                let eid = c.l.intern_enum(c.var_set(callee_v));
+                let callee_set = c.var_set(callee_v);
+                if callee_set.is_empty() {
+                    panic("closure lowering v3: empty dynamic call outside normalized let");
+                }
+                let eid = c.l.intern_enum(callee_set);
                 let param_sets: Vec[Vec[Int]] = Vec.new();
                 for a in args.iter() {
                     for v in signature_ty_vars(a.ty.clone().unwrap()) {

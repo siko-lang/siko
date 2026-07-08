@@ -27,7 +27,7 @@ fn server(port: U16) {
     Async.await_readable(fd);
     let conn = listener.accept().unwrap();
     conn.set_nonblocking(True).unwrap();
-    Async.spawn(|_| handler(conn));
+    Async.spawn(|| handler(conn));
 }
 
 fn client(port: U16) {
@@ -46,8 +46,8 @@ fn main() {
     let port = 19877.as_u16();
     let s = Async.Scheduler.new();
     with Async.current = s {
-        Async.spawn(|_| server(port));
-        Async.spawn(|_| client(port));
+        Async.spawn(|| server(port));
+        Async.spawn(|| client(port));
         s.run_tasks();
     }
 }
