@@ -1,22 +1,21 @@
-module Siko.ClosureLoweringV3.Resolve {
+module Siko.ClosureLowering.Resolve {
 
 import Std.Map
 import Std.Set
 import Siko.AST.Function
 import Siko.AST.QualifiedName
 import Siko.AST.Type
-import Siko.ClosureLoweringV3.InferProfiles.Flow
-import Siko.ClosureLoweringV3.Profile
-import Siko.ClosureLoweringV3.Statistics
+import Siko.ClosureLowering.InferProfiles.Flow
+import Siko.ClosureLowering.Profile
+import Siko.ClosureLowering.Statistics
 import Siko.Config
 import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 
-// V3 concrete resolution. Profiles are generic summaries; this pass walks from
+// Concrete resolution. Profiles are generic summaries; this pass walks from
 // Main.main and computes concrete closure sets for reachable function
-// instances. Closure identity is the closure creation site's lambda qname, so
-// there is no V2-style pin stabilization loop.
+// instances. Closure identity is the closure creation site's lambda qname.
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
 struct InstanceKey {
@@ -105,7 +104,7 @@ pub struct Resolver {
         stats.resolver_walk_data_build();
         stats.resolver_walk_data_start();
         let func = r.program.functions.get(fn_name).unwrap();
-        let profile = r.profiles.get(fn_name).expect("closure lowering v3: function has no profile");
+        let profile = r.profiles.get(fn_name).expect("closure lowering: function has no profile");
         let ctx = FlowCtx(
             program: r.program,
             tables: r.tables,
@@ -181,7 +180,7 @@ pub struct Resolver {
     }
 
     pub fn closure_id_for(r: Resolver, lambda: QualifiedName) -> Int {
-        r.closure_ids.get(lambda).expect("closure lowering v3: closure id not found")
+        r.closure_ids.get(lambda).expect("closure lowering: closure id not found")
     }
 
     fn class_set(r: Resolver, iid: Int, root: FlowNode) -> Set[Int] {
@@ -311,7 +310,7 @@ fn process_instance(r: Resolver, iid: Int) {
 
         for call in wd.calls.iter() {
             stats.resolver_static_call();
-            let profile = r.profiles.get(call.callee.clone()).expect("closure lowering v3: callee has no profile");
+            let profile = r.profiles.get(call.callee.clone()).expect("closure lowering: callee has no profile");
             let callee_boundary = profile_boundary_vars(profile.clone());
             let child_inputs: Vec[Vec[Int]] = callee_boundary.iter().map(|v| {
                 match call.subst.get(v.clone()) {
@@ -351,7 +350,7 @@ fn process_instance(r: Resolver, iid: Int) {
                 if ldef.body.is_none() {
                     continue;
                 }
-                let profile = r.profiles.get(lambda.clone()).expect("closure lowering v3: lambda has no profile");
+                let profile = r.profiles.get(lambda.clone()).expect("closure lowering: lambda has no profile");
                 let boundary = profile_boundary_vars(profile.clone());
                 let capture_arg_count = match ldef.kind {
                     FunctionDefKind.Closure(n) => n,
@@ -468,8 +467,8 @@ pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) 
             main_qn = Some(q);
         }
     }
-    let main_qn = main_qn.expect("closure lowering v3: Main.main not found");
-    let main_profile = r.profiles.get(main_qn.clone()).expect("closure lowering v3: Main.main has no profile");
+    let main_qn = main_qn.expect("closure lowering: Main.main not found");
+    let main_profile = r.profiles.get(main_qn.clone()).expect("closure lowering: Main.main has no profile");
     let main_inputs: Vec[Vec[Int]] = profile_boundary_vars(main_profile).iter().map(|_| Vec.new()).collect();
     r.main_instance = r.intern_instance(main_qn, main_inputs);
 
@@ -494,8 +493,8 @@ pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) 
                 queue.push(c);
             }
         }
-        if get_config().debug_closure_v3_mono {
-            println("closure-v3-mono: pass ${pass}: visited=${visited.len()} instances=${r.instances.len()} closures=${r.closures.len()}");
+        if get_config().debug_closure_mono {
+            println("closure-mono: pass ${pass}: visited=${visited.len()} instances=${r.instances.len()} closures=${r.closures.len()}");
         }
         if !r.changed {
             break;
@@ -570,7 +569,7 @@ pub fn dump(r: Resolver) {
     let reachable = reachable_instances(r);
     let used = used_closure_ids(r, reachable);
 
-    println("=== ClosureLoweringV3: closure instances ===");
+    println("=== ClosureLowering: closure instances ===");
     for (id, c) in r.closures.iter().enumerate() {
         if !used.contains(id) {
             continue;
@@ -579,7 +578,7 @@ pub fn dump(r: Resolver) {
         println("c${id} = ${I.resolve(c.lambda.name())} captures=[${Std.Vec.join(capture_parts, ", ")}]");
     }
 
-    println("=== ClosureLoweringV3: function instances ===");
+    println("=== ClosureLowering: function instances ===");
     for iid in reachable.iter() {
         let inst = r.instances[iid];
         let wd = r.walk_data(inst.fn_name.clone());
@@ -607,7 +606,7 @@ pub fn dump(r: Resolver) {
         }
     }
 
-    println("=== ClosureLoweringV3: closure enums ===");
+    println("=== ClosureLowering: closure enums ===");
     for (i, set) in enum_sets.iter().enumerate() {
         println("closure_${i} = ${format_ids(set.clone())}");
     }

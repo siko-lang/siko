@@ -20,20 +20,7 @@ import Siko.ImplicitPropagation.Function as IP
 import Siko.LowerMatch
 import Siko.LowerTuples
 import Siko.LowerBuiltins
-import Siko.ClosureLowering
-import Siko.ClosureMerge.GeneralizeDataTypes as ClosureMergeGeneralizeDataTypes
-import Siko.ClosureMerge.GeneralizeFunctions as ClosureMergeGeneralizeFunctions
-import Siko.ClosureMerge.InferProfiles as ClosureMergeInferProfiles
-import Siko.ClosureMerge.InferProfiles.Debug as ClosureMergeDebug
-import Siko.ClosureMerge.Resolve as ClosureMergeResolve
-import Siko.ClosureMerge.Lower as ClosureMergeLower
-import Siko.ClosureLoweringV3.GeneralizeDataTypes as ClosureLoweringV3GeneralizeDataTypes
-import Siko.ClosureLoweringV3.GeneralizeFunctions as ClosureLoweringV3GeneralizeFunctions
-import Siko.ClosureLoweringV3.ProfileBuilder as ClosureLoweringV3ProfileBuilder
-import Siko.ClosureLoweringV3.Debug as ClosureLoweringV3Debug
-import Siko.ClosureLoweringV3.Resolve as ClosureLoweringV3Resolve
-import Siko.ClosureLoweringV3.Lower as ClosureLoweringV3Lower
-import Siko.ClosureLoweringV3.Statistics as ClosureLoweringV3Statistics
+import Siko.ClosureLowering.Lower as ClosureLowering
 import Siko.CoroutineLowering
 import Siko.LowerIfs
 import Siko.LowerBasicBlock
@@ -219,17 +206,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 name: "lower-closures",
                 label: "Lowering closures...",
                 run: |driver| {
-                    if get_config().lower_closure_v3 {
-                        let cl_stats = ClosureLoweringV3Statistics.Statistics.new(config.debug_closure_v3_stats);
-                        with ClosureLoweringV3Statistics.stats = cl_stats {
-                            ClosureLoweringV3Lower.lower_closures_v3(driver.program);
-                        }
-                        cl_stats.dump();
-                    } else if get_config().lower_closure_v2 {
-                        ClosureMergeLower.lower_closures_v2(driver.program);
-                    } else {
-                        lower_closures(driver.program);
-                    }
+                    ClosureLowering.lower_closures(driver.program);
                 },
                 dump: Some(|driver| println(driver.program.format())),
                 run_sanity_check: True,
@@ -324,59 +301,6 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
             ),
         ]
     };
-
-    if !config.check_only && config.debug_closure {
-        lowering_passes.insert(4, Pass(
-            name: "closure-merge-debug",
-            label: "Closure merge (debug)...",
-            run: |driver| {
-                let cloned = driver.program.clone();
-                ClosureMergeGeneralizeDataTypes.generalize_datatypes(cloned);
-                ClosureMergeGeneralizeFunctions.generalize_functions(cloned);
-                println("=== ClosureMerge: generalized program ===");
-                println(cloned.format());
-                let profiles = ClosureMergeInferProfiles.infer_profiles(cloned);
-                ClosureMergeDebug.dump_profiles(cloned, profiles);
-                let resolver = ClosureMergeResolve.resolve(cloned, profiles);
-                ClosureMergeResolve.dump(resolver);
-            },
-            dump: Some(|driver| println(driver.program.format())),
-        ));
-    }
-
-    if !config.check_only && config.debug_closure_v3 {
-        lowering_passes.insert(4, Pass(
-            name: "closure-lowering-v3-debug",
-            label: "Closure lowering v3 (debug)...",
-            run: |driver| {
-                let cl_stats = ClosureLoweringV3Statistics.Statistics.new(config.debug_closure_v3_stats);
-                with ClosureLoweringV3Statistics.stats = cl_stats {
-                    let cloned = driver.program.clone();
-                    let dump_all = !config.debug_closure_v3_datatypes && !config.debug_closure_v3_profiles && !config.debug_closure_v3_mono;
-                    ClosureLoweringV3GeneralizeDataTypes.generalize_datatypes(cloned);
-                    if config.debug_closure_v3_datatypes || dump_all {
-                        ClosureLoweringV3Debug.dump_datatypes(cloned);
-                    }
-                    if config.debug_closure_v3_profiles || dump_all || config.debug_closure_v3_mono {
-                        ClosureLoweringV3GeneralizeFunctions.generalize_functions(cloned);
-                        if dump_all {
-                            ClosureLoweringV3Debug.dump_instantiated_functions(cloned);
-                        }
-                        let result = ClosureLoweringV3ProfileBuilder.build_profiles(cloned);
-                        if config.debug_closure_v3_profiles || dump_all {
-                            ClosureLoweringV3Debug.dump_profiles(result.profiles.clone());
-                        }
-                        if config.debug_closure_v3_mono {
-                            let resolver = ClosureLoweringV3Resolve.resolve(cloned, result.profiles);
-                            ClosureLoweringV3Resolve.dump(resolver);
-                        }
-                    }
-                }
-                cl_stats.dump();
-            },
-            dump: Some(|driver| println(driver.program.format())),
-        ));
-    }
 
     core_passes + safety_passes + lowering_passes
 }

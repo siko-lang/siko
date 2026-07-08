@@ -34,13 +34,10 @@ pub fn parse_cli_args() -> Option[Config] {
     let debug_mono_stats = False;
     let debug_co= False;
     let debug_closure = False;
-    let lower_closure_v2 = False;
-    let lower_closure_v3 = True;
-    let debug_closure_v3 = False;
-    let debug_closure_v3_datatypes = False;
-    let debug_closure_v3_profiles = False;
-    let debug_closure_v3_mono = False;
-    let debug_closure_v3_stats = False;
+    let debug_closure_datatypes = False;
+    let debug_closure_profiles = False;
+    let debug_closure_mono = False;
+    let debug_closure_stats = False;
     let trace = False;
     let paths = Vec.new();
     let check_safety = True;
@@ -74,22 +71,16 @@ pub fn parse_cli_args() -> Option[Config] {
                 "--debug-mono-stats" => { debug_mono_stats = True; }
                 "--debug-co"        => { debug_co = True; }
                 "--debug-closure"   => { debug_closure = True; }
-                "--lower-closure-v2" => { lower_closure_v2 = True; }
-                "--lower-closure-v3" => { lower_closure_v3 = True; }
-                "--debug-closure-v3" => { debug_closure_v3 = True; }
-                "--debug-closure-v3-datatypes" => {
-                    debug_closure_v3 = True;
-                    debug_closure_v3_datatypes = True;
+                "--debug-closure-datatypes" => {
+                    debug_closure_datatypes = True;
                 }
-                "--debug-closure-v3-profiles" => {
-                    debug_closure_v3 = True;
-                    debug_closure_v3_profiles = True;
+                "--debug-closure-profiles" => {
+                    debug_closure_profiles = True;
                 }
-                "--debug-closure-v3-mono" => {
-                    debug_closure_v3 = True;
-                    debug_closure_v3_mono = True;
+                "--debug-closure-mono" => {
+                    debug_closure_mono = True;
                 }
-                "--debug-closure-v3-stats" => { debug_closure_v3_stats = True; }
+                "--debug-closure-stats" => { debug_closure_stats = True; }
                 "--trace"           => { trace = True; }
                 "--no-check-safety" => { check_safety = False; }
                 "-O"                => { optimize = True; }
@@ -101,16 +92,6 @@ pub fn parse_cli_args() -> Option[Config] {
             }
         }
         i += 1;
-    }
-    match Sys.getenv("CLOSURE_LOWERING") {
-        Some("v3") => {
-            lower_closure_v3 = True;
-        }
-        _ => {}
-    }
-    if lower_closure_v2 && lower_closure_v3 {
-        println("error: --lower-closure-v2 and --lower-closure-v3 cannot be used together");
-        return None;
     }
     let std_path = if no_std {
         None
@@ -135,13 +116,10 @@ pub fn parse_cli_args() -> Option[Config] {
         debug_mono_stats: debug_mono_stats,
         debug_co: debug_co,
         debug_closure: debug_closure,
-        lower_closure_v2: lower_closure_v2,
-        lower_closure_v3: lower_closure_v3,
-        debug_closure_v3: debug_closure_v3,
-        debug_closure_v3_datatypes: debug_closure_v3_datatypes,
-        debug_closure_v3_profiles: debug_closure_v3_profiles,
-        debug_closure_v3_mono: debug_closure_v3_mono,
-        debug_closure_v3_stats: debug_closure_v3_stats,
+        debug_closure_datatypes: debug_closure_datatypes,
+        debug_closure_profiles: debug_closure_profiles,
+        debug_closure_mono: debug_closure_mono,
+        debug_closure_stats: debug_closure_stats,
         trace: trace,
         paths: paths,
         check_safety: check_safety,

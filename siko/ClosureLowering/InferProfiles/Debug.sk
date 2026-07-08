@@ -1,14 +1,10 @@
-module Siko.ClosureMerge.InferProfiles.Debug {
+module Siko.ClosureLowering.InferProfiles.Debug {
 
 import Std.Map
 import Std.Set
-import Siko.AST.Function
 import Siko.AST.QualifiedName
 import Siko.AST.Type
-import Siko.ClosureMerge.InferProfiles.Flow
-import Siko.ClosureMerge.InferProfiles.Profile
-import Siko.Format.Utils
-import Siko.HIR.Program
+import Siko.ClosureLowering.InferProfiles.Flow
 import Siko.Interner as I
 
 fn format_var(v: TypeVar) -> String {
@@ -25,30 +21,6 @@ fn format_node(n: FlowNode) -> String {
 fn format_nodes(ns: Vec[FlowNode]) -> String {
     let parts: Vec[String] = ns.iter().map(|n| format_node(n.clone())).collect();
     Std.Vec.join(parts, ", ")
-}
-
-// One equivalence class: `{?0, ?2, lambda Main.foo_lambda_0}`.
-fn format_class_ref(c: ClassRef) -> String {
-    let parts: Vec[String] = c.vars.iter().map(|v| format_var(v.clone())).collect();
-    for l in c.lambdas.iter() {
-        parts.push("lambda ${I.resolve(l.name())}");
-    }
-    "{${Std.Vec.join(parts, ", ")}}"
-}
-
-// The function's generalized signature, so the profile's vars can be read
-// off the arg/result types they occur in.
-fn format_signature(func: FunctionDef) -> String {
-    let arg_parts: Vec[String] = func.args.iter().map(|a| format_type(a.type_def.clone())).collect();
-    let result = match func.result_type {
-        Some(t) => format_type(t),
-        None => "()",
-    };
-    let yield_part = match func.yield_type {
-        Some(t) => " yields ${format_type(t)}",
-        None => "",
-    };
-    "(${Std.Vec.join(arg_parts, ", ")}) -> ${result}${yield_part}"
 }
 
 // Debug dump of one SCC's slot partition: every non-trivial equivalence
@@ -76,7 +48,7 @@ pub fn debug_dump_classes(ctx: FlowCtx, scc: Vec[QualifiedName]) {
         return;
     }
     let names: Vec[String] = scc.iter().map(|q| I.resolve(q.name())).collect();
-    println("--- closure-merge group [${Std.Vec.join(names, ", ")}]");
+    println("--- closure- group [${Std.Vec.join(names, ", ")}]");
     for (root, members) in classes.iter() {
         let lambdas = ctx.uf.lambdas.get(root).unwrap_or(Set.new());
         if members.len() > 1 || !lambdas.is_empty() {
@@ -92,33 +64,6 @@ pub fn debug_dump_classes(ctx: FlowCtx, scc: Vec[QualifiedName]) {
     for r in ctx.creations.iter() {
         let capture_parts: Vec[String] = r.captures.iter().map(|ns| "{${format_nodes(ns.clone())}}").collect();
         println("  create in ${I.resolve(r.owner.name())} lambda ${I.resolve(r.lambda.name())} captures=[${Std.Vec.join(capture_parts, ", ")}]");
-    }
-}
-
-pub fn dump_profiles(program: Program, profiles: Map[QualifiedName, Profile]) {
-    println("=== ClosureMerge: data-flow profiles ===");
-    for (q, profile) in profiles.iter() {
-        let sig = match program.functions.get(q) {
-            Some(func) => format_signature(func),
-            None => "",
-        };
-        if profile.is_empty() {
-            println("fn ${I.resolve(q.name())}${sig}: (no boundary flows)");
-            continue;
-        }
-        println("fn ${I.resolve(q.name())}${sig}:");
-        for group in profile.groups.iter() {
-            println("  ${format_class_ref(group)}");
-        }
-        for a in profile.applies.iter() {
-            let arg_parts: Vec[String] = a.args.iter().map(|c| format_class_ref(c.clone())).collect();
-            let result_parts: Vec[String] = a.results.iter().map(|c| format_class_ref(c.clone())).collect();
-            println("  apply callee=${format_class_ref(a.callee)} args=[${Std.Vec.join(arg_parts, ", ")}] results=[${Std.Vec.join(result_parts, ", ")}]");
-        }
-        for c in profile.creations.iter() {
-            let capture_parts: Vec[String] = c.captures.iter().map(|cr| format_class_ref(cr.clone())).collect();
-            println("  create ${I.resolve(c.lambda.name())} captures=[${Std.Vec.join(capture_parts, ", ")}]");
-        }
     }
 }
 

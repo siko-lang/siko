@@ -1,4 +1,4 @@
-module Siko.ClosureMerge.GeneralizeFunctions {
+module Siko.ClosureLowering.GeneralizeFunctions {
 
 import Std.Map
 import Siko.AST.Annotations
@@ -11,6 +11,7 @@ import Siko.AST.Pattern
 import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.AST.Type
+import Siko.ClosureLowering.Statistics
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
@@ -19,32 +20,24 @@ import Siko.Utils.TypeVarAllocator
 import Siko.Utils.VarAllocator
 import Siko.Utils.LabelAllocator
 
-// Variable numbering is scoped per function, like ordinary generics: two
-// functions both using ?0 refer to different variables. `arities` records
-// how many closure infer vars each datatype was given by
-// GeneralizeDataTypes, so datatype references in function-land types can be
-// instantiated with the matching number of fresh vars.
+// Phase 2 setup for ClosureLowering. Runs after datatype generalization and
+// tags every function-local closure slot with a fresh internal infer var.
+// Datatype definitions publish Named vars; profile inference works with
+// TypeVar.Var values and only the final profiles are published with Named vars.
 struct Generalizer {
     alloc: TypeVarAllocator,
     arities: Map[QualifiedName, Int],
 
     fn allocate_var(g: Generalizer) -> TypeVar {
-        TypeVar.Named(g.alloc.allocate_name())
+        match g.alloc.allocate() {
+            TypeDef.Var(v) => {
+                stats.function_slot();
+                v
+            }
+            _ => panic("closure lowering: type var allocator did not allocate a var"),
+        }
     }
 }
-
-// ── Generalize trait ────────────────────────────────────────────────────────
-// Runs after GeneralizeDataTypes: every type occurrence in a function —
-// argument types, result/yield types, and the types annotated on every
-// expression and pattern in the body — gets its closure slots tagged with
-// fresh vars. The same two interceptions as the datatype pass:
-//   - ClosureInfo: tags a fresh closure infer variable into
-//     closure_infer_var, without recursing into args/return_ty (those
-//     describe the closure's call signature, not separate slots).
-//   - NamedInfo: a bare reference to a generalized datatype is instantiated
-//     with fresh vars matching that datatype's arity.
-// Everything else recurses structurally via the derive; identity instances
-// mark the node types that carry no types to generalize.
 
 trait Generalize[T] {
     fn generalize(t: T, ctx: Generalizer) -> T
@@ -105,6 +98,8 @@ instance Generalize[WithInfo]            = auto(Map)
 instance Generalize[ClosureInfo] {
     fn generalize(info: ClosureInfo, ctx: Generalizer) -> ClosureInfo {
         let ClosureInfo(args, ret, existing_var) = info;
+        let args = generalize(args, ctx);
+        let ret = generalize(ret, ctx);
         if existing_var.is_some() {
             return ClosureInfo(args, ret, existing_var);
         }
@@ -139,8 +134,6 @@ instance[T: Generalize[T]] Generalize[Option[T]] {
     }
 }
 
-// Number of closure infer vars each generalized datatype carries, read back
-// from the type_arg_defs that GeneralizeDataTypes published.
 pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
     let arities: Map[QualifiedName, Int] = Map.new();
     for (qname, sdef) in program.structs.iter() {
@@ -160,18 +153,18 @@ pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
     arities
 }
 
-// Tag every closure slot in every function's signature and body types with a
-// fresh closure infer variable. Runs after generalize_datatypes on the same
-// program. Mutates `program` in place.
 pub fn generalize_functions(program: Program) {
+    stats.generalize_functions_start();
     let ctx = Generalizer(TypeVarAllocator.new(), datatype_arities(program));
 
     let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
     for key in keys {
+        stats.generalized_function();
         let func = program.functions.remove(key).unwrap();
         ctx.alloc = TypeVarAllocator.new();
         program.functions.insert(key, generalize(func, ctx));
     }
+    stats.generalize_functions_end();
 }
 
 }
