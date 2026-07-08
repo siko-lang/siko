@@ -1,6 +1,10 @@
 module Siko.ClosureLoweringV3.Statistics {
 
 import Std.Time
+import Siko.AST.QualifiedName
+import Siko.ClosureLoweringV3.Debug as Debug
+import Siko.ClosureLoweringV3.Profile
+import Siko.Interner as I
 
 pub implicit stats: Statistics
 
@@ -24,6 +28,19 @@ fn format_average_duration(total: Duration, count: Int) -> String {
     format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
 }
 
+fn format_average_count(total: Int, count: Int) -> String {
+    if count == 0 {
+        return "0.000";
+    }
+    let scaled = (total * 1000) / count;
+    let whole = scaled / 1000;
+    let frac = (scaled % 1000).to_string();
+    while frac.len() < 3 {
+        frac = "0" + frac;
+    }
+    "${whole}.${frac}"
+}
+
 fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
     if enabled {
         starts.push(Instant.now());
@@ -44,8 +61,68 @@ fn print_time_stat(name: String, count: Int, total: Duration) {
     println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}");
 }
 
+fn print_time_sample_stat(name: String, count: Int, total: Duration, min_us: I64, max_us: I64) {
+    let actual_min = if count == 0 { 0.as_i64() } else { min_us };
+    let actual_max = if count == 0 { 0.as_i64() } else { max_us };
+    println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}, min=${format_microseconds_as_millis(actual_min)}, max=${format_microseconds_as_millis(actual_max)}");
+}
+
 fn print_count_stat(name: String, count: Int) {
     println("  ${name}: ${count}");
+}
+
+fn print_size_stat(name: String, count: Int, total: Int, min: Int, max: Int) {
+    let actual_min = if count == 0 { 0 } else { min };
+    let actual_max = if count == 0 { 0 } else { max };
+    println("  ${name}: count=${count}, total=${total}, avg=${format_average_count(total, count)}, min=${actual_min}, max=${actual_max}");
+}
+
+pub struct TimedStat {
+    pub calls: Int,
+    pub total: Duration,
+    pub min_us: I64,
+    pub max_us: I64,
+    starts: Vec[Instant],
+
+    pub fn new() -> TimedStat {
+        TimedStat(
+            calls: 0,
+            total: Duration.zero(),
+            min_us: 0.as_i64(),
+            max_us: 0.as_i64(),
+            starts: Vec.new(),
+        )
+    }
+}
+
+fn timed_start(enabled: Bool, t: TimedStat) {
+    statistics_start(enabled, t.starts);
+}
+
+fn timed_end(enabled: Bool, t: TimedStat) {
+    match statistics_elapsed(enabled, t.starts) {
+        Some(elapsed) => {
+            let us = elapsed.to_microseconds();
+            if t.calls == 0 {
+                t.min_us = us;
+                t.max_us = us;
+            } else {
+                if us < t.min_us {
+                    t.min_us = us;
+                }
+                if us > t.max_us {
+                    t.max_us = us;
+                }
+            }
+            t.calls += 1;
+            t.total += elapsed;
+        }
+        None => {}
+    }
+}
+
+fn print_timed_stat(name: String, t: TimedStat) {
+    print_time_sample_stat(name, t.calls, t.total, t.min_us, t.max_us);
 }
 
 pub struct Statistics {
@@ -58,9 +135,18 @@ pub struct Statistics {
     pub function_slots: Int,
 
     pub profile_sccs: Int,
+    pub profile_scc_size_total: Int,
+    pub profile_scc_size_min: Int,
+    pub profile_scc_size_max: Int,
     pub profile_flow_functions: Int,
     pub profile_bodyless_functions: Int,
     pub profiles_published: Int,
+    pub profile_size_count: Int,
+    pub profile_size_total: Int,
+    pub profile_size_min: Int,
+    pub profile_size_max: Int,
+    pub profile_size_min_name: String,
+    pub profile_size_max_name: String,
     pub flow_unifications: Int,
     pub flow_cross_unifications: Int,
     pub flow_creations: Int,
@@ -84,6 +170,11 @@ pub struct Statistics {
     pub lowered_dynamic_calls: Int,
     pub retargeted_static_calls: Int,
     pub retargeted_function_ptrs: Int,
+    pub rewrite_type_requests: Int,
+    pub rewrite_type_cache_misses: Int,
+    pub rewrite_exprs_total: Int,
+    pub rewrite_exprs_min: Int,
+    pub rewrite_exprs_max: Int,
     pub instantiated_data_types: Int,
     pub instantiated_structs: Int,
     pub instantiated_enums: Int,
@@ -101,6 +192,8 @@ pub struct Statistics {
     profile_build_starts: Vec[Instant],
     pub profile_scc_calls: Int,
     pub profile_scc_time: Duration,
+    pub profile_scc_time_min_us: I64,
+    pub profile_scc_time_max_us: I64,
     profile_scc_starts: Vec[Instant],
     pub profile_flow_calls: Int,
     pub profile_flow_time: Duration,
@@ -122,6 +215,8 @@ pub struct Statistics {
     rewrite_starts: Vec[Instant],
     pub rewrite_function_calls: Int,
     pub rewrite_function_time: Duration,
+    pub rewrite_function_time_min_us: I64,
+    pub rewrite_function_time_max_us: I64,
     rewrite_function_starts: Vec[Instant],
     pub generate_handler_calls: Int,
     pub generate_handler_time: Duration,
@@ -129,6 +224,17 @@ pub struct Statistics {
     pub generate_enum_calls: Int,
     pub generate_enum_time: Duration,
     generate_enum_starts: Vec[Instant],
+    pub rewrite_type_timing: TimedStat,
+    pub rewrite_function_walk_data_timing: TimedStat,
+    pub rewrite_function_rw_timing: TimedStat,
+    pub rewrite_type_miss_timing: TimedStat,
+    pub rewrite_var_set_timing: TimedStat,
+    pub rewrite_instantiate_data_timing: TimedStat,
+    pub rewrite_retarget_data_name_timing: TimedStat,
+    pub rewrite_create_closure_timing: TimedStat,
+    pub rewrite_dynamic_call_timing: TimedStat,
+    pub rewrite_retarget_static_call_timing: TimedStat,
+    pub rewrite_retarget_fn_ptr_timing: TimedStat,
 
     pub fn new(enabled: Bool) -> Statistics {
         Statistics(
@@ -139,9 +245,18 @@ pub struct Statistics {
             generalized_functions: 0,
             function_slots: 0,
             profile_sccs: 0,
+            profile_scc_size_total: 0,
+            profile_scc_size_min: 0,
+            profile_scc_size_max: 0,
             profile_flow_functions: 0,
             profile_bodyless_functions: 0,
             profiles_published: 0,
+            profile_size_count: 0,
+            profile_size_total: 0,
+            profile_size_min: 0,
+            profile_size_max: 0,
+            profile_size_min_name: "",
+            profile_size_max_name: "",
             flow_unifications: 0,
             flow_cross_unifications: 0,
             flow_creations: 0,
@@ -163,6 +278,11 @@ pub struct Statistics {
             lowered_dynamic_calls: 0,
             retargeted_static_calls: 0,
             retargeted_function_ptrs: 0,
+            rewrite_type_requests: 0,
+            rewrite_type_cache_misses: 0,
+            rewrite_exprs_total: 0,
+            rewrite_exprs_min: 0,
+            rewrite_exprs_max: 0,
             instantiated_data_types: 0,
             instantiated_structs: 0,
             instantiated_enums: 0,
@@ -179,6 +299,8 @@ pub struct Statistics {
             profile_build_starts: Vec.new(),
             profile_scc_calls: 0,
             profile_scc_time: Duration.zero(),
+            profile_scc_time_min_us: 0.as_i64(),
+            profile_scc_time_max_us: 0.as_i64(),
             profile_scc_starts: Vec.new(),
             profile_flow_calls: 0,
             profile_flow_time: Duration.zero(),
@@ -200,6 +322,8 @@ pub struct Statistics {
             rewrite_starts: Vec.new(),
             rewrite_function_calls: 0,
             rewrite_function_time: Duration.zero(),
+            rewrite_function_time_min_us: 0.as_i64(),
+            rewrite_function_time_max_us: 0.as_i64(),
             rewrite_function_starts: Vec.new(),
             generate_handler_calls: 0,
             generate_handler_time: Duration.zero(),
@@ -207,6 +331,17 @@ pub struct Statistics {
             generate_enum_calls: 0,
             generate_enum_time: Duration.zero(),
             generate_enum_starts: Vec.new(),
+            rewrite_type_timing: TimedStat.new(),
+            rewrite_function_walk_data_timing: TimedStat.new(),
+            rewrite_function_rw_timing: TimedStat.new(),
+            rewrite_type_miss_timing: TimedStat.new(),
+            rewrite_var_set_timing: TimedStat.new(),
+            rewrite_instantiate_data_timing: TimedStat.new(),
+            rewrite_retarget_data_name_timing: TimedStat.new(),
+            rewrite_create_closure_timing: TimedStat.new(),
+            rewrite_dynamic_call_timing: TimedStat.new(),
+            rewrite_retarget_static_call_timing: TimedStat.new(),
+            rewrite_retarget_fn_ptr_timing: TimedStat.new(),
         )
     }
 
@@ -236,9 +371,21 @@ pub struct Statistics {
         if stats.enabled { stats.function_slots += 1; }
     }
 
-    pub fn profile_scc(stats: Statistics) {
+    pub fn profile_scc(stats: Statistics, size: Int) {
         if stats.enabled {
+            if stats.profile_sccs == 0 {
+                stats.profile_scc_size_min = size;
+                stats.profile_scc_size_max = size;
+            } else {
+                if size < stats.profile_scc_size_min {
+                    stats.profile_scc_size_min = size;
+                }
+                if size > stats.profile_scc_size_max {
+                    stats.profile_scc_size_max = size;
+                }
+            }
             stats.profile_sccs += 1;
+            stats.profile_scc_size_total += size;
         }
     }
 
@@ -252,6 +399,31 @@ pub struct Statistics {
 
     pub fn profile_published(stats: Statistics) {
         if stats.enabled { stats.profiles_published += 1; }
+    }
+
+    pub fn profile_size(stats: Statistics, qname: QualifiedName, profile: FunctionProfile) {
+        if !stats.enabled {
+            return;
+        }
+        let size = Debug.format_profile(qname.clone(), profile).len();
+        let name = I.resolve(qname.name());
+        if stats.profile_size_count == 0 {
+            stats.profile_size_min = size;
+            stats.profile_size_max = size;
+            stats.profile_size_min_name = name.clone();
+            stats.profile_size_max_name = name.clone();
+        } else {
+            if size < stats.profile_size_min {
+                stats.profile_size_min = size;
+                stats.profile_size_min_name = name.clone();
+            }
+            if size > stats.profile_size_max {
+                stats.profile_size_max = size;
+                stats.profile_size_max_name = name.clone();
+            }
+        }
+        stats.profile_size_count += 1;
+        stats.profile_size_total += size;
     }
 
     pub fn flow_unification(stats: Statistics, cross: Bool) {
@@ -339,6 +511,120 @@ pub struct Statistics {
         if stats.enabled { stats.retargeted_function_ptrs += 1; }
     }
 
+    pub fn rewrite_type_request(stats: Statistics) {
+        if stats.enabled { stats.rewrite_type_requests += 1; }
+    }
+
+    pub fn rewrite_type_cache_miss(stats: Statistics) {
+        if stats.enabled { stats.rewrite_type_cache_misses += 1; }
+    }
+
+    pub fn rewrite_function_exprs(stats: Statistics, count: Int) {
+        if !stats.enabled {
+            return;
+        }
+        if stats.rewrite_function_calls == 0 {
+            stats.rewrite_exprs_min = count;
+            stats.rewrite_exprs_max = count;
+        } else {
+            if count < stats.rewrite_exprs_min {
+                stats.rewrite_exprs_min = count;
+            }
+            if count > stats.rewrite_exprs_max {
+                stats.rewrite_exprs_max = count;
+            }
+        }
+        stats.rewrite_exprs_total += count;
+    }
+
+    pub fn rewrite_type_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_type_timing);
+    }
+
+    pub fn rewrite_type_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_type_timing);
+    }
+
+    pub fn rewrite_function_walk_data_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_function_walk_data_timing);
+    }
+
+    pub fn rewrite_function_walk_data_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_function_walk_data_timing);
+    }
+
+    pub fn rewrite_function_rw_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_function_rw_timing);
+    }
+
+    pub fn rewrite_function_rw_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_function_rw_timing);
+    }
+
+    pub fn rewrite_type_miss_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_type_miss_timing);
+    }
+
+    pub fn rewrite_type_miss_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_type_miss_timing);
+    }
+
+    pub fn rewrite_var_set_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_var_set_timing);
+    }
+
+    pub fn rewrite_var_set_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_var_set_timing);
+    }
+
+    pub fn rewrite_instantiate_data_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_instantiate_data_timing);
+    }
+
+    pub fn rewrite_instantiate_data_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_instantiate_data_timing);
+    }
+
+    pub fn rewrite_retarget_data_name_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_retarget_data_name_timing);
+    }
+
+    pub fn rewrite_retarget_data_name_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_retarget_data_name_timing);
+    }
+
+    pub fn rewrite_create_closure_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_create_closure_timing);
+    }
+
+    pub fn rewrite_create_closure_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_create_closure_timing);
+    }
+
+    pub fn rewrite_dynamic_call_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_dynamic_call_timing);
+    }
+
+    pub fn rewrite_dynamic_call_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_dynamic_call_timing);
+    }
+
+    pub fn rewrite_retarget_static_call_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_retarget_static_call_timing);
+    }
+
+    pub fn rewrite_retarget_static_call_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_retarget_static_call_timing);
+    }
+
+    pub fn rewrite_retarget_fn_ptr_start(stats: Statistics) {
+        timed_start(stats.enabled, stats.rewrite_retarget_fn_ptr_timing);
+    }
+
+    pub fn rewrite_retarget_fn_ptr_end(stats: Statistics) {
+        timed_end(stats.enabled, stats.rewrite_retarget_fn_ptr_timing);
+    }
+
     pub fn instantiated_data_type(stats: Statistics) {
         if stats.enabled { stats.instantiated_data_types += 1; }
     }
@@ -408,6 +694,18 @@ pub struct Statistics {
     pub fn profile_scc_end(stats: Statistics) {
         match statistics_elapsed(stats.enabled, stats.profile_scc_starts) {
             Some(elapsed) => {
+                let us = elapsed.to_microseconds();
+                if stats.profile_scc_calls == 0 {
+                    stats.profile_scc_time_min_us = us;
+                    stats.profile_scc_time_max_us = us;
+                } else {
+                    if us < stats.profile_scc_time_min_us {
+                        stats.profile_scc_time_min_us = us;
+                    }
+                    if us > stats.profile_scc_time_max_us {
+                        stats.profile_scc_time_max_us = us;
+                    }
+                }
                 stats.profile_scc_calls += 1;
                 stats.profile_scc_time += elapsed;
             }
@@ -506,6 +804,18 @@ pub struct Statistics {
     pub fn rewrite_function_end(stats: Statistics) {
         match statistics_elapsed(stats.enabled, stats.rewrite_function_starts) {
             Some(elapsed) => {
+                let us = elapsed.to_microseconds();
+                if stats.rewrite_function_calls == 0 {
+                    stats.rewrite_function_time_min_us = us;
+                    stats.rewrite_function_time_max_us = us;
+                } else {
+                    if us < stats.rewrite_function_time_min_us {
+                        stats.rewrite_function_time_min_us = us;
+                    }
+                    if us > stats.rewrite_function_time_max_us {
+                        stats.rewrite_function_time_max_us = us;
+                    }
+                }
                 stats.rewrite_function_calls += 1;
                 stats.rewrite_function_time += elapsed;
             }
@@ -552,9 +862,13 @@ pub struct Statistics {
         print_count_stat("generalized_functions", stats.generalized_functions);
         print_count_stat("function_slots", stats.function_slots);
         print_count_stat("profile_sccs", stats.profile_sccs);
+        print_size_stat("profile_scc_size", stats.profile_sccs, stats.profile_scc_size_total, stats.profile_scc_size_min, stats.profile_scc_size_max);
         print_count_stat("profile_flow_functions", stats.profile_flow_functions);
         print_count_stat("profile_bodyless_functions", stats.profile_bodyless_functions);
         print_count_stat("profiles_published", stats.profiles_published);
+        print_size_stat("profile_size", stats.profile_size_count, stats.profile_size_total, stats.profile_size_min, stats.profile_size_max);
+        println("  profile_size_min_name: ${stats.profile_size_min_name}");
+        println("  profile_size_max_name: ${stats.profile_size_max_name}");
         print_count_stat("flow_unifications", stats.flow_unifications);
         print_count_stat("flow_cross_unifications", stats.flow_cross_unifications);
         print_count_stat("flow_creations", stats.flow_creations);
@@ -576,6 +890,9 @@ pub struct Statistics {
         print_count_stat("lowered_dynamic_calls", stats.lowered_dynamic_calls);
         print_count_stat("retargeted_static_calls", stats.retargeted_static_calls);
         print_count_stat("retargeted_function_ptrs", stats.retargeted_function_ptrs);
+        print_count_stat("rewrite_type_requests", stats.rewrite_type_requests);
+        print_count_stat("rewrite_type_cache_misses", stats.rewrite_type_cache_misses);
+        print_size_stat("rewrite_exprs_per_function", stats.rewrite_function_calls, stats.rewrite_exprs_total, stats.rewrite_exprs_min, stats.rewrite_exprs_max);
         print_count_stat("instantiated_data_types", stats.instantiated_data_types);
         print_count_stat("instantiated_structs", stats.instantiated_structs);
         print_count_stat("instantiated_enums", stats.instantiated_enums);
@@ -584,14 +901,25 @@ pub struct Statistics {
         print_time_stat("generalize_datatypes", stats.generalize_datatypes_calls, stats.generalize_datatypes_time);
         print_time_stat("generalize_functions", stats.generalize_functions_calls, stats.generalize_functions_time);
         print_time_stat("profile_build", stats.profile_build_calls, stats.profile_build_time);
-        print_time_stat("profile_scc", stats.profile_scc_calls, stats.profile_scc_time);
+        print_time_sample_stat("profile_scc", stats.profile_scc_calls, stats.profile_scc_time, stats.profile_scc_time_min_us, stats.profile_scc_time_max_us);
         print_time_stat("profile_flow", stats.profile_flow_calls, stats.profile_flow_time);
         print_time_stat("profile_publish", stats.profile_publish_calls, stats.profile_publish_time);
         print_time_stat("resolve", stats.resolve_calls, stats.resolve_time);
         print_time_stat("resolver_walk_data", stats.resolver_walk_data_calls, stats.resolver_walk_data_time);
         print_time_stat("resolver_process_instance", stats.resolver_process_instance_calls, stats.resolver_process_instance_time);
         print_time_stat("rewrite", stats.rewrite_calls, stats.rewrite_time);
-        print_time_stat("rewrite_function", stats.rewrite_function_calls, stats.rewrite_function_time);
+        print_time_sample_stat("rewrite_function", stats.rewrite_function_calls, stats.rewrite_function_time, stats.rewrite_function_time_min_us, stats.rewrite_function_time_max_us);
+        print_timed_stat("rewrite_function_walk_data", stats.rewrite_function_walk_data_timing);
+        print_timed_stat("rewrite_function_rw", stats.rewrite_function_rw_timing);
+        print_timed_stat("rewrite_type", stats.rewrite_type_timing);
+        print_timed_stat("rewrite_type_miss", stats.rewrite_type_miss_timing);
+        print_timed_stat("rewrite_var_set", stats.rewrite_var_set_timing);
+        print_timed_stat("rewrite_instantiate_data", stats.rewrite_instantiate_data_timing);
+        print_timed_stat("rewrite_retarget_data_name", stats.rewrite_retarget_data_name_timing);
+        print_timed_stat("rewrite_create_closure", stats.rewrite_create_closure_timing);
+        print_timed_stat("rewrite_dynamic_call", stats.rewrite_dynamic_call_timing);
+        print_timed_stat("rewrite_retarget_static_call", stats.rewrite_retarget_static_call_timing);
+        print_timed_stat("rewrite_retarget_fn_ptr", stats.rewrite_retarget_fn_ptr_timing);
         print_time_stat("generate_handler", stats.generate_handler_calls, stats.generate_handler_time);
         print_time_stat("generate_enum", stats.generate_enum_calls, stats.generate_enum_time);
     }

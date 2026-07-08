@@ -161,6 +161,7 @@ fn publish_profile(ctx: FlowCtx, qname: QualifiedName) -> FunctionProfile {
 
     let profile = FunctionProfile(arg_types, result_type, yield_type, Vec.new(), contains, applies);
     stats.profile_published();
+    stats.profile_size(qname, profile.clone());
     stats.profile_publish_end();
     profile
 }
@@ -186,7 +187,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
     );
 
     for scc in sccs {
-        stats.profile_scc();
+        stats.profile_scc(scc.len());
         stats.profile_scc_start();
         let members: Set[QualifiedName] = Set.new();
         for q in scc.iter() {
