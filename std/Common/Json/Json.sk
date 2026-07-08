@@ -1,0 +1,203 @@
+module Std.Json {
+
+import Std.Map
+
+@derive(PartialEq, Eq, Clone)
+pub enum Json {
+    Null,
+    Boolean(Bool),
+    Number(Int),
+    Str(String),
+    Array(Vec[Json]),
+    Object(Map[String, Json])
+
+    pub fn as_array(j: Json) -> Result[Vec[Json], JsonError] {
+        match j {
+            Json.Array(items) => Ok(items),
+            _ => Err(JsonError.ExpectedArray),
+        }
+    }
+
+    pub fn as_object(j: Json) -> Result[Map[String, Json], JsonError] {
+        match j {
+            Json.Object(fields) => Ok(fields),
+            _ => Err(JsonError.ExpectedObject),
+        }
+    }
+
+    pub fn get_field(j: Json, name: String) -> Result[Json, JsonError] {
+        let fields = j.as_object()?;
+        match fields.get(name) {
+            Some(value) => Ok(value),
+            None => Err(JsonError.MissingField(name)),
+        }
+    }
+
+    pub fn empty_array() -> Json {
+        Json.Array(Vec.new())
+    }
+
+    pub fn empty_object() -> Json {
+        Json.Object(Map.new())
+    }
+}
+
+@derive(PartialEq, Eq, Clone)
+pub enum JsonError {
+    ExpectedNull,
+    ExpectedBool,
+    ExpectedNumber,
+    ExpectedString,
+    ExpectedArray,
+    ExpectedObject,
+    MissingField(String),
+    UnknownVariant(String),
+    InvalidVariant(String),
+    Custom(String),
+}
+
+pub trait JsonSerialize[T] {
+    fn to_json(value: T) -> Json
+}
+
+pub trait JsonDeserialize[T] {
+    fn from_json(value: Json) -> Result[T, JsonError]
+}
+
+instance ToString[JsonError] {
+    fn to_string(e: JsonError) -> String {
+        match e {
+            JsonError.ExpectedNull => "Expected JSON null",
+            JsonError.ExpectedBool => "Expected JSON boolean",
+            JsonError.ExpectedNumber => "Expected JSON number",
+            JsonError.ExpectedString => "Expected JSON string",
+            JsonError.ExpectedArray => "Expected JSON array",
+            JsonError.ExpectedObject => "Expected JSON object",
+            JsonError.MissingField(name) => "Missing JSON field: ${name}",
+            JsonError.UnknownVariant(name) => "Unknown JSON variant: ${name}",
+            JsonError.InvalidVariant(name) => "Invalid JSON variant: ${name}",
+            JsonError.Custom(msg) => msg,
+        }
+    }
+}
+
+instance JsonSerialize[Json] {
+    fn to_json(value: Json) -> Json {
+        value
+    }
+}
+
+instance JsonDeserialize[Json] {
+    fn from_json(value: Json) -> Result[Json, JsonError] {
+        Ok(value)
+    }
+}
+
+instance JsonSerialize[()] {
+    fn to_json(value: ()) -> Json {
+        Json.Null
+    }
+}
+
+instance JsonDeserialize[()] {
+    fn from_json(value: Json) -> Result[(), JsonError] {
+        match value {
+            Json.Null => Ok(()),
+            _ => Err(JsonError.ExpectedNull),
+        }
+    }
+}
+
+instance JsonSerialize[Bool] {
+    fn to_json(value: Bool) -> Json {
+        Json.Boolean(value)
+    }
+}
+
+instance JsonDeserialize[Bool] {
+    fn from_json(value: Json) -> Result[Bool, JsonError] {
+        match value {
+            Json.Boolean(v) => Ok(v),
+            _ => Err(JsonError.ExpectedBool),
+        }
+    }
+}
+
+instance JsonSerialize[Int] {
+    fn to_json(value: Int) -> Json {
+        Json.Number(value)
+    }
+}
+
+instance JsonDeserialize[Int] {
+    fn from_json(value: Json) -> Result[Int, JsonError] {
+        match value {
+            Json.Number(v) => Ok(v),
+            _ => Err(JsonError.ExpectedNumber),
+        }
+    }
+}
+
+instance JsonSerialize[String] {
+    fn to_json(value: String) -> Json {
+        Json.Str(value)
+    }
+}
+
+instance JsonDeserialize[String] {
+    fn from_json(value: Json) -> Result[String, JsonError] {
+        match value {
+            Json.Str(v) => Ok(v),
+            _ => Err(JsonError.ExpectedString),
+        }
+    }
+}
+
+instance[T: JsonSerialize[T]] JsonSerialize[Vec[T]] {
+    fn to_json(values: Vec[T]) -> Json {
+        let items: Vec[Json] = Vec.new();
+        for value in values {
+            items.push(value.to_json());
+        }
+        Json.Array(items)
+    }
+}
+
+instance[T: JsonDeserialize[T]] JsonDeserialize[Vec[T]] {
+    fn from_json(value: Json) -> Result[Vec[T], JsonError] {
+        match value {
+            Json.Array(items) => {
+                let values: Vec[T] = Vec.new();
+                for item in items {
+                    let decoded: T = from_json(item)?;
+                    values.push(decoded);
+                }
+                Ok(values)
+            }
+            _ => Err(JsonError.ExpectedArray),
+        }
+    }
+}
+
+instance[T: JsonSerialize[T]] JsonSerialize[Option[T]] {
+    fn to_json(value: Option[T]) -> Json {
+        match value {
+            Some(v) => v.to_json(),
+            None => Json.Null,
+        }
+    }
+}
+
+instance[T: JsonDeserialize[T]] JsonDeserialize[Option[T]] {
+    fn from_json(value: Json) -> Result[Option[T], JsonError] {
+        match value {
+            Json.Null => Ok(None),
+            other => {
+                let decoded: T = from_json(other)?;
+                Ok(Some(decoded))
+            }
+        }
+    }
+}
+
+}

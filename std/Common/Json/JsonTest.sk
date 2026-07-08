@@ -1,0 +1,42 @@
+module Std.Json.JsonTest {
+
+import Std.Json
+import Std.Map
+
+@test
+fn test_json_primitive_serialization() {
+    assert(True.to_json() == Json.Boolean(True));
+    assert(123.to_json() == Json.Number(123));
+    assert("hello".to_json() == Json.Str("hello"));
+    assert(().to_json() == Json.Null);
+}
+
+@test
+fn test_json_vec_roundtrip() {
+    let input: Vec[Int] = Vec.new();
+    input.push(1);
+    input.push(2);
+    input.push(3);
+
+    let encoded = input.to_json();
+    assert(encoded == Json.Array([Json.Number(1), Json.Number(2), Json.Number(3)]));
+
+    let decoded: Result[Vec[Int], JsonError] = from_json(encoded);
+    assert(decoded.unwrap() == input);
+}
+
+@test
+fn test_json_object_helpers() {
+    let fields: Map[String, Json] = Map.new();
+    fields.insert("name", Json.Str("siko"));
+    fields.insert("count", Json.Number(2));
+
+    let object = Json.Object(fields);
+    assert(object.get_field("name").unwrap() == Json.Str("siko"));
+    match object.get_field("missing") {
+        Err(JsonError.MissingField(name)) => assert(name == "missing"),
+        _ => assert(False),
+    }
+}
+
+}

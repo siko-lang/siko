@@ -41,9 +41,7 @@ instance ToString[Error] {
                 }
             }
             Timeout => {
-                // FIXME: global method call
-                let t = TIMEOUT_SECS;
-                "timed out after ${t}s"
+                "timed out after ${TIMEOUT_SECS}s"
             }
             BuildFailed(output: out) => "siko.bin exited non-zero:\n${out}",
             ProgramFailed(output: out) => "program exited non-zero:\n${out}",
@@ -266,13 +264,11 @@ pub struct TestRunner {
     fn bless_success_case(r: TestRunner, test: TestCase) {
         print("  ${test.path} ...");
         flush();
-        let result: Result[(), Error] = if test.has_snapshot {
+        let result: Result[(), Error] = if test.has_snapshot || test.pass_tests.is_empty() {
             match r.build_and_run(test) {
                 Ok(_) => Ok(()),
                 Err(e) => Err(e),
             }
-        } else if test.pass_tests.is_empty() {
-            Err(IoError(context: "cannot read ${test.snapshot}", message: "file not found"))
         } else {
             Ok(())
         };
@@ -615,9 +611,7 @@ fn wait_with_timeout(child: ChildProcess) -> Result[CommandResult, Error] {
         match child.try_wait() {
             Some(r) => return Ok(r),
             None => {
-                // FIXME: global method call
-                let t = TIMEOUT_SECS;
-                if start.elapsed().to_seconds() >= t.as_i64() {
+                if start.elapsed().to_seconds() >= TIMEOUT_SECS.as_i64() {
                     child.kill(9.as_i32());
                     child.wait();
                     return Err(Timeout);

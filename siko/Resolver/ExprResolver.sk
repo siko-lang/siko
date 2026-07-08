@@ -166,14 +166,20 @@ pub struct ExprResolver {
                             .type_resolver
                             .module_resolver()
                             .resolve(ident)
-                        {
-                            Ok(item) => item,
-                            Err(ResolveError.NameNotFound(_)) => {
-                                let kind = expr_resolver.resolve_type_associated_call(ident, resolved_args, named_args)?;
-                                return Ok(Expr(kind, expr.location, None));
-                            }
-                            Err(e) => return Err(e),
-                        };
+	                        {
+	                            Ok(item) => item,
+	                            Err(ResolveError.NameNotFound(_)) => {
+	                                match expr_resolver.resolve_type_associated_call(ident, resolved_args, named_args) {
+	                                    Ok(kind) => return Ok(Expr(kind, expr.location, None)),
+	                                    Err(ResolveError.NameNotFound(_)) => {
+	                                        let kind = expr_resolver.resolve_value_method_call(ident, resolved_args, named_args)?;
+	                                        return Ok(Expr(kind, expr.location, None));
+	                                    }
+	                                    Err(e) => return Err(e),
+	                                }
+	                            }
+	                            Err(e) => return Err(e),
+	                        };
                         match item.kind {
                             ModuleItemKind.Struct(_, _, _) => {
                                 if !expr_resolver.struct_fields_accessible(item) {
@@ -486,10 +492,10 @@ pub struct ExprResolver {
         Ok(ExprKind.With(WithInfo(resolved_selections, body)))
     }
 
-    fn resolve_type_associated_call(
-        expr_resolver: ExprResolver,
-        ident: Identifier,
-        resolved_args: Vec[Expr],
+	    fn resolve_type_associated_call(
+	        expr_resolver: ExprResolver,
+	        ident: Identifier,
+	        resolved_args: Vec[Expr],
         named_args: Vec[NamedArgument],
     ) -> Result[ExprKind, ResolveError] {
         let name_str = I.resolve(ident.name);
@@ -519,10 +525,51 @@ pub struct ExprResolver {
             resolved_args,
             WitnessInfo.new(),
             named_args,
-        )))
-    }
+	        )))
+	    }
 
-    fn resolve_named_pattern(
+		    fn resolve_value_method_call(
+		        expr_resolver: ExprResolver,
+		        ident: Identifier,
+		        resolved_args: Vec[Expr],
+		        named_args: Vec[NamedArgument],
+		    ) -> Result[ExprKind, ResolveError] {
+	        let name_str = I.resolve(ident.name);
+	        let last_dot = match name_str.rfind('.') {
+	            Some(i) => i,
+	            None => return Err(ResolveError.NameNotFound(ident)),
+	        };
+		        let value_str = name_str.sub(0, last_dot);
+		        let method_str = name_str.sub(last_dot + 1, name_str.len());
+		        let value_ident = Identifier.new(I.intern(value_str), ident.location);
+		        let method_ident = Identifier.new(I.intern(method_str), ident.location);
+		        let item = match expr_resolver.type_resolver.module_resolver().resolve(value_ident) {
+		            Ok(item) => item,
+		            Err(_) => return Err(ResolveError.NameNotFound(ident)),
+		        };
+		        let receiver_kind = match item.kind {
+		            ModuleItemKind.Variant(_, _, 0) => FunctionKind.VariantCtor,
+		            ModuleItemKind.Global(_) => FunctionKind.UserDefined,
+		            _ => return Err(ResolveError.NameNotFound(ident)),
+		        };
+		        let receiver = Expr(
+		            ExprKind.FunctionCall(FunctionCallInfo(
+		                qname: item.qualified_name,
+		                kind: receiver_kind,
+		                args: Vec.new(),
+		            )),
+		            ident.location,
+		            None,
+		        );
+		        Ok(ExprKind.MethodCall(MethodCallInfo(
+		            receiver,
+		            method_ident,
+		            resolved_args,
+		            named_args,
+		        )))
+		    }
+
+	    fn resolve_named_pattern(
         expr_resolver: ExprResolver,
         info: NamedPatternInfo,
         loc: Location,

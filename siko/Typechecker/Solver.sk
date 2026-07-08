@@ -159,6 +159,25 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
     Err(TypeError.MethodNotFound(type_qname.name(), method, location))
 }
 
+fn resolve_trait_method(method: I.String, receiver_name: I.String, module_name: I.String, program: Program, location: Location) -> Result[QualifiedName, TypeError] {
+    match program.module_trait_method_map.get(module_name) {
+        Some(m) => {
+            match m.get(method) {
+                Some(fqns) => {
+                    if fqns.len() == 1 {
+                        Ok(fqns[0])
+                    } else {
+                        let candidates = fqns.iter().map(|q| q.name()).collect();
+                        Err(TypeError.AmbiguousTraitMethod(method, candidates, location))
+                    }
+                }
+                None => Err(TypeError.MethodNotFound(receiver_name, method, location)),
+            }
+        }
+        None => Err(TypeError.MethodNotFound(receiver_name, method, location)),
+    }
+}
+
 fn satisfied(newly_bound: Vec[Int], spawn: Vec[(C.ConstraintKind, Location)], call_resolution: Option[CallResolution], witness: Option[(C.WitnessKey, BoundWitness)]) -> ProcessResult {
     ProcessResult.Satisfied(newly_bound, spawn, call_resolution, witness)
 }
@@ -288,41 +307,27 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     match resolve_method(qname, method, ctx.module_name, ctx.program, location) {
                         Ok(mq) => mq,
                         Err(TypeError.MethodNotFound(_, _, _)) => {
-                            match ctx.program.module_trait_method_map.get(ctx.module_name) {
-                                Some(m) => match m.get(method) {
-                                    Some(fqns) => {
-                                        if fqns.len() == 1 {
-                                            fqns[0]
-                                        } else {
-                                            let candidates = fqns.iter().map(|q| q.name()).collect();
-                                            return ProcessResult.Failed(TypeError.AmbiguousTraitMethod(method, candidates, location));
-                                        }
-                                    }
-                                    None => return ProcessResult.Failed(TypeError.MethodNotFound(qname.name(), method, location)),
-                                }
-                                None => return ProcessResult.Failed(TypeError.MethodNotFound(qname.name(), method, location)),
+                            match resolve_trait_method(method, qname.name(), ctx.module_name, ctx.program, location) {
+                                Ok(mq) => mq,
+                                Err(e) => return ProcessResult.Failed(e),
                             }
                         }
                         Err(e) => return ProcessResult.Failed(e),
                     }
                 }
                 TypeDef.Var(TypeVar.Named(_)) => {
-                    match ctx.program.module_trait_method_map.get(ctx.module_name) {
-                        Some(m) => match m.get(method) {
-                            Some(fqns) => {
-                                if fqns.len() == 1 {
-                                    fqns[0]
-                                } else {
-                                    let candidates = fqns.iter().map(|q| q.name()).collect();
-                                    return ProcessResult.Failed(TypeError.AmbiguousTraitMethod(method, candidates, location));
-                                }
-                            }
-                            None => return ProcessResult.Failed(TypeError.MethodNotFound(I.intern("(generic)"), method, location)),
-                        }
-                        None => return ProcessResult.Failed(TypeError.MethodNotFound(I.intern("(generic)"), method, location)),
+                    match resolve_trait_method(method, I.intern("(generic)"), ctx.module_name, ctx.program, location) {
+                        Ok(mq) => mq,
+                        Err(e) => return ProcessResult.Failed(e),
                     }
                 }
-                other => return ProcessResult.Failed(TypeError.InvalidReceiverType(other, location)),
+                other => {
+                    let receiver_name = I.intern(format_type(other));
+                    match resolve_trait_method(method, receiver_name, ctx.module_name, ctx.program, location) {
+                        Ok(mq) => mq,
+                        Err(e) => return ProcessResult.Failed(e),
+                    }
+                }
             };
 
             let fndef = ctx.program.functions.get(method_qname).unwrap();
