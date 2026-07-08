@@ -31,6 +31,7 @@ pub struct HandlerLowerer {
     pub co_index: Int,
     pub variant_index: Int,
     pub yield_count: Int,
+    pub seg_labels: Vec[String],
     pub yielded_qn: QualifiedName,
     pub returned_qn: QualifiedName,
     pub var_map: Map[VariableName, I.String],
@@ -57,7 +58,7 @@ pub struct HandlerLowerer {
         let set = ctx.set_state(i + 1, loc.clone());
         let yielded = make_variant_call(ctx.yielded_qn.clone(), [v], ctx.co_result.clone(), loc.clone());
         let ret = S.Statement.Expr(Expr(ExprKind.Return(yielded), loc.clone(), Some(TypeDef.Never(False))));
-        let label = S.Statement.Expr(make_label(seg_label(ctx.co_index, ctx.variant_index, i + 1), loc.clone()));
+        let label = S.Statement.Expr(make_label(ctx.seg_labels[i + 1].clone(), loc.clone()));
         Expr(ExprKind.Block(BlockInfo([set, ret, label])), loc, ty)
     }
 
@@ -183,6 +184,7 @@ pub fn make_handler_lowerer(
     co_index: Int,
     variant_index: Int,
     yield_count: Int,
+    seg_labels: Vec[String],
     yielded_qn: QualifiedName,
     returned_qn: QualifiedName,
     arg_var_names: Vec[VariableName],
@@ -211,6 +213,7 @@ pub fn make_handler_lowerer(
         co_index: co_index,
         variant_index: variant_index,
         yield_count: yield_count,
+        seg_labels: seg_labels,
         yielded_qn: yielded_qn,
         returned_qn: returned_qn,
         var_map: var_map,

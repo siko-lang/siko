@@ -14,6 +14,7 @@ import Siko.AST.Type
 import Siko.HIR.Program
 import Siko.Location
 import Siko.Interner as I
+import Siko.Utils.LabelAllocator
 import Siko.Constants.Builtins as B
 
 // ── Rewrite trait ─────────────────────────────────────────────────────────────
@@ -71,9 +72,13 @@ instance Rewrite[BlockInfo] {
     fn rewrite(block: BlockInfo, ctx: BuiltinLowerer) -> BlockInfo {
         let out = Vec.new();
         for stmt in block.stmts {
-            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, _, _, _, _)), _, expr_ty))) = stmt {
+            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, _)), loc, expr_ty))) = stmt {
                 if qn.base_name() == B.get_util_uninitialized_qn() {
                     out.push(S.Statement.Declare(S.DeclareInfo(name, ty.or(expr_ty))));
+                    continue;
+                }
+                if let Some(op) = ctx.comparison_op(qn) {
+                    ctx.emit_comparison(out, name, ty.or(expr_ty), op, args.rewrite(ctx), loc);
                     continue;
                 }
             }
@@ -114,6 +119,14 @@ instance Rewrite[Expr] {
                 }
                 if let Some(fdef) = ctx.program.functions.get(qn) {
                     if let Some(op) = fdef.is_binary_op() {
+                        // Comparisons produce a Bool from the raw 0/1 and are
+                        // handled in statement position (Rewrite[BlockInfo]);
+                        // post-normalizer they cannot appear anywhere else.
+                        match op {
+                            BinaryOp.Eq | BinaryOp.Less =>
+                                panic("lower-builtins: builtin comparison in value position"),
+                            _ => {}
+                        }
                         let args = args.rewrite(ctx);
                         let lhs = args[0];
                         let rhs = args[1];
@@ -143,18 +156,79 @@ instance Rewrite[Expr] {
 
 struct BuiltinLowerer {
     program: Program,
+    label_alloc: LabelAllocator,
+    int_ty: TypeDef,
+
+    // The op of a builtin comparison function; None for every other builtin.
+    fn comparison_op(ctx: BuiltinLowerer, qn: QualifiedName) -> Option[BinaryOp] {
+        if let Some(fdef) = ctx.program.functions.get(qn) {
+            if let Some(op) = fdef.is_binary_op() {
+                match op {
+                    BinaryOp.Eq | BinaryOp.Less => return Some(op),
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+
+    fn void_stmt(ctx: BuiltinLowerer, kind: ExprKind, loc: Location) -> S.Statement {
+        S.Statement.Expr(Expr(kind, loc, Some(TypeDef.Void)))
+    }
+
+    fn bool_ctor(ctx: BuiltinLowerer, qn: QualifiedName, ty: Option[TypeDef], loc: Location) -> Expr {
+        Expr(ExprKind.FunctionCall(FunctionCallInfo(
+            qname: qn.as_mono(),
+            kind: FunctionKind.VariantCtor,
+            args: Vec.new(),
+        )), loc, ty)
+    }
+
+    // `let t = eq(a, b)` becomes a raw comparison (0/1, exactly what the C
+    // backend's ==/< produce) switched into the Bool variants. The arm order
+    // relies on the tags matching the C truth values (False = 0, True = 1).
+    //
+    //   declare t
+    //   switch a == b { 0 => goto f, 1 => goto t }
+    //   f: t = False; goto join
+    //   t: t = True
+    //   join:
+    fn emit_comparison(ctx: BuiltinLowerer, out: Vec[S.Statement], name: VariableName, ty: Option[TypeDef], op: BinaryOp, args: Vec[Expr], loc: Location) {
+        let cmp = Expr(ExprKind.BinaryOp(op, args[0], args[1]), loc.clone(), Some(ctx.int_ty.clone()));
+        let false_label = ctx.label_alloc.allocate("cmp_false");
+        let true_label = ctx.label_alloc.allocate("cmp_true");
+        let join_label = ctx.label_alloc.allocate("cmp_join");
+        let arms: Vec[Expr] = Vec.new();
+        arms.push(Expr(ExprKind.Goto(false_label.clone()), loc.clone(), Some(TypeDef.Void)));
+        arms.push(Expr(ExprKind.Goto(true_label.clone()), loc.clone(), Some(TypeDef.Void)));
+        out.push(S.Statement.Declare(S.DeclareInfo(name.clone(), ty.clone())));
+        out.push(ctx.void_stmt(ExprKind.Switch(cmp, arms), loc.clone()));
+        out.push(ctx.void_stmt(ExprKind.Label(false_label), loc.clone()));
+        out.push(S.Statement.Assign(
+            Expr(ExprKind.Var(name.clone()), loc.clone(), ty.clone()),
+            ctx.bool_ctor(B.get_bool_false_qn(), ty.clone(), loc.clone()),
+        ));
+        out.push(ctx.void_stmt(ExprKind.Goto(join_label.clone()), loc.clone()));
+        out.push(ctx.void_stmt(ExprKind.Label(true_label), loc.clone()));
+        out.push(S.Statement.Assign(
+            Expr(ExprKind.Var(name), loc.clone(), ty.clone()),
+            ctx.bool_ctor(B.get_bool_true_qn(), ty, loc.clone()),
+        ));
+        out.push(ctx.void_stmt(ExprKind.Label(join_label), loc));
+    }
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 pub fn lower_builtins(program: Program) {
-    let ctx = BuiltinLowerer(program);
+    let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn().as_mono()), []));
     let func_keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
     for key in func_keys {
         let func = program.functions.remove(key).unwrap();
         if func.kind == FunctionDefKind.Builtin {
             program.functions.remove(key);
         }
+        let ctx = BuiltinLowerer(program, func.label_allocator, int_ty.clone());
         func.body = rewrite(func.body, ctx);
         program.functions.insert(key, func);
     }

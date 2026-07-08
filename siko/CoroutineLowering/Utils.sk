@@ -13,6 +13,7 @@ import Siko.Location
 import Siko.Interner as I
 import Siko.Constants.Builtins as B
 import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
 import Siko.CoroutineLowering.Data
 
 pub fn any_location(program: Program) -> Location {
@@ -59,10 +60,6 @@ pub fn make_goto(label: String, loc: Location) -> Expr {
 
 pub fn make_label(label: String, loc: Location) -> Expr {
     Expr(ExprKind.Label(label), loc, Some(TypeDef.Void))
-}
-
-pub fn seg_label(co_idx: Int, v_idx: Int, seg: Int) -> String {
-    "co_" + co_idx.to_string() + "_" + v_idx.to_string() + "_seg_" + seg.to_string()
 }
 
 pub fn make_no_payload_pattern(qn: QualifiedName, ty: TypeDef, loc: Location) -> Pattern {
@@ -215,6 +212,7 @@ pub fn find_or_create_resume(program: Program, arg_ty: TypeDef, co_result_ty: Ty
         body: None,
         module_name: I.intern("Std.Coroutine"),
         var_allocator: var_alloc,
+        label_allocator: LabelAllocator.new(),
         is_varargs: False,
         default_value_names: Vec.new(),
         source_package: None,

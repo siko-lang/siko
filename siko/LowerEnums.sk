@@ -15,6 +15,7 @@ import Siko.Constants.Builtins as B
 import Siko.VariantPayloads as VP
 import Siko.Layout
 import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
 import Siko.Interner as I
 
 // Converts enums into plain structs. Every enum becomes a container struct
@@ -231,6 +232,7 @@ fn make_ctor_fn(owner: QualifiedName, module_name: I.String, params: Vec[Functio
         body: Some(body),
         module_name: module_name,
         var_allocator: b.var_alloc,
+        label_allocator: LabelAllocator.new(),
         is_varargs: False,
         default_value_names: Vec.new(),
         source_package: None,
@@ -342,6 +344,16 @@ fn payload_elem_ty(elem_align: Int) -> TypeDef {
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
 pub fn lower_enums(program: Program) {
+    // Bool's tags are published as constants (Builtins' variant index
+    // helpers) so passes may rely on them; verify std's declaration order
+    // still matches before baking the tags into generated code.
+    if let Some(bool_def) = program.enums.get(B.get_bool_type_qn().as_mono()) {
+        let false_qn = bool_def.variants[B.get_bool_false_variant_index()].qualified_name.unwrap();
+        let true_qn = bool_def.variants[B.get_bool_true_variant_index()].qualified_name.unwrap();
+        if false_qn != B.get_bool_false_qn().as_mono() || true_qn != B.get_bool_true_qn().as_mono() {
+            panic("lower-enums: Bool variant order does not match Builtins' variant indices: index ${B.get_bool_false_variant_index()} is ${I.resolve(false_qn.name())}, index ${B.get_bool_true_variant_index()} is ${I.resolve(true_qn.name())}");
+        }
+    }
     let engine = LayoutEngine.new(program);
     let int_ty = builtin_ty(B.get_int_type_qn().as_mono());
     let u32_ty = builtin_ty(B.get_u32_type_qn().as_mono());

@@ -25,6 +25,7 @@ import Siko.Location
 import Siko.Normalizer
 import Siko.Package.Collector as PC
 import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
 
 // lower-closures v2: the data-flow driven replacement for the old
 // by-signature closure lowering. Pipeline: generalize datatypes and
@@ -331,6 +332,7 @@ instance Rw[TypeArgDefs]         = auto(Map, =)
 instance Rw[MethodMap]           = auto(Map, =)
 instance Rw[FunctionDefKind]     = auto(Map, =)
 instance Rw[VarAllocator]        = auto(Map, =)
+instance Rw[LabelAllocator]      = auto(Map, =)
 instance Rw[DefaultValueInfo]    = auto(Map, =)
 instance Rw[PC.SourcePackage]    = auto(Map, =)
 instance Rw[E.CallInfo]          = auto(Map, !)
@@ -698,6 +700,7 @@ fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
         body: Some(body),
         module_name: I.intern(""),
         var_allocator: var_alloc,
+        label_allocator: LabelAllocator.new(),
         is_varargs: False,
         default_value_names: Vec.new(),
         source_package: None,

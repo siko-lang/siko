@@ -12,6 +12,7 @@ import Siko.AST.QualifiedName
 import Siko.HIR.Program
 import Siko.Location
 import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
 import Siko.Constants.Builtins as B
 import Siko.VariantPayloads as VP
 import Siko.Interner as I
@@ -33,8 +34,7 @@ struct BlockLowerer {
     program: Program,
     var_alloc: VarAllocator,
     div_fns: Set[QualifiedName],
-    label_counter: Int,
-    labels_in_use: Set[String],
+    label_alloc: LabelAllocator,
     loop_stack: Vec[LoopLabels],
     out: Vec[S.Statement],
     terminated: Bool,
@@ -43,13 +43,7 @@ struct BlockLowerer {
     // ─── Small helpers ────────────────────────────────────────────────────────
 
     fn fresh_label(l: BlockLowerer, hint: String) -> String {
-        loop {
-            let name = "bb_${l.label_counter}_${hint}";
-            l.label_counter += 1;
-            if l.labels_in_use.insert(name) {
-                return name;
-            }
-        }
+        l.label_alloc.allocate(hint)
     }
 
     fn goto_expr(l: BlockLowerer, label: String, loc: Location) -> Expr {
@@ -164,7 +158,20 @@ struct BlockLowerer {
                 l.loop_stack.push(ll);
                 l.emit_goto(target, loc);
             }
-            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
+            ExprKind.Switch(tag, arms) => {
+                // Pre-built switch-of-gotos (lower-builtins comparisons):
+                // already in terminator shape, pass it through.
+                check_value_expr(tag, "switch scrutinee");
+                for arm in arms.iter() {
+                    match arm.kind {
+                        ExprKind.Goto(_) => {}
+                        _ => panic("lower-basic-block: input Switch arm is not a Goto"),
+                    }
+                }
+                l.out.push(S.Statement.Expr(expr));
+                l.terminated = True;
+            }
+            ExprKind.EnumTag(_) | ExprKind.ReadVariant(_, _) =>
                 panic("lower-basic-block: basic block primitive existed before lowering"),
             _ => {
                 check_value_expr(expr, "statement expression");
@@ -329,7 +336,6 @@ struct BlockLowerer {
             ExprKind.Block(BlockInfo(stmts)) => stmts,
             _ => panic("lower-basic-block: function body is not a block"),
         };
-        collect_labels_stmts(stmts, l.labels_in_use);
         let entry = l.fresh_label("entry");
         l.terminated = True; // no fallthrough into the entry label
         l.emit_label(entry, body.location.clone());
@@ -562,8 +568,7 @@ pub fn lower_basic_blocks(program: Program) {
                 program,
                 func.var_allocator,
                 div_fns.clone(),
-                0,
-                Set.new(),
+                func.label_allocator,
                 Vec.new(),
                 Vec.new(),
                 True,

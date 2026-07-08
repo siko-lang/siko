@@ -260,7 +260,18 @@ struct Checker {
             }
             ExprKind.Goto(_) => {}
             ExprKind.Label(_) => {}
-            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) => {
+            ExprKind.Switch(tag, arms) => {
+                // Switch-of-gotos statements exist from lower-builtins on
+                // (comparison lowering); the arms carry no values.
+                ctx.check_expr(tag);
+                for arm in arms {
+                    match arm.kind {
+                        ExprKind.Goto(_) => {}
+                        _ => { ctx.fail("Switch arm is not a Goto in sanity checker"); }
+                    }
+                }
+            }
+            ExprKind.EnumTag(_) | ExprKind.ReadVariant(_, _) => {
                 ctx.fail("basic block expression in sanity checker");
             }
         }

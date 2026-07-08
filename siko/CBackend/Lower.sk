@@ -192,10 +192,8 @@ struct Lowerer {
         let clhs = l.lower_expr(lhs);
         let crhs = l.lower_expr(rhs);
         match op {
-            // Comparisons produce a Siko Bool, so wrap the C comparison in a
-            // ternary selecting the Bool constructors.
-            BinaryOp.Eq   => l.wrap_bool(C.CExpr.BinaryOp(C.CBinOp.Eq, clhs, crhs)),
-            BinaryOp.Less => l.wrap_bool(C.CExpr.BinaryOp(C.CBinOp.Lt, clhs, crhs)),
+            BinaryOp.Eq     => C.CExpr.BinaryOp(C.CBinOp.Eq, clhs, crhs),
+            BinaryOp.Less   => C.CExpr.BinaryOp(C.CBinOp.Lt, clhs, crhs),
             BinaryOp.Add    => C.CExpr.BinaryOp(C.CBinOp.Add, clhs, crhs),
             BinaryOp.Sub    => C.CExpr.BinaryOp(C.CBinOp.Sub, clhs, crhs),
             BinaryOp.Mul    => C.CExpr.BinaryOp(C.CBinOp.Mul, clhs, crhs),
@@ -208,13 +206,6 @@ struct Lowerer {
             BinaryOp.Shr    => C.CExpr.BinaryOp(C.CBinOp.Shr, clhs, crhs),
             _ => panic("lower: unexpected BinaryOp (should be lowered earlier)"),
         }
-    }
-
-    fn wrap_bool(l: Lowerer, cmp: C.CExpr) -> C.CExpr {
-        // The Bool variant ctors are ordinary generated functions (lower-enums).
-        let ctor_true = fn_name(QualifiedName.new_ctor(B.get_bool_true_qn().as_mono()));
-        let ctor_false = fn_name(QualifiedName.new_ctor(B.get_bool_false_qn().as_mono()));
-        C.CExpr.Ternary(cmp, C.CExpr.Call(ctor_true, Vec.new()), C.CExpr.Call(ctor_false, Vec.new()))
     }
 
     // ─── Statements ───────────────────────────────────────────────────────────
@@ -283,7 +274,16 @@ struct Lowerer {
                     }
                     cases.push(C.CSwitchCase(Some(index), body));
                 }
-                out.push(C.CStmt.Switch(l.lower_expr(tag), cases));
+                let ctag = l.lower_expr(tag);
+                // A comparison scrutinee (lower-builtins Bool lowering) is an
+                // Int in the IR; make that explicit so clang does not warn
+                // about switching on a boolean expression.
+                let ctag = match ctag {
+                    C.CExpr.BinaryOp(C.CBinOp.Eq, _, _) | C.CExpr.BinaryOp(C.CBinOp.Lt, _, _) =>
+                        C.CExpr.Cast(C.CType.Int64, ctag),
+                    _ => ctag,
+                };
+                out.push(C.CStmt.Switch(ctag, cases));
             }
             ExprKind.EnumTag(_) | ExprKind.ReadVariant(_, _) =>
                 panic("lower_stmt_expr: EnumTag/ReadVariant in statement position"),

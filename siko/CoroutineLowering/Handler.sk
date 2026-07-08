@@ -9,6 +9,7 @@ import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Location
 import Siko.Interner as I
+import Siko.Utils.LabelAllocator
 import Siko.CoroutineLowering.Utils
 import Siko.CoroutineLowering.Data
 import Siko.CoroutineLowering.HandlerLower
@@ -18,7 +19,16 @@ import Siko.CoroutineLowering.HandlerLower
 //     AfterYield_i => goto co_C_V_seg_{i+1}      (resume label, after yield i)
 //     Completed    => return Completed
 // }
-fn build_dispatch(vi: CoVariantInfo, info: CoEnumInfo, frame_var: VariableName, frame_ty: TypeDef, frame_state_ty: TypeDef, co_result: TypeDef, loc: Location) -> Expr {
+fn build_dispatch(
+    vi: CoVariantInfo,
+    info: CoEnumInfo,
+    frame_var: VariableName,
+    frame_ty: TypeDef,
+    frame_state_ty: TypeDef,
+    co_result: TypeDef,
+    seg_labels: Vec[String],
+    loc: Location,
+) -> Expr {
     let frame_var_expr = Expr(ExprKind.Var(frame_var), loc.clone(), Some(frame_ty));
     let scrutinee = field_access(frame_var_expr, I.intern("state"), frame_state_ty.clone(), loc.clone());
 
@@ -27,14 +37,14 @@ fn build_dispatch(vi: CoVariantInfo, info: CoEnumInfo, frame_var: VariableName, 
     let start_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, 0).as_mono();
     arms.push(MatchArm(
         make_no_payload_pattern(start_qn, frame_state_ty.clone(), loc.clone()),
-        make_goto(seg_label(vi.co_index, vi.variant_index, 0), loc.clone()),
+        make_goto(seg_labels[0].clone(), loc.clone()),
     ));
 
     for i in 0..vi.yield_count {
         let after_qn = QualifiedName.new_coroutine_frame_state_variant(vi.co_index, vi.variant_index, i + 1).as_mono();
         arms.push(MatchArm(
             make_no_payload_pattern(after_qn, frame_state_ty.clone(), loc.clone()),
-            make_goto(seg_label(vi.co_index, vi.variant_index, i + 1), loc.clone()),
+            make_goto(seg_labels[i + 1].clone(), loc.clone()),
         ));
     }
 
@@ -58,6 +68,14 @@ pub fn build_handler(
     let var_alloc = func.var_allocator.clone();
     let frame_var = var_alloc.allocate_temp();
 
+    // One label per segment: seg 0 is the body start, seg i+1 resumes after
+    // yield i. Allocated up front so the dispatch and the body lowering agree.
+    let label_alloc = LabelAllocator.new();
+    let seg_labels: Vec[String] = Vec.new();
+    for _ in 0..(vi.yield_count + 1) {
+        seg_labels.push(label_alloc.allocate("co_seg"));
+    }
+
     let handler_qn     = QualifiedName.new_coroutine_handler(vi.co_index, vi.variant_index).as_mono();
     let frame_qn       = QualifiedName.new_coroutine_frame(vi.co_index, vi.variant_index).as_mono();
     let frame_state_qn = QualifiedName.new_coroutine_frame_state(vi.co_index, vi.variant_index).as_mono();
@@ -76,6 +94,7 @@ pub fn build_handler(
     let lowerer = make_handler_lowerer(
         frame_var.clone(), frame_ty.clone(), frame_state_ty.clone(), co_result.clone(),
         vi.co_index, vi.variant_index, vi.yield_count,
+        seg_labels.clone(),
         yielded_qn, returned_qn,
         vi.arg_var_names, vi.arg_names, vi.local_var_names, vi.local_names,
         repr_loc.clone(),
@@ -84,8 +103,8 @@ pub fn build_handler(
 
     // Prepend the dispatch and the start label; the dispatch gotos into the body.
     let out: Vec[S.Statement] = Vec.new();
-    out.push(S.Statement.Expr(build_dispatch(vi, info, frame_var.clone(), frame_ty.clone(), frame_state_ty, co_result.clone(), repr_loc.clone())));
-    out.push(S.Statement.Expr(make_label(seg_label(vi.co_index, vi.variant_index, 0), repr_loc.clone())));
+    out.push(S.Statement.Expr(build_dispatch(vi, info, frame_var.clone(), frame_ty.clone(), frame_state_ty, co_result.clone(), seg_labels.clone(), repr_loc.clone())));
+    out.push(S.Statement.Expr(make_label(seg_labels[0].clone(), repr_loc.clone())));
     match lowered.kind {
         ExprKind.Block(BlockInfo(stmts)) => out.extend(stmts),
         _ => out.push(S.Statement.TrailingExpr(lowered)),
@@ -105,6 +124,7 @@ pub fn build_handler(
         body: Some(handler_body),
         module_name: I.intern(""),
         var_allocator: var_alloc,
+        label_allocator: label_alloc,
         is_varargs: False,
         default_value_names: Vec.new(),
         source_package: None,
