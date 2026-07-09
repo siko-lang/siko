@@ -226,6 +226,21 @@ struct FunctionLowerer {
     fn lower_call(fl: FunctionLowerer, info: FunctionCallInfo, result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
         let callee = LLVMValue.Global(fl.function_symbol(info.qname, info.kind));
         let args = fl.lower_args(info.args);
+        fl.emit_call(callee, args, result_ty, keep_result)
+    }
+
+    fn lower_function_ptr_call(fl: FunctionLowerer, callee_expr: Expr, args: Vec[Expr], result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
+        let callee_ty = callee_expr.ty.clone().expect("llvm: function pointer callee has no type");
+        match callee_ty {
+            TypeDef.FnPtr(_, _) => {}
+            _ => panic("llvm: function pointer call callee is not FnPtr"),
+        }
+        let callee = fl.lower_expr(callee_expr);
+        let args = fl.lower_args(args);
+        fl.emit_call(callee.value, args, result_ty, keep_result)
+    }
+
+    fn emit_call(fl: FunctionLowerer, callee: LLVMValue, args: Vec[LLVMTypedValue], result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
         match result_ty {
             LLVMType.Void => {
                 fl.emit(None, LLVMInstructionKind.Call(LLVMType.Void, callee, args, []));
@@ -410,6 +425,13 @@ struct FunctionLowerer {
                     None => panic("llvm: void call used as value"),
                 }
             }
+            ExprKind.FunctionPtr(info) => LLVMTypedValue(LLVMType.Ptr, LLVMValue.Global(fl.lowerer.fn_pointer_symbol(info.name))),
+            ExprKind.FunctionPtrCall(callee, args) => {
+                match fl.lower_function_ptr_call(callee, args, ty, True) {
+                    Some(value) => value,
+                    None => panic("llvm: void function pointer call used as value"),
+                }
+            }
             ExprKind.Paren(inner) => fl.lower_expr(inner),
             _ => panic("llvm: unsupported value expression"),
         }
@@ -425,6 +447,10 @@ struct FunctionLowerer {
             ExprKind.FunctionCall(info) => {
                 let ty = fl.lowerer.lower_type(expr.ty.expect("llvm: call has no type"));
                 fl.lower_call(info, ty, False);
+            }
+            ExprKind.FunctionPtrCall(callee, args) => {
+                let ty = fl.lowerer.lower_type(expr.ty.expect("llvm: function pointer call has no type"));
+                fl.lower_function_ptr_call(callee, args, ty, False);
             }
             ExprKind.Goto(label) => {
                 fl.term = Some(LLVMTerminator.Br(label));
@@ -690,6 +716,13 @@ struct Lowerer {
                     None => fn_name(qname),
                 }
             }
+        }
+    }
+
+    fn fn_pointer_symbol(l: Lowerer, qname: QualifiedName) -> String {
+        match l.program.functions.get(qname) {
+            Some(fdef) => l.fn_symbol(fdef),
+            None => fn_name(qname),
         }
     }
 
