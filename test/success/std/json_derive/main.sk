@@ -1,0 +1,96 @@
+module Main {
+
+import Std.Json
+import Std.Map
+
+@derive(JsonSerialize, JsonDeserialize, PartialEq, Eq)
+struct Person {
+    name: String,
+    age: Int,
+    nickname: Option[String],
+}
+
+@derive(JsonSerialize, JsonDeserialize, PartialEq, Eq)
+enum Message {
+    Ping,
+    One(Int),
+    Pair(Int, String),
+    Named(id: Int, text: String),
+    Mixed(Int, name: String),
+}
+
+@derive(PartialEq, Eq)
+struct External {
+    value: Int,
+}
+
+instance JsonSerialize[External] = auto
+instance JsonDeserialize[External] = auto
+
+fn object1(name: String, value: Json) -> Json {
+    let fields: Map[String, Json] = Map.new();
+    fields.insert(name, value);
+    Json.Object(fields)
+}
+
+fn object2(name1: String, value1: Json, name2: String, value2: Json) -> Json {
+    let fields: Map[String, Json] = Map.new();
+    fields.insert(name1, value1);
+    fields.insert(name2, value2);
+    Json.Object(fields)
+}
+
+fn test_struct_derive() {
+    let person = Person("Ada", 42, Some("ace"));
+    let json = person.to_json();
+    let decoded: Result[Person, JsonError] = from_json(json);
+    assert(decoded.unwrap() == person);
+}
+
+fn test_missing_option_field() {
+    let json = object2("name", Json.Str("Ada"), "age", Json.Number(42));
+    let decoded: Result[Person, JsonError] = from_json(json);
+    let person = decoded.unwrap();
+    assert(person.nickname == None);
+}
+
+fn test_enum_derive() {
+    assert(Message.Ping.to_json() == Json.Str("Ping"));
+    assert(Message.One(7).to_json() == object1("One", Json.Number(7)));
+    assert(Message.Pair(1, "a").to_json() == object1("Pair", Json.Array([Json.Number(1), Json.Str("a")])));
+    assert(Message.Mixed(1, "a").to_json() == object1("Mixed", Json.Array([Json.Number(1), Json.Str("a")])));
+
+    let named_payload = object2("id", Json.Number(3), "text", Json.Str("hello"));
+    assert(Message.Named(3, "hello").to_json() == object1("Named", named_payload));
+
+    let ping: Result[Message, JsonError] = from_json(Json.Str("Ping"));
+    assert(ping.unwrap() == Message.Ping);
+
+    let one: Result[Message, JsonError] = from_json(object1("One", Json.Number(7)));
+    assert(one.unwrap() == Message.One(7));
+
+    let pair: Result[Message, JsonError] = from_json(object1("Pair", Json.Array([Json.Number(1), Json.Str("a")])));
+    assert(pair.unwrap() == Message.Pair(1, "a"));
+
+    let named: Result[Message, JsonError] = from_json(object1("Named", object2("id", Json.Number(3), "text", Json.Str("hello"))));
+    assert(named.unwrap() == Message.Named(3, "hello"));
+}
+
+fn test_external_auto() {
+    let value = External(9);
+    let json = value.to_json();
+    assert(json == object1("value", Json.Number(9)));
+
+    let decoded: Result[External, JsonError] = from_json(json);
+    assert(decoded.unwrap() == value);
+}
+
+fn main() {
+    test_struct_derive();
+    test_missing_option_field();
+    test_enum_derive();
+    test_external_auto();
+    println("ok");
+}
+
+}

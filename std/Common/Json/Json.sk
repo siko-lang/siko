@@ -42,6 +42,25 @@ pub enum Json {
     }
 }
 
+pub fn get_optional_field[T: JsonDeserialize[T]](j: Json, name: String) -> Result[Option[T], JsonError] {
+    let fields = j.as_object()?;
+    match fields.get(name) {
+        Some(value) => from_json(value),
+        None => Ok(None),
+    }
+}
+
+pub fn single_field(j: Json) -> Result[(String, Json), JsonError] {
+    let fields = j.as_object()?;
+    if fields.len() != 1 {
+        return Err(JsonError.InvalidVariant("Expected a single JSON object field"));
+    }
+    for item in fields {
+        return Ok(item);
+    }
+    Err(JsonError.InvalidVariant("Expected a single JSON object field"))
+}
+
 @derive(PartialEq, Eq, Clone)
 pub enum JsonError {
     ExpectedNull,

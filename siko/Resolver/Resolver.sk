@@ -14,6 +14,7 @@ import Siko.Resolver.Autoderive.Clone
 import Siko.Resolver.Autoderive.Map
 import Siko.Resolver.Autoderive.Fold
 import Siko.Resolver.Autoderive.FromInt
+import Siko.Resolver.Autoderive.Json
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
@@ -563,6 +564,8 @@ pub struct Resolver {
             derive_partialord_struct(resolved_struct_def, module_name),
             derive_ord_struct(resolved_struct_def, module_name),
             derive_clone_struct(resolved_struct_def, module_name),
+            derive_json_serialize_struct(resolved_struct_def, module_name),
+            derive_json_deserialize_struct(resolved_struct_def, module_name),
         ]
         {
             if let Some(derived) = derived {
@@ -580,6 +583,8 @@ pub struct Resolver {
             derive_ord_enum(resolved_enum_def, module_name),
             derive_clone_enum(resolved_enum_def, module_name),
             derive_from_int_enum(resolved_enum_def, module_name),
+            derive_json_serialize_enum(resolved_enum_def, module_name),
+            derive_json_deserialize_enum(resolved_enum_def, module_name),
         ]
         {
             if let Some(derived) = derived {
@@ -812,6 +817,22 @@ pub struct Resolver {
                     )),
                     _ => None,
                 },
+                s if s == B.get_trait_json_serialize_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_json_serialize_method_enum(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_json_serialize_method_struct(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_json_deserialize_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_json_deserialize_method_enum(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_json_deserialize_method_struct(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
                 _ => None,
             }
             Some(params) => {
@@ -1358,7 +1379,6 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
 
 
 

@@ -1,0 +1,276 @@
+module Std.Json.Util {
+
+import Std.Json
+import Std.Map
+import Std.StringBuilder
+
+pub fn compact(input: String) -> String {
+    let sb = StringBuilder.new();
+    let bytes = input.as_slice();
+    let in_string = False;
+    let escaped = False;
+    for i in 0..input.len() {
+        let c = bytes[i];
+        if in_string {
+            sb.push(String.from_byte(c));
+            if escaped {
+                escaped = False;
+            } else if c == '\\' {
+                escaped = True;
+            } else if c == '"' {
+                in_string = False;
+            }
+        } else if c == '"' {
+            in_string = True;
+            sb.push(String.from_byte(c));
+        } else if !is_whitespace(c) {
+            sb.push(String.from_byte(c));
+        }
+    }
+    sb.to_string()
+}
+
+pub fn parse(input: String) -> Result[Json, JsonError] {
+    let parser = Parser.new(compact(input));
+    let value = parser.parse_value()?;
+    if !parser.is_eof() {
+        return Err(error("Unexpected trailing JSON input"));
+    }
+    Ok(value)
+}
+
+pub fn parse_as[T: JsonDeserialize[T]](input: String) -> Result[T, JsonError] {
+    from_json(parse(input)?)
+}
+
+struct Parser {
+    bytes: Vec[U8],
+    pos: Int,
+
+    fn new(input: String) -> Parser {
+        Parser(input.to_bytes(), 0)
+    }
+
+    fn is_eof(p: Parser) -> Bool {
+        p.pos >= p.bytes.len()
+    }
+
+    fn peek(p: Parser) -> Option[U8] {
+        if p.is_eof() {
+            None
+        } else {
+            Some(p.bytes[p.pos])
+        }
+    }
+
+    fn advance(p: Parser) -> Option[U8] {
+        let c = p.peek();
+        if c.is_some() {
+            p.pos += 1;
+        }
+        c
+    }
+
+    fn consume(p: Parser, expected: U8) -> Result[(), JsonError] {
+        match p.advance() {
+            Some(c) if c == expected => Ok(()),
+            _ => Err(error("Expected `${String.from_byte(expected)}`")),
+        }
+    }
+
+    fn consume_if(p: Parser, expected: U8) -> Bool {
+        match p.peek() {
+            Some(c) if c == expected => {
+                p.advance();
+                True
+            }
+            _ => False,
+        }
+    }
+
+    fn consume_keyword(p: Parser, keyword: String) -> Bool {
+        let keyword_bytes = keyword.as_slice();
+        if p.pos + keyword.len() > p.bytes.len() {
+            return False;
+        }
+        for i in 0..keyword.len() {
+            if p.bytes[p.pos + i] != keyword_bytes[i] {
+                return False;
+            }
+        }
+        p.pos += keyword.len();
+        True
+    }
+
+    fn parse_value(p: Parser) -> Result[Json, JsonError] {
+        match p.peek() {
+            Some('{') => p.parse_object(),
+            Some('[') => p.parse_array(),
+            Some('"') => Ok(Json.Str(p.parse_string()?)),
+            Some('t') => {
+                if p.consume_keyword("true") {
+                    Ok(Json.Boolean(True))
+                } else {
+                    Err(error("Invalid JSON literal"))
+                }
+            }
+            Some('f') => {
+                if p.consume_keyword("false") {
+                    Ok(Json.Boolean(False))
+                } else {
+                    Err(error("Invalid JSON literal"))
+                }
+            }
+            Some('n') => {
+                if p.consume_keyword("null") {
+                    Ok(Json.Null)
+                } else {
+                    Err(error("Invalid JSON literal"))
+                }
+            }
+            Some('-') => p.parse_number(),
+            Some(c) if is_digit(c) => p.parse_number(),
+            Some(c) => Err(error("Unexpected JSON character `${String.from_byte(c)}`")),
+            None => Err(error("Unexpected end of JSON input")),
+        }
+    }
+
+    fn parse_array(p: Parser) -> Result[Json, JsonError] {
+        p.consume('[')?;
+        let values: Vec[Json] = Vec.new();
+        if p.consume_if(']') {
+            return Ok(Json.Array(values));
+        }
+        loop {
+            values.push(p.parse_value()?);
+            if p.consume_if(',') {
+            } else {
+                p.consume(']')?;
+                break;
+            }
+        }
+        Ok(Json.Array(values))
+    }
+
+    fn parse_object(p: Parser) -> Result[Json, JsonError] {
+        p.consume('{')?;
+        let fields: Map[String, Json] = Map.new();
+        if p.consume_if('}') {
+            return Ok(Json.Object(fields));
+        }
+        loop {
+            let key = p.parse_string()?;
+            p.consume(':')?;
+            let value = p.parse_value()?;
+            fields.insert(key, value);
+            if p.consume_if(',') {
+            } else {
+                p.consume('}')?;
+                break;
+            }
+        }
+        Ok(Json.Object(fields))
+    }
+
+    fn parse_string(p: Parser) -> Result[String, JsonError] {
+        p.consume('"')?;
+        let sb = StringBuilder.new();
+        loop {
+            match p.advance() {
+                None => return Err(error("Unterminated JSON string")),
+                Some('"') => break,
+                Some('\\') => {
+                    let escaped = match p.advance() {
+                        Some('"') => '"',
+                        Some('\\') => '\\',
+                        Some('/') => '/',
+                        Some('b') => 8.as_u8(),
+                        Some('f') => 12.as_u8(),
+                        Some('n') => '\n',
+                        Some('r') => '\r',
+                        Some('t') => '\t',
+                        Some('u') => p.parse_unicode_escape()?,
+                        Some(c) => return Err(error("Invalid JSON escape `${String.from_byte(c)}`")),
+                        None => return Err(error("Unterminated JSON escape")),
+                    };
+                    sb.push(String.from_byte(escaped));
+                }
+                Some(c) => sb.push(String.from_byte(c)),
+            }
+        }
+        Ok(sb.to_string())
+    }
+
+    fn parse_unicode_escape(p: Parser) -> Result[U8, JsonError] {
+        let code = 0;
+        for _ in 0..4 {
+            let digit = match p.advance() {
+                Some(c) => match hex_digit(c) {
+                    Some(v) => v,
+                    None => return Err(error("Invalid JSON unicode escape")),
+                },
+                None => return Err(error("Unterminated JSON unicode escape")),
+            };
+            code = code * 16 + digit;
+        }
+        if code > 127 {
+            return Err(error("Only ASCII JSON unicode escapes are supported"));
+        }
+        Ok(code.as_u8())
+    }
+
+    fn parse_number(p: Parser) -> Result[Json, JsonError] {
+        let negative = p.consume_if('-');
+        let digits = StringBuilder.new();
+        let count = 0;
+        loop {
+            match p.peek() {
+                Some(c) if is_digit(c) => {
+                    digits.push(String.from_byte(c));
+                    p.advance();
+                    count += 1;
+                }
+                _ => break,
+            }
+        }
+        if count == 0 {
+            return Err(error("Expected JSON number"));
+        }
+        match p.peek() {
+            Some('.') | Some('e') | Some('E') => return Err(error("Only integer JSON numbers are supported")),
+            _ => {}
+        }
+        let parsed = match digits.to_string().parse_int(10) {
+            Ok(v) => v,
+            Err(_) => return Err(error("Invalid JSON number")),
+        };
+        let value = if negative { 0 - parsed } else { parsed };
+        Ok(Json.Number(value))
+    }
+}
+
+fn is_whitespace(c: U8) -> Bool {
+    c == ' ' || c == '\t' || c == '\r' || c == '\n'
+}
+
+fn is_digit(c: U8) -> Bool {
+    c >= '0' && c <= '9'
+}
+
+fn hex_digit(c: U8) -> Option[Int] {
+    if c >= '0' && c <= '9' {
+        Some(c.as_int() - '0'.as_int())
+    } else if c >= 'a' && c <= 'f' {
+        Some(c.as_int() - 'a'.as_int() + 10)
+    } else if c >= 'A' && c <= 'F' {
+        Some(c.as_int() - 'A'.as_int() + 10)
+    } else {
+        None
+    }
+}
+
+fn error(message: String) -> JsonError {
+    JsonError.Custom(message)
+}
+
+}

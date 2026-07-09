@@ -1,6 +1,7 @@
 module Std.Json.JsonTest {
 
 import Std.Json
+import Std.Json.Util
 import Std.Map
 
 @test
@@ -37,6 +38,26 @@ fn test_json_object_helpers() {
         Err(JsonError.MissingField(name)) => assert(name == "missing"),
         _ => assert(False),
     }
+}
+
+@test
+fn test_json_parse_and_compact() {
+    let input = "{\n  \"name\" : \"a b\",\n  \"items\" : [1, true, null]\n}";
+    assert(compact(input) == "{\"name\":\"a b\",\"items\":[1,true,null]}");
+
+    let parsed = parse(input).unwrap();
+    assert(parsed.get_field("name").unwrap() == Json.Str("a b"));
+
+    let items = parsed.get_field("items").unwrap().as_array().unwrap();
+    assert(items[0] == Json.Number(1));
+    assert(items[1] == Json.Boolean(True));
+    assert(items[2] == Json.Null);
+}
+
+@test
+fn test_json_parse_as() {
+    let decoded: Result[Vec[Int], JsonError] = parse_as("[1, 2, 3]");
+    assert(decoded.unwrap() == [1, 2, 3]);
 }
 
 }

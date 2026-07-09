@@ -1,0 +1,710 @@
+module Siko.Resolver.Autoderive.Json {
+
+import Siko.Resolver.Autoderive.Utils
+import Siko.AST.Data
+import Siko.AST.Instances
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.AST.Identifier
+import Siko.AST.Generics
+import Siko.AST.Function
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Location
+import Siko.Interner as I
+
+pub fn derive_json_serialize_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = serialize_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_json_serialize_enum(enum_def, module_name))
+}
+
+pub fn derive_json_serialize_struct(struct_def: StructDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = serialize_trait_name();
+    if !struct_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_json_serialize_struct(struct_def, module_name))
+}
+
+pub fn derive_json_deserialize_enum(enum_def: EnumDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = deserialize_trait_name();
+    if !enum_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_json_deserialize_enum(enum_def, module_name))
+}
+
+pub fn derive_json_deserialize_struct(struct_def: StructDef, module_name: I.String) -> Option[InstanceDef] {
+    let trait_name = deserialize_trait_name();
+    if !struct_def.has_derive(trait_name) {
+        return None;
+    }
+    Some(build_json_deserialize_struct(struct_def, module_name))
+}
+
+pub fn build_json_serialize_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = serialize_trait_name();
+    let loc = enum_def.name.location;
+    let enum_qname = enum_def.qualified_name.unwrap();
+    let (type_arg_defs, enum_type_args) = build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
+    let enum_type = TypeDef.Named(NamedInfo(Name.inner(enum_qname), enum_type_args));
+    let prefix = instance_synth_qn(trait_name, [enum_type]);
+    let (method_fn, method_short) = build_json_serialize_method_enum(enum_def, prefix, type_arg_defs, enum_type, module_name);
+    make_instance(trait_name, type_arg_defs, enum_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_json_serialize_struct(struct_def: StructDef, module_name: I.String) -> InstanceDef {
+    let trait_name = serialize_trait_name();
+    let loc = struct_def.name.location;
+    let struct_qname = struct_def.qualified_name.unwrap();
+    let (type_arg_defs, struct_type_args) = build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
+    let struct_type = TypeDef.Named(NamedInfo(Name.inner(struct_qname), struct_type_args));
+    let prefix = instance_synth_qn(trait_name, [struct_type]);
+    let (method_fn, method_short) = build_json_serialize_method_struct(struct_def, prefix, type_arg_defs, struct_type, module_name);
+    make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_json_deserialize_enum(enum_def: EnumDef, module_name: I.String) -> InstanceDef {
+    let trait_name = deserialize_trait_name();
+    let loc = enum_def.name.location;
+    let enum_qname = enum_def.qualified_name.unwrap();
+    let (type_arg_defs, enum_type_args) = build_type_arg_defs(enum_def.type_arg_defs, trait_name, loc);
+    let enum_type = TypeDef.Named(NamedInfo(Name.inner(enum_qname), enum_type_args));
+    let prefix = instance_synth_qn(trait_name, [enum_type]);
+    let (method_fn, method_short) = build_json_deserialize_method_enum(enum_def, prefix, type_arg_defs, enum_type, module_name);
+    make_instance(trait_name, type_arg_defs, enum_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_json_deserialize_struct(struct_def: StructDef, module_name: I.String) -> InstanceDef {
+    let trait_name = deserialize_trait_name();
+    let loc = struct_def.name.location;
+    let struct_qname = struct_def.qualified_name.unwrap();
+    let (type_arg_defs, struct_type_args) = build_type_arg_defs(struct_def.type_arg_defs, trait_name, loc);
+    let struct_type = TypeDef.Named(NamedInfo(Name.inner(struct_qname), struct_type_args));
+    let prefix = instance_synth_qn(trait_name, [struct_type]);
+    let (method_fn, method_short) = build_json_deserialize_method_struct(struct_def, prefix, type_arg_defs, struct_type, module_name);
+    make_instance(trait_name, type_arg_defs, struct_type, [method_fn], [method_short], module_name, loc)
+}
+
+pub fn build_json_serialize_method_struct(
+    struct_def: StructDef,
+    parent_qn: QualifiedName,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = struct_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let value_var = var_alloc.allocate_user(I.intern("value"));
+    let entries: Vec[(String, Expr)] = struct_def.fields
+        .iter()
+        .map(|field| (I.resolve(field.name.name), call_to_json(field_access(value_var, field.name, loc), loc)))
+        .collect();
+    let body = object_expr(entries, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("to_json"), loc);
+    let method_fn = make_unary_method(
+        parent_qn,
+        method_short,
+        type_arg_defs,
+        self_type,
+        Some(json_type()),
+        value_var,
+        [],
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+pub fn build_json_serialize_method_enum(
+    enum_def: EnumDef,
+    parent_qn: QualifiedName,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let value_var = var_alloc.allocate_user(I.intern("value"));
+    let body = build_enum_to_json_body(enum_def, value_var, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("to_json"), loc);
+    let method_fn = make_unary_method(
+        parent_qn,
+        method_short,
+        type_arg_defs,
+        self_type,
+        Some(json_type()),
+        value_var,
+        [],
+        body,
+        module_name,
+        var_alloc,
+    );
+    (method_fn, method_short)
+}
+
+pub fn build_json_deserialize_method_struct(
+    struct_def: StructDef,
+    parent_qn: QualifiedName,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = struct_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let value_var = var_alloc.allocate_user(I.intern("value"));
+    let body = build_struct_from_json_body(struct_def, self_type, value_var, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("from_json"), loc);
+    let method_fn = make_from_json_method(parent_qn, method_short, type_arg_defs, self_type, value_var, body, module_name, var_alloc);
+    (method_fn, method_short)
+}
+
+pub fn build_json_deserialize_method_enum(
+    enum_def: EnumDef,
+    parent_qn: QualifiedName,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    module_name: I.String,
+) -> (FunctionDef, Identifier) {
+    let loc = enum_def.name.location;
+    let var_alloc = VarAllocator.new();
+    let value_var = var_alloc.allocate_user(I.intern("value"));
+    let body = build_enum_from_json_body(enum_def, self_type, value_var, var_alloc, loc);
+    let method_short = Identifier.new(I.intern("from_json"), loc);
+    let method_fn = make_from_json_method(parent_qn, method_short, type_arg_defs, self_type, value_var, body, module_name, var_alloc);
+    (method_fn, method_short)
+}
+
+fn build_enum_to_json_body(enum_def: EnumDef, value_var: VariableName, var_alloc: VarAllocator, loc: Location) -> Expr {
+    let arms: Vec[MatchArm] = enum_def.variants.iter().map(|variant| {
+        let field_vars = allocate_vars(variant.items.len(), I.intern("field"), var_alloc);
+        let pattern = Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.inner(variant.qualified_name.unwrap()),
+                args: binding_pats(field_vars, loc),
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            loc,
+            None,
+        );
+        let body = build_variant_to_json_body(variant, field_vars, var_alloc, loc);
+        MatchArm(pattern, body)
+    }).collect();
+    Expr(
+        ExprKind.Match(MatchInfo(var_expr(value_var, loc), arms)),
+        loc,
+        None,
+    )
+}
+
+fn build_variant_to_json_body(variant: VariantDef, field_vars: Vec[VariableName], var_alloc: VarAllocator, loc: Location) -> Expr {
+    let variant_name = I.resolve(variant.name.name);
+    if variant.items.is_empty() {
+        return json_str_expr(variant_name, loc);
+    }
+    let payload = if all_items_named(variant) {
+        let entries: Vec[(String, Expr)] = Vec.new();
+        for (i, item) in variant.items.iter().enumerate() {
+            let name = item.name.unwrap();
+            entries.push((I.resolve(name.name), call_to_json(var_expr(field_vars[i], loc), loc)));
+        }
+        object_expr(entries, var_alloc, loc)
+    } else if variant.items.len() == 1 {
+        call_to_json(var_expr(field_vars[0], loc), loc)
+    } else {
+        let values: Vec[Expr] = field_vars
+            .iter()
+            .map(|field_var| call_to_json(var_expr(field_var, loc), loc))
+            .collect();
+        array_expr(values, var_alloc, loc)
+    };
+    object_expr([(variant_name, payload)], var_alloc, loc)
+}
+
+fn build_struct_from_json_body(
+    struct_def: StructDef,
+    self_type: TypeDef,
+    value_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let stmts: Vec[S.Statement] = Vec.new();
+    let arg_vars: Vec[VariableName] = Vec.new();
+    for field in struct_def.fields {
+        let field_var = var_alloc.allocate_user(field.name.name);
+        let rhs = decode_named_json_value(var_expr(value_var, loc), I.resolve(field.name.name), field.ty, var_alloc, loc);
+        stmts.push(S.Statement.Let(S.LetInfo(field_var, Some(field.ty), rhs)));
+        arg_vars.push(field_var);
+    }
+    let args: Vec[Expr] = arg_vars.iter().map(|v| var_expr(v, loc)).collect();
+    let ctor = function_call(struct_def.qualified_name.unwrap(), FunctionKind.StructCtor, args, loc);
+    stmts.push(S.Statement.TrailingExpr(ok_expr(ctor, loc)));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn build_enum_from_json_body(
+    enum_def: EnumDef,
+    self_type: TypeDef,
+    value_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let string_name_var = var_alloc.allocate_user(I.intern("name"));
+    let other_var = var_alloc.allocate_user(I.intern("other"));
+    let unit_arms = build_unit_variant_arms(enum_def, string_name_var, loc);
+    let string_arm = MatchArm(
+        Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.inner(B.get_json_str_qn()),
+                args: [Pattern(PatternKind.Binding(string_name_var), loc, None)],
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            loc,
+            None,
+        ),
+        Expr(ExprKind.Match(MatchInfo(var_expr(string_name_var, loc), unit_arms)), loc, None),
+    );
+    let object_arm = MatchArm(
+        Pattern(PatternKind.Binding(other_var), loc, None),
+        build_enum_object_from_json_body(enum_def, self_type, other_var, var_alloc, loc),
+    );
+    Expr(
+        ExprKind.Match(MatchInfo(var_expr(value_var, loc), [string_arm, object_arm])),
+        loc,
+        None,
+    )
+}
+
+fn build_unit_variant_arms(enum_def: EnumDef, name_var: VariableName, loc: Location) -> Vec[MatchArm] {
+    let arms: Vec[MatchArm] = Vec.new();
+    for variant in enum_def.variants {
+        if variant.items.is_empty() {
+            let ctor = function_call(variant.qualified_name.unwrap(), FunctionKind.VariantCtor, [], loc);
+            arms.push(MatchArm(
+                Pattern(PatternKind.StringLiteral(variant.name.name), loc, None),
+                ok_expr(ctor, loc),
+            ));
+        }
+    }
+    arms.push(MatchArm(
+        Pattern(PatternKind.Wildcard, loc, None),
+        err_expr(unknown_variant_expr(var_expr(name_var, loc), loc), loc),
+    ));
+    arms
+}
+
+fn build_enum_object_from_json_body(
+    enum_def: EnumDef,
+    self_type: TypeDef,
+    other_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let field_var = var_alloc.allocate_user(I.intern("field"));
+    let name_var = var_alloc.allocate_user(I.intern("name"));
+    let payload_var = var_alloc.allocate_user(I.intern("payload"));
+    let stmts: Vec[S.Statement] = [
+        S.Statement.Let(S.LetInfo(field_var, None, try_expr(function_call(B.get_json_single_field_qn(), FunctionKind.UserDefined, [var_expr(other_var, loc)], loc), var_alloc, loc))),
+        S.Statement.Let(S.LetInfo(name_var, Some(string_type()), Expr(ExprKind.TupleIndex(var_expr(field_var, loc), 0), loc, None))),
+        S.Statement.Let(S.LetInfo(payload_var, Some(json_type()), Expr(ExprKind.TupleIndex(var_expr(field_var, loc), 1), loc, None))),
+    ];
+    let arms = build_payload_variant_arms(enum_def, self_type, name_var, payload_var, var_alloc, loc);
+    stmts.push(S.Statement.TrailingExpr(Expr(
+        ExprKind.Match(MatchInfo(var_expr(name_var, loc), arms)),
+        loc,
+        None,
+    )));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn build_payload_variant_arms(
+    enum_def: EnumDef,
+    self_type: TypeDef,
+    name_var: VariableName,
+    payload_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Vec[MatchArm] {
+    let arms: Vec[MatchArm] = Vec.new();
+    for variant in enum_def.variants {
+        if !variant.items.is_empty() {
+            arms.push(MatchArm(
+                Pattern(PatternKind.StringLiteral(variant.name.name), loc, None),
+                build_variant_from_payload_body(variant, self_type, payload_var, var_alloc, loc),
+            ));
+        }
+    }
+    arms.push(MatchArm(
+        Pattern(PatternKind.Wildcard, loc, None),
+        err_expr(unknown_variant_expr(var_expr(name_var, loc), loc), loc),
+    ));
+    arms
+}
+
+fn build_variant_from_payload_body(
+    variant: VariantDef,
+    self_type: TypeDef,
+    payload_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    if all_items_named(variant) {
+        return build_named_payload_body(variant, payload_var, var_alloc, loc);
+    }
+    if variant.items.len() == 1 {
+        let item = variant.items[0];
+        let field_var = var_alloc.allocate_user(I.intern("field"));
+        let rhs = try_expr(call_from_json(var_expr(payload_var, loc), loc), var_alloc, loc);
+        let ctor = function_call(variant.qualified_name.unwrap(), FunctionKind.VariantCtor, [var_expr(field_var, loc)], loc);
+        return Expr(ExprKind.Block(BlockInfo([
+            S.Statement.Let(S.LetInfo(field_var, Some(item.ty), rhs)),
+            S.Statement.TrailingExpr(ok_expr(ctor, loc)),
+        ])), loc, None);
+    }
+    build_positional_payload_body(variant, self_type, payload_var, var_alloc, loc)
+}
+
+fn build_named_payload_body(variant: VariantDef, payload_var: VariableName, var_alloc: VarAllocator, loc: Location) -> Expr {
+    let stmts: Vec[S.Statement] = Vec.new();
+    let arg_vars: Vec[VariableName] = Vec.new();
+    for item in variant.items {
+        let item_name = item.name.unwrap();
+        let field_var = var_alloc.allocate_user(item_name.name);
+        let rhs = decode_named_json_value(var_expr(payload_var, loc), I.resolve(item_name.name), item.ty, var_alloc, loc);
+        stmts.push(S.Statement.Let(S.LetInfo(field_var, Some(item.ty), rhs)));
+        arg_vars.push(field_var);
+    }
+    let args: Vec[Expr] = arg_vars.iter().map(|v| var_expr(v, loc)).collect();
+    let ctor = function_call(variant.qualified_name.unwrap(), FunctionKind.VariantCtor, args, loc);
+    stmts.push(S.Statement.TrailingExpr(ok_expr(ctor, loc)));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn build_positional_payload_body(
+    variant: VariantDef,
+    self_type: TypeDef,
+    payload_var: VariableName,
+    var_alloc: VarAllocator,
+    loc: Location,
+) -> Expr {
+    let items_var = var_alloc.allocate_user(I.intern("items"));
+    let array_pattern = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(B.get_json_array_qn()),
+            args: [Pattern(PatternKind.Binding(items_var), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let array_body = build_array_payload_body(variant, items_var, var_alloc, loc);
+    let expected_array = MatchArm(
+        Pattern(PatternKind.Wildcard, loc, None),
+        err_expr(expected_array_expr(loc), loc),
+    );
+    Expr(
+        ExprKind.Match(MatchInfo(var_expr(payload_var, loc), [
+            MatchArm(array_pattern, array_body),
+            expected_array,
+        ])),
+        loc,
+        None,
+    )
+}
+
+fn build_array_payload_body(variant: VariantDef, items_var: VariableName, var_alloc: VarAllocator, loc: Location) -> Expr {
+    let decoded = decode_positional_items(variant, items_var, var_alloc, loc);
+    let len_check = function_call(
+        B.get_op_not_eq_qn(),
+        FunctionKind.UserDefined,
+        [
+            method_call(var_expr(items_var, loc), I.intern("len"), [], loc),
+            Expr(ExprKind.IntLiteral("${variant.items.len()}"), loc, None),
+        ],
+        loc,
+    );
+    Expr(
+        ExprKind.If(
+            len_check,
+            err_expr(invalid_variant_string_expr(variant.name.name, loc), loc),
+            Some(decoded),
+        ),
+        loc,
+        None,
+    )
+}
+
+fn decode_positional_items(variant: VariantDef, items_var: VariableName, var_alloc: VarAllocator, loc: Location) -> Expr {
+    let stmts: Vec[S.Statement] = Vec.new();
+    let arg_vars: Vec[VariableName] = Vec.new();
+    for (i, item) in variant.items.iter().enumerate() {
+        let field_var = var_alloc.allocate_user(I.intern("field"));
+        let item_expr = Expr(
+            ExprKind.Index(
+                var_expr(items_var, loc),
+                Expr(ExprKind.IntLiteral("${i}"), loc, None),
+            ),
+            loc,
+            None,
+        );
+        let rhs = try_expr(call_from_json(item_expr, loc), var_alloc, loc);
+        stmts.push(S.Statement.Let(S.LetInfo(field_var, Some(item.ty), rhs)));
+        arg_vars.push(field_var);
+    }
+    let args: Vec[Expr] = arg_vars.iter().map(|v| var_expr(v, loc)).collect();
+    let ctor = function_call(variant.qualified_name.unwrap(), FunctionKind.VariantCtor, args, loc);
+    stmts.push(S.Statement.TrailingExpr(ok_expr(ctor, loc)));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn decode_named_json_value(container: Expr, field_name: String, ty: TypeDef, var_alloc: VarAllocator, loc: Location) -> Expr {
+    match option_inner(ty) {
+        Some(_) => try_expr(function_call(
+            B.get_json_get_optional_field_qn(),
+            FunctionKind.UserDefined,
+            [container, string_expr(field_name, loc)],
+            loc,
+        ), var_alloc, loc),
+        None => try_expr(call_from_json(try_expr(function_call(
+            B.get_json_get_field_qn(),
+            FunctionKind.UserDefined,
+            [container, string_expr(field_name, loc)],
+            loc,
+        ), var_alloc, loc), loc), var_alloc, loc),
+    }
+}
+
+fn make_from_json_method(
+    parent_qn: QualifiedName,
+    short_name: Identifier,
+    type_arg_defs: Option[TypeArgDefs],
+    self_type: TypeDef,
+    value_var: VariableName,
+    body: Expr,
+    module_name: I.String,
+    var_alloc: VarAllocator,
+) -> FunctionDef {
+    let full_name = Identifier.new(I.intern(I.resolve(parent_qn.name()) + "." + I.resolve(short_name.name())), short_name.location);
+    let qualified_name = QualifiedName.new_method(parent_qn.name(), short_name.name());
+    FunctionDef(
+        annotations: [],
+        public: False,
+        name: full_name,
+        qualified_name: Some(qualified_name),
+        kind: FunctionDefKind.Regular,
+        type_arg_defs: type_arg_defs,
+        args: [FunctionArg(value_var, json_type(), None)],
+        yield_type: None,
+        result_type: Some(result_type(self_type)),
+        body: Some(body),
+        module_name: module_name,
+        var_allocator: var_alloc,
+        label_allocator: LabelAllocator.new(),
+        is_varargs: False,
+        default_value_names: Vec.new(),
+        source_package: None,
+    )
+}
+
+fn object_expr(entries: Vec[(String, Expr)], var_alloc: VarAllocator, loc: Location) -> Expr {
+    let fields_var = var_alloc.allocate_user(I.intern("fields"));
+    let stmts: Vec[S.Statement] = [S.Statement.Let(S.LetInfo(fields_var, Some(json_object_map_type()), map_new_expr(loc)))];
+    for (name, value) in entries {
+        stmts.push(S.Statement.Expr(map_insert_expr(fields_var, name, value, loc)));
+    }
+    stmts.push(S.Statement.TrailingExpr(function_call(
+        B.get_json_object_qn(),
+        FunctionKind.VariantCtor,
+        [var_expr(fields_var, loc)],
+        loc,
+    )));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn array_expr(values: Vec[Expr], var_alloc: VarAllocator, loc: Location) -> Expr {
+    let items_var = var_alloc.allocate_user(I.intern("items"));
+    let stmts: Vec[S.Statement] = [S.Statement.Let(S.LetInfo(items_var, None, vec_new_expr(loc)))];
+    for value in values {
+        stmts.push(S.Statement.Expr(vec_push_expr(items_var, value, loc)));
+    }
+    stmts.push(S.Statement.TrailingExpr(function_call(
+        B.get_json_array_qn(),
+        FunctionKind.VariantCtor,
+        [var_expr(items_var, loc)],
+        loc,
+    )));
+    Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
+}
+
+fn map_new_expr(loc: Location) -> Expr {
+    function_call(B.get_map_new_qn(), FunctionKind.UserDefined, [], loc)
+}
+
+fn map_insert_expr(map_var: VariableName, key: String, value: Expr, loc: Location) -> Expr {
+    function_call(B.get_map_insert_qn(), FunctionKind.UserDefined, [var_expr(map_var, loc), string_expr(key, loc), value], loc)
+}
+
+fn vec_new_expr(loc: Location) -> Expr {
+    function_call(B.get_vec_new_qn(), FunctionKind.UserDefined, [], loc)
+}
+
+fn vec_push_expr(vec_var: VariableName, value: Expr, loc: Location) -> Expr {
+    function_call(B.get_vec_push_qn(), FunctionKind.UserDefined, [var_expr(vec_var, loc), value], loc)
+}
+
+fn call_to_json(value: Expr, loc: Location) -> Expr {
+    function_call(B.get_json_to_json_qn(), FunctionKind.UserDefined, [value], loc)
+}
+
+fn call_from_json(value: Expr, loc: Location) -> Expr {
+    function_call(B.get_json_from_json_qn(), FunctionKind.UserDefined, [value], loc)
+}
+
+fn function_call(qname: QualifiedName, kind: FunctionKind, args: Vec[Expr], loc: Location) -> Expr {
+    Expr(
+        ExprKind.FunctionCall(FunctionCallInfo(
+            qname: qname,
+            kind: kind,
+            args: args,
+        )),
+        loc,
+        None,
+    )
+}
+
+fn method_call(receiver: Expr, name: I.String, args: Vec[Expr], loc: Location) -> Expr {
+    Expr(
+        ExprKind.MethodCall(MethodCallInfo(
+            receiver: receiver,
+            name: Identifier.new(name, loc),
+            args: args,
+            named_args: Vec.new(),
+        )),
+        loc,
+        None,
+    )
+}
+
+fn var_expr(v: VariableName, loc: Location) -> Expr {
+    Expr(ExprKind.Var(v), loc, None)
+}
+
+fn string_expr(value: String, loc: Location) -> Expr {
+    Expr(ExprKind.StringLiteral(value), loc, None)
+}
+
+fn json_str_expr(value: String, loc: Location) -> Expr {
+    function_call(B.get_json_str_qn(), FunctionKind.VariantCtor, [string_expr(value, loc)], loc)
+}
+
+fn try_expr(value: Expr, var_alloc: VarAllocator, loc: Location) -> Expr {
+    let ok_var = var_alloc.allocate_temp();
+    let err_var = var_alloc.allocate_temp();
+    let ok_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(B.get_result_ok_qn()),
+            args: [Pattern(PatternKind.Binding(ok_var), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let err_pat = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.inner(B.get_result_err_qn()),
+            args: [Pattern(PatternKind.Binding(err_var), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let converted_err = function_call(B.get_convert_into_qn(), FunctionKind.UserDefined, [var_expr(err_var, loc)], loc);
+    let err_body = Expr(ExprKind.Return(err_expr(converted_err, loc)), loc, None);
+    Expr(
+        ExprKind.Match(MatchInfo(value, [
+            MatchArm(ok_pat, var_expr(ok_var, loc)),
+            MatchArm(err_pat, err_body),
+        ])),
+        loc,
+        None,
+    )
+}
+
+fn ok_expr(value: Expr, loc: Location) -> Expr {
+    function_call(B.get_result_ok_qn(), FunctionKind.VariantCtor, [value], loc)
+}
+
+fn err_expr(value: Expr, loc: Location) -> Expr {
+    function_call(B.get_result_err_qn(), FunctionKind.VariantCtor, [value], loc)
+}
+
+fn expected_array_expr(loc: Location) -> Expr {
+    function_call(B.get_json_error_expected_array_qn(), FunctionKind.VariantCtor, [], loc)
+}
+
+fn unknown_variant_string_expr(name: I.String, loc: Location) -> Expr {
+    unknown_variant_expr(string_expr(I.resolve(name), loc), loc)
+}
+
+fn unknown_variant_expr(name: Expr, loc: Location) -> Expr {
+    function_call(B.get_json_error_unknown_variant_qn(), FunctionKind.VariantCtor, [name], loc)
+}
+
+fn invalid_variant_string_expr(name: I.String, loc: Location) -> Expr {
+    function_call(B.get_json_error_invalid_variant_qn(), FunctionKind.VariantCtor, [string_expr(I.resolve(name), loc)], loc)
+}
+
+fn all_items_named(variant: VariantDef) -> Bool {
+    !variant.items.is_empty() && variant.items.iter().all(|item| item.name.is_some())
+}
+
+fn option_inner(ty: TypeDef) -> Option[TypeDef] {
+    match ty {
+        TypeDef.Named(NamedInfo(name, args)) if name.resolved() == B.get_option_type_qn() && args.len() == 1 => Some(args[0]),
+        _ => None,
+    }
+}
+
+fn serialize_trait_name() -> Name {
+    Name.inner(B.get_trait_json_serialize_qn())
+}
+
+fn deserialize_trait_name() -> Name {
+    Name.inner(B.get_trait_json_deserialize_qn())
+}
+
+fn json_type() -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_json_type_qn()), []))
+}
+
+fn json_error_type() -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_json_error_type_qn()), []))
+}
+
+fn string_type() -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_string_type_qn()), []))
+}
+
+fn json_object_map_type() -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_map_type_qn()), [string_type(), json_type()]))
+}
+
+fn result_type(inner: TypeDef) -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_result_type_qn()), [inner, json_error_type()]))
+}
+
+}

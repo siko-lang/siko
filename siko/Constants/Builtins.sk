@@ -18,6 +18,7 @@ pub struct BuiltinNameCache {
     u64_type_qn: QualifiedName,
     string_type_qn: QualifiedName,
     array_type_qn: QualifiedName,
+    map_type_qn: QualifiedName,
     option_type_qn: QualifiedName,
     option_some_qn: QualifiedName,
     option_none_qn: QualifiedName,
@@ -34,6 +35,8 @@ pub struct BuiltinNameCache {
     trait_ord_qn: QualifiedName,
     trait_clone_qn: QualifiedName,
     trait_from_int_qn: QualifiedName,
+    trait_json_serialize_qn: QualifiedName,
+    trait_json_deserialize_qn: QualifiedName,
     op_eq_qn: QualifiedName,
     op_not_eq_qn: QualifiedName,
     op_partial_cmp_qn: QualifiedName,
@@ -66,7 +69,25 @@ pub struct BuiltinNameCache {
     string_from_literal_qn: QualifiedName,
     vec_new_qn: QualifiedName,
     vec_push_qn: QualifiedName,
+    map_new_qn: QualifiedName,
+    map_insert_qn: QualifiedName,
     range_range_qn: QualifiedName,
+    json_type_qn: QualifiedName,
+    json_null_qn: QualifiedName,
+    json_boolean_qn: QualifiedName,
+    json_number_qn: QualifiedName,
+    json_str_qn: QualifiedName,
+    json_array_qn: QualifiedName,
+    json_object_qn: QualifiedName,
+    json_error_type_qn: QualifiedName,
+    json_error_expected_array_qn: QualifiedName,
+    json_error_unknown_variant_qn: QualifiedName,
+    json_error_invalid_variant_qn: QualifiedName,
+    json_to_json_qn: QualifiedName,
+    json_from_json_qn: QualifiedName,
+    json_get_field_qn: QualifiedName,
+    json_get_optional_field_qn: QualifiedName,
+    json_single_field_qn: QualifiedName,
     util_panic_qn: QualifiedName,
     libc_abort_qn: QualifiedName,
     util_discriminator_qn: QualifiedName,
@@ -95,10 +116,14 @@ pub fn build_cache() -> BuiltinNameCache {
     let n_ord = m("Std.Ops.Ord");
     let n_clone = m("Std.Ops.Clone");
     let n_from_int = m("Std.Ops.FromInt");
+    let n_json_serialize = m("Std.Json.JsonSerialize");
+    let n_json_deserialize = m("Std.Json.JsonDeserialize");
     let n_int = m("Std.Int.Int");
     let n_u8 = m("Std.Int.U8.U8");
     let n_string = m("Std.String.String");
     let n_vec = m("Std.Vec.Vec");
+    let n_map = m("Std.Map.Map");
+    let n_json = m("Std.Json.Json");
 
     BuiltinNameCache(
         bool_type_qn: QualifiedName.new_enum(m("Std.Bool"), m("Bool")),
@@ -115,6 +140,7 @@ pub fn build_cache() -> BuiltinNameCache {
         u64_type_qn: QualifiedName.new_struct(m("Std.Int.U64"), m("U64")),
         string_type_qn: QualifiedName.new_struct(m("Std.String"), m("String")),
         array_type_qn: QualifiedName.new_struct(m("Std.Array"), m("Array")),
+        map_type_qn: QualifiedName.new_struct(m("Std.Map"), m("Map")),
         option_type_qn: QualifiedName.new_enum(m("Std.Option"), m("Option")),
         option_some_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("Some")),
         option_none_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("None")),
@@ -131,6 +157,8 @@ pub fn build_cache() -> BuiltinNameCache {
         trait_ord_qn: QualifiedName.new_trait(m("Std.Ops"), m("Ord")),
         trait_clone_qn: QualifiedName.new_trait(m("Std.Ops"), m("Clone")),
         trait_from_int_qn: QualifiedName.new_trait(m("Std.Ops"), m("FromInt")),
+        trait_json_serialize_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonSerialize")),
+        trait_json_deserialize_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonDeserialize")),
         op_eq_qn: QualifiedName.new_method(n_partial_eq, m("eq")),
         op_not_eq_qn: QualifiedName.new_method(n_partial_eq, m("not_eq")),
         op_partial_cmp_qn: QualifiedName.new_method(n_partial_ord, m("partial_cmp")),
@@ -163,7 +191,25 @@ pub fn build_cache() -> BuiltinNameCache {
         string_from_literal_qn: QualifiedName.new_method(n_string, m("from_literal")),
         vec_new_qn: QualifiedName.new_method(n_vec, m("new")),
         vec_push_qn: QualifiedName.new_method(n_vec, m("push")),
+        map_new_qn: QualifiedName.new_method(n_map, m("new")),
+        map_insert_qn: QualifiedName.new_method(n_map, m("insert")),
         range_range_qn: QualifiedName.new_method(m("Std.Range.Range"), m("range")),
+        json_type_qn: QualifiedName.new_enum(m("Std.Json"), m("Json")),
+        json_null_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Null")),
+        json_boolean_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Boolean")),
+        json_number_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Number")),
+        json_str_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Str")),
+        json_array_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Array")),
+        json_object_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Object")),
+        json_error_type_qn: QualifiedName.new_enum(m("Std.Json"), m("JsonError")),
+        json_error_expected_array_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("ExpectedArray")),
+        json_error_unknown_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("UnknownVariant")),
+        json_error_invalid_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("InvalidVariant")),
+        json_to_json_qn: QualifiedName.new_method(n_json_serialize, m("to_json")),
+        json_from_json_qn: QualifiedName.new_method(n_json_deserialize, m("from_json")),
+        json_get_field_qn: QualifiedName.new_method(n_json, m("get_field")),
+        json_get_optional_field_qn: QualifiedName.new_function(m("Std.Json"), m("get_optional_field")),
+        json_single_field_qn: QualifiedName.new_function(m("Std.Json"), m("single_field")),
         util_panic_qn: QualifiedName.new_function(m("Std.Util"), m("panic")),
         libc_abort_qn: QualifiedName.new_function(m("Std.Libc.Stdlib"), m("abort")),
         util_discriminator_qn: QualifiedName.new_function(m("Std.Util"), m("discriminator")),
@@ -207,6 +253,7 @@ pub fn get_u32_type_qn() -> QualifiedName { name_cache.u32_type_qn }
 pub fn get_u64_type_qn() -> QualifiedName { name_cache.u64_type_qn }
 pub fn get_string_type_qn() -> QualifiedName { name_cache.string_type_qn }
 pub fn get_array_type_qn() -> QualifiedName { name_cache.array_type_qn }
+pub fn get_map_type_qn() -> QualifiedName { name_cache.map_type_qn }
 
 // Option
 pub fn get_option_type_qn() -> QualifiedName { name_cache.option_type_qn }
@@ -231,6 +278,8 @@ pub fn get_trait_partial_ord_qn() -> QualifiedName { name_cache.trait_partial_or
 pub fn get_trait_ord_qn() -> QualifiedName { name_cache.trait_ord_qn }
 pub fn get_trait_clone_qn() -> QualifiedName { name_cache.trait_clone_qn }
 pub fn get_trait_from_int_qn() -> QualifiedName { name_cache.trait_from_int_qn }
+pub fn get_trait_json_serialize_qn() -> QualifiedName { name_cache.trait_json_serialize_qn }
+pub fn get_trait_json_deserialize_qn() -> QualifiedName { name_cache.trait_json_deserialize_qn }
 
 // Trait methods — comparison
 pub fn get_op_eq_qn() -> QualifiedName { name_cache.op_eq_qn }
@@ -273,7 +322,27 @@ pub fn get_string_eq_qn() -> QualifiedName { name_cache.string_eq_qn }
 pub fn get_string_from_literal_qn() -> QualifiedName { name_cache.string_from_literal_qn }
 pub fn get_vec_new_qn() -> QualifiedName { name_cache.vec_new_qn }
 pub fn get_vec_push_qn() -> QualifiedName { name_cache.vec_push_qn }
+pub fn get_map_new_qn() -> QualifiedName { name_cache.map_new_qn }
+pub fn get_map_insert_qn() -> QualifiedName { name_cache.map_insert_qn }
 pub fn get_range_range_qn() -> QualifiedName { name_cache.range_range_qn }
+
+// Json
+pub fn get_json_type_qn() -> QualifiedName { name_cache.json_type_qn }
+pub fn get_json_null_qn() -> QualifiedName { name_cache.json_null_qn }
+pub fn get_json_boolean_qn() -> QualifiedName { name_cache.json_boolean_qn }
+pub fn get_json_number_qn() -> QualifiedName { name_cache.json_number_qn }
+pub fn get_json_str_qn() -> QualifiedName { name_cache.json_str_qn }
+pub fn get_json_array_qn() -> QualifiedName { name_cache.json_array_qn }
+pub fn get_json_object_qn() -> QualifiedName { name_cache.json_object_qn }
+pub fn get_json_error_type_qn() -> QualifiedName { name_cache.json_error_type_qn }
+pub fn get_json_error_expected_array_qn() -> QualifiedName { name_cache.json_error_expected_array_qn }
+pub fn get_json_error_unknown_variant_qn() -> QualifiedName { name_cache.json_error_unknown_variant_qn }
+pub fn get_json_error_invalid_variant_qn() -> QualifiedName { name_cache.json_error_invalid_variant_qn }
+pub fn get_json_to_json_qn() -> QualifiedName { name_cache.json_to_json_qn }
+pub fn get_json_from_json_qn() -> QualifiedName { name_cache.json_from_json_qn }
+pub fn get_json_get_field_qn() -> QualifiedName { name_cache.json_get_field_qn }
+pub fn get_json_get_optional_field_qn() -> QualifiedName { name_cache.json_get_optional_field_qn }
+pub fn get_json_single_field_qn() -> QualifiedName { name_cache.json_single_field_qn }
 
 // Free functions
 pub fn get_util_panic_qn() -> QualifiedName { name_cache.util_panic_qn }
@@ -297,7 +366,6 @@ pub fn get_into_iter_qn() -> QualifiedName { name_cache.into_iter_qn }
 pub fn get_iterator_next_qn() -> QualifiedName { name_cache.iterator_next_qn }
 
 }
-
 
 
 
