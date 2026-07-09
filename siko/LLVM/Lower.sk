@@ -10,6 +10,7 @@ import Siko.Constants.Builtins as B
 import Siko.CBackend.Util
 import Siko.HIR.Program
 import Siko.Interner as I
+import Siko.Layout
 import Siko.LLVM.AST
 
 // Initial direct Program -> LLVM AST lowering. This starts with an alloca-based
@@ -20,6 +21,13 @@ import Siko.LLVM.AST
 struct LocalSlot {
     ty: LLVMType,
     ptr: String,
+}
+
+@derive(Clone)
+struct Address {
+    ty: LLVMType,
+    ty_def: TypeDef,
+    ptr: LLVMValue,
 }
 
 struct FunctionLowerer {
@@ -102,6 +110,132 @@ struct FunctionLowerer {
         }
     }
 
+    fn lower_alloc(fl: FunctionLowerer, ty: TypeDef) -> LLVMTypedValue {
+        let layout = LayoutEngine.new(fl.lowerer.program).layout_of(ty);
+        let result = fl.fresh("alloc");
+        fl.emit(
+            Some(result.clone()),
+            LLVMInstructionKind.Call(
+                LLVMType.Ptr,
+                LLVMValue.Global("siko_malloc"),
+                [LLVMTypedValue(LLVMType.Int(64), LLVMValue.Int("${layout.size}"))],
+                [],
+            ),
+        );
+        LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local(result))
+    }
+
+    fn lower_transmute(fl: FunctionLowerer, inner: Expr, dest_ty: LLVMType) -> LLVMTypedValue {
+        let value = fl.lower_expr(inner);
+        match value.ty {
+            LLVMType.Ptr => {
+                match dest_ty {
+                    LLVMType.Ptr => LLVMTypedValue(LLVMType.Ptr, value.value),
+                    LLVMType.Int(_) => {
+                        let result = fl.fresh("ptrtoint");
+                        fl.emit(
+                            Some(result.clone()),
+                            LLVMInstructionKind.Cast(
+                                LLVMCastOp.PtrToInt,
+                                LLVMTypedValue(LLVMType.Ptr, value.value),
+                                dest_ty.clone(),
+                            ),
+                        );
+                        LLVMTypedValue(dest_ty, LLVMValue.Local(result))
+                    }
+                    _ => panic("llvm: unsupported pointer transmute"),
+                }
+            }
+            LLVMType.Int(src_bits) => {
+                match dest_ty {
+                    LLVMType.Ptr => {
+                        let result = fl.fresh("inttoptr");
+                        fl.emit(
+                            Some(result.clone()),
+                            LLVMInstructionKind.Cast(
+                                LLVMCastOp.IntToPtr,
+                                LLVMTypedValue(LLVMType.Int(src_bits), value.value),
+                                LLVMType.Ptr,
+                            ),
+                        );
+                        LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local(result))
+                    }
+                    LLVMType.Int(dest_bits) => {
+                        if src_bits == dest_bits {
+                            LLVMTypedValue(LLVMType.Int(dest_bits), value.value)
+                        } else {
+                            let result = fl.fresh("intcast");
+                            let op = if src_bits > dest_bits {
+                                LLVMCastOp.Trunc
+                            } else {
+                                LLVMCastOp.ZExt
+                            };
+                            fl.emit(
+                                Some(result.clone()),
+                                LLVMInstructionKind.Cast(
+                                    op,
+                                    LLVMTypedValue(LLVMType.Int(src_bits), value.value),
+                                    LLVMType.Int(dest_bits),
+                                ),
+                            );
+                            LLVMTypedValue(LLVMType.Int(dest_bits), LLVMValue.Local(result))
+                        }
+                    }
+                    _ => panic("llvm: unsupported integer transmute"),
+                }
+            }
+            _ => {
+                match dest_ty {
+                    LLVMType.Ptr | LLVMType.Int(_) => panic("llvm: unsupported aggregate transmute"),
+                    _ => LLVMTypedValue(dest_ty, value.value),
+                }
+            }
+        }
+    }
+
+    fn lower_addr(fl: FunctionLowerer, expr: Expr) -> Address {
+        let ty_def = expr.ty.clone().expect("llvm: lvalue expression has no type");
+        let ty = fl.lowerer.lower_type(ty_def.clone());
+        match expr.kind {
+            ExprKind.Var(name) => {
+                let slot = fl.local(name);
+                Address(slot.ty, ty_def, LLVMValue.Local(slot.ptr))
+            }
+            ExprKind.FieldAccess(receiver, field) => {
+                let receiver_ty = receiver.ty.clone().expect("llvm: field receiver has no type");
+                let owner_ty = match receiver_ty.clone() {
+                    TypeDef.Ptr(inner) => inner,
+                    _ => receiver_ty,
+                };
+                let base_ptr = match receiver.ty.clone().expect("llvm: field receiver has no type") {
+                    TypeDef.Ptr(_) => fl.lower_expr(receiver).value,
+                    _ => fl.lower_addr(receiver).ptr,
+                };
+                let field_info = fl.lowerer.field_info(owner_ty.clone(), field.name());
+                let result = fl.fresh("field");
+                fl.emit(
+                    Some(result.clone()),
+                    LLVMInstructionKind.GetElementPtr(
+                        fl.lowerer.lower_type(owner_ty),
+                        base_ptr,
+                        [
+                            LLVMTypedValue(LLVMType.Int(32), LLVMValue.Int("0")),
+                            LLVMTypedValue(LLVMType.Int(32), LLVMValue.Int("${field_info.index}")),
+                        ],
+                        True,
+                    ),
+                );
+                Address(fl.lowerer.lower_type(field_info.ty.clone()), field_info.ty, LLVMValue.Local(result))
+            }
+            ExprKind.Deref(inner) => {
+                let ptr = fl.lower_expr(inner);
+                Address(ty, ty_def, ptr.value)
+            }
+            ExprKind.Paren(inner) => fl.lower_addr(inner),
+            _ => panic("llvm: unsupported lvalue expression"),
+        }
+    }
+
     fn lower_expr(fl: FunctionLowerer, expr: Expr) -> LLVMTypedValue {
         let ty = fl.lowerer.lower_type(expr.ty.expect("llvm: expression has no type"));
         match expr.kind {
@@ -116,6 +250,25 @@ struct FunctionLowerer {
                 );
                 LLVMTypedValue(slot.ty, LLVMValue.Local(result))
             }
+            ExprKind.FieldAccess(_, _) | ExprKind.Deref(_) => {
+                let addr = fl.lower_addr(expr);
+                let result = fl.fresh("load");
+                fl.emit(
+                    Some(result.clone()),
+                    LLVMInstructionKind.Load(addr.ty.clone(), addr.ptr, None),
+                );
+                LLVMTypedValue(addr.ty, LLVMValue.Local(result))
+            }
+            ExprKind.AddrOf(inner) => {
+                let addr = fl.lower_addr(inner);
+                LLVMTypedValue(LLVMType.Ptr, addr.ptr)
+            }
+            ExprKind.Transmute(inner) => fl.lower_transmute(inner, ty),
+            ExprKind.SizeOf(size_ty) => {
+                let layout = LayoutEngine.new(fl.lowerer.program).layout_of(size_ty);
+                LLVMTypedValue(ty, LLVMValue.Int("${layout.size}"))
+            }
+            ExprKind.Alloc(alloc_ty) => fl.lower_alloc(alloc_ty),
             ExprKind.FunctionCall(info) => {
                 match fl.lower_call(info, ty, True) {
                     Some(value) => value,
@@ -161,7 +314,11 @@ struct FunctionLowerer {
                 let ty = fl.lowerer.lower_type(info.ty.expect("llvm: declare has no type"));
                 fl.add_local(info.name, ty);
             }
-            S.Statement.Assign(_, _) => panic("llvm: Assign lowering is not implemented yet"),
+            S.Statement.Assign(lhs, rhs) => {
+                let addr = fl.lower_addr(lhs);
+                let value = fl.lower_expr(rhs);
+                fl.emit(None, LLVMInstructionKind.Store(value, addr.ptr, None));
+            }
             S.Statement.Expr(expr) => fl.lower_stmt_expr(expr),
             S.Statement.TrailingExpr(_) => panic("llvm: TrailingExpr reached backend"),
             S.Statement.Loop(_) => panic("llvm: Loop reached backend"),
@@ -192,6 +349,12 @@ struct FunctionLowerer {
     }
 }
 
+@derive(Clone)
+struct FieldInfo {
+    index: Int,
+    ty: TypeDef,
+}
+
 struct Lowerer {
     program: Program,
     builtin_int_types: Map[QualifiedName, LLVMType],
@@ -208,6 +371,36 @@ struct Lowerer {
         builtin_int_types.insert(B.get_u32_type_qn().as_mono(), LLVMType.Int(32));
         builtin_int_types.insert(B.get_u64_type_qn().as_mono(), LLVMType.Int(64));
         Lowerer(program, builtin_int_types)
+    }
+
+    fn named_qname(l: Lowerer, ty: TypeDef) -> QualifiedName {
+        match ty {
+            TypeDef.Named(NamedInfo(name, _)) => name.resolved(),
+            _ => panic("llvm: expected named type"),
+        }
+    }
+
+    fn field_info(l: Lowerer, ty: TypeDef, field_name: I.String) -> FieldInfo {
+        let qname = l.named_qname(ty);
+        let sdef = l.program.structs.get(qname).expect("llvm: field owner is not a struct");
+        for (i, field) in sdef.fields.iter().enumerate() {
+            if field.name.name() == field_name {
+                return FieldInfo(i, field.ty);
+            }
+        }
+        panic("llvm: field not found")
+    }
+
+    fn has_symbol(l: Lowerer, symbol: String) -> Bool {
+        for fdef in l.program.functions.values() {
+            if fdef.is_builtin() {
+                continue;
+            }
+            if l.fn_symbol(fdef) == symbol {
+                return True;
+            }
+        }
+        False
     }
 
     fn is_value_type(l: Lowerer, qname: QualifiedName) -> Bool {
@@ -354,6 +547,104 @@ struct Lowerer {
     }
 }
 
+fn runtime_sig(name: String, ret: LLVMType, params: Vec[LLVMType], varargs: Bool, attrs: Vec[String]) -> LLVMFunctionSig {
+    let llvm_params: Vec[LLVMParam] = Vec.new();
+    for param in params {
+        llvm_params.push(LLVMParam(param, None, []));
+    }
+    LLVMFunctionSig(name, LLVMLinkage.External, None, ret, llvm_params, varargs, attrs)
+}
+
+fn add_runtime_decl(l: Lowerer, declarations: Vec[LLVMFunctionDecl], name: String, ret: LLVMType, params: Vec[LLVMType], varargs: Bool, attrs: Vec[String]) {
+    if !l.has_symbol(name.clone()) {
+        declarations.push(LLVMFunctionDecl(runtime_sig(name, ret, params, varargs, attrs)));
+    }
+}
+
+fn add_runtime_declarations(l: Lowerer, declarations: Vec[LLVMFunctionDecl]) {
+    add_runtime_decl(l, declarations, "GC_init", LLVMType.Void, [], False, []);
+    add_runtime_decl(l, declarations, "GC_malloc", LLVMType.Ptr, [LLVMType.Int(64)], False, []);
+    add_runtime_decl(l, declarations, "abort", LLVMType.Void, [], False, ["noreturn"]);
+}
+
+fn build_globals() -> Vec[LLVMGlobal] {
+    [
+        LLVMGlobal(
+            "_siko_argc",
+            LLVMLinkage.Internal,
+            LLVMUnnamedAddr.NoUnnamedAddr,
+            False,
+            LLVMType.Int(32),
+            Some(LLVMValue.Int("0")),
+            None,
+            [],
+        ),
+        LLVMGlobal(
+            "_siko_argv",
+            LLVMLinkage.Internal,
+            LLVMUnnamedAddr.NoUnnamedAddr,
+            False,
+            LLVMType.Ptr,
+            Some(LLVMValue.Null),
+            None,
+            [],
+        ),
+        LLVMGlobal(
+            "_siko_result",
+            LLVMLinkage.Internal,
+            LLVMUnnamedAddr.NoUnnamedAddr,
+            False,
+            LLVMType.Int(32),
+            Some(LLVMValue.Int("0")),
+            None,
+            [],
+        ),
+    ]
+}
+
+fn build_siko_malloc() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "siko_malloc",
+        LLVMLinkage.Internal,
+        None,
+        LLVMType.Ptr,
+        [LLVMParam(LLVMType.Int(64), Some("size"), [])],
+        False,
+        [],
+    );
+    let entry_instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("p"),
+            LLVMInstructionKind.Call(
+                LLVMType.Ptr,
+                LLVMValue.Global("GC_malloc"),
+                [LLVMTypedValue(LLVMType.Int(64), LLVMValue.Local("size"))],
+                [],
+            ),
+        ),
+        LLVMInstruction(
+            Some("is_null"),
+            LLVMInstructionKind.ICmp(LLVMIntPredicate.Eq, LLVMType.Ptr, LLVMValue.Local("p"), LLVMValue.Null),
+        ),
+    ];
+    let abort_instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            None,
+            LLVMInstructionKind.Call(LLVMType.Void, LLVMValue.Global("abort"), [], []),
+        ),
+    ];
+    let blocks: Vec[LLVMBasicBlock] = [
+        LLVMBasicBlock(
+            "entry",
+            entry_instrs,
+            LLVMTerminator.CondBr(LLVMTypedValue(LLVMType.Int(1), LLVMValue.Local("is_null")), "abort", "ok"),
+        ),
+        LLVMBasicBlock("abort", abort_instrs, LLVMTerminator.Unreachable),
+        LLVMBasicBlock("ok", Vec.new(), LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("p"))))),
+    ];
+    LLVMFunctionDef(sig, blocks)
+}
+
 fn build_main() -> LLVMFunctionDef {
     let params: Vec[LLVMParam] = [
         LLVMParam(LLVMType.Int(32), Some("argc"), []),
@@ -362,11 +653,35 @@ fn build_main() -> LLVMFunctionDef {
     let tuple_ty = LLVMType.Named("__tuple");
     let instrs: Vec[LLVMInstruction] = [
         LLVMInstruction(
+            None,
+            LLVMInstructionKind.Store(
+                LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("argc")),
+                LLVMValue.Global("_siko_argc"),
+                None,
+            ),
+        ),
+        LLVMInstruction(
+            None,
+            LLVMInstructionKind.Store(
+                LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("argv")),
+                LLVMValue.Global("_siko_argv"),
+                None,
+            ),
+        ),
+        LLVMInstruction(
+            None,
+            LLVMInstructionKind.Call(LLVMType.Void, LLVMValue.Global("GC_init"), [], []),
+        ),
+        LLVMInstruction(
             Some("main_result"),
             LLVMInstructionKind.Call(tuple_ty, LLVMValue.Global("Main_main"), [], []),
         ),
+        LLVMInstruction(
+            Some("result"),
+            LLVMInstructionKind.Load(LLVMType.Int(32), LLVMValue.Global("_siko_result"), None),
+        ),
     ];
-    let ret = LLVMTypedValue(LLVMType.Int(32), LLVMValue.Int("0"));
+    let ret = LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("result"));
     let blocks: Vec[LLVMBasicBlock] = [
         LLVMBasicBlock("entry", instrs, LLVMTerminator.Ret(Some(ret))),
     ];
@@ -389,13 +704,15 @@ pub fn lower(program: Program) -> LLVMModule {
     let declarations: Vec[LLVMFunctionDecl] = Vec.new();
     let functions: Vec[LLVMFunctionDef] = Vec.new();
     l.lower_functions(declarations, functions);
+    add_runtime_declarations(l, declarations);
+    functions.push(build_siko_malloc());
     functions.push(build_main());
     LLVMModule(
         Some("siko"),
         Some("arm64-apple-macosx26.0.0"),
         None,
         l.lower_structs(),
-        Vec.new(),
+        build_globals(),
         declarations,
         functions,
     )
