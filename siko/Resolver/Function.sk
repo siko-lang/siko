@@ -52,11 +52,12 @@ instance Resolvable[FunctionDef] {
             kind = FunctionDefKind.Builtin;
         }
 
+        let qualified_name = QualifiedName.new_function(ctx.module_name(), f.name.name());
         Ok(FunctionDef(
             annotations: f.annotations,
             public: f.public,
-            name: f.name.with_prefix(ctx.module_name()),
-            qualified_name: Some(QualifiedName.new_function(ctx.module_name(), f.name.name())),
+            name: f.name,
+            qualified_name: Some(qualified_name),
             kind: kind,
             type_arg_defs: f.type_arg_defs.resolve(ctx)?,
             args: resolved_args,
