@@ -15,7 +15,7 @@ BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
 test: siko.bin runner.bin
 	./siko.bin test std/Common
 	./runner.bin
-	-./runner.bin --llvm
+	./runner.bin --llvm
 
 test-valgrind: runner.bin
 	./runner.bin --valgrind

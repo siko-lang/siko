@@ -12,6 +12,7 @@ import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Layout
 import Siko.LLVM.AST
+import Siko.Config
 
 @derive(Clone)
 struct LocalSlot {
@@ -1317,7 +1318,7 @@ pub fn lower(program: Program) -> LLVMModule {
     functions.push(build_main());
     LLVMModule(
         Some("siko"),
-        Some("arm64-apple-macosx26.0.0"),
+        Some(get_config().target_info.target_triplet),
         None,
         l.lower_structs(),
         build_globals(l.program),

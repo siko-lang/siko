@@ -2,22 +2,15 @@ module Siko.Driver.Util {
 
 import Siko.Parser.Module
 import Siko.Errors
-import Std.Sys.Process as Sys
+import Siko.Config
 import Siko.Package.Collector as PC
-
-pub fn arch_dir_name() -> String {
-    match Sys.getenv("SIKO_TARGET_OS") {
-        Some("linux") => "Linux",
-        _ => "Darwin",
-    }
-}
 
 pub fn collect_files(paths: Vec[String], no_std: Bool, std_path: Option[String]) -> Vec[PC.SourcePackage] {
     let lib_paths: Vec[String] = Vec.new();
     match std_path {
         Some(p) => {
             lib_paths.push("${p}/Common");
-            lib_paths.push("${p}/Arch/${arch_dir_name()}");
+            lib_paths.push("${p}/Arch/${get_config().target_info.arch_dir_name}");
         }
         None => {}
     }

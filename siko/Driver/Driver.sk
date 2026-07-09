@@ -105,11 +105,13 @@ pub struct Driver {
     }
 
     pub fn link_llvm(d: Driver, output: String, optimize: Bool, san: Bool, tsan: Bool) {
-        let pkg_args: Vec[String] = ["--cflags", "--libs", "bdw-gc"];
+        let pkg_args: Vec[String] = ["--libs", "bdw-gc"];
         let pkg_result = Command.new("pkg-config").with_path().with_capture_stdout().args(pkg_args).run();
         let gc_flags_raw = if pkg_result.success() { pkg_result.captured_stdout() } else { "-lgc" };
         let gc_flags: Vec[String] = gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect();
         let args: Vec[String] = Vec.new();
+        args.push("-target");
+        args.push(get_config().target_info.target_triplet);
         args.push("-x");
         args.push("ir");
         args.push("-");
