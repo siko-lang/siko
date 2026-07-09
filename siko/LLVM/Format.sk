@@ -511,6 +511,26 @@ fn format_instruction_kind(f: Formatter, kind: LLVMInstructionKind) {
             }
             f.push(")");
         }
+        LLVMInstructionKind.VarArgCall(ret_ty, fixed_param_tys, callee, args, attrs) => {
+            f.push("call");
+            format_attrs(f, attrs);
+            f.push(" ");
+            format_type(f, ret_ty);
+            f.push(" (");
+            for (i, param_ty) in fixed_param_tys.iter().enumerate() {
+                if i > 0 { f.push(", "); }
+                format_type(f, param_ty);
+            }
+            if !fixed_param_tys.is_empty() { f.push(", "); }
+            f.push("...) ");
+            format_value(f, callee);
+            f.push("(");
+            for (i, arg) in args.iter().enumerate() {
+                if i > 0 { f.push(", "); }
+                format_typed_value(f, arg);
+            }
+            f.push(")");
+        }
         LLVMInstructionKind.Phi(ty, incoming) => {
             f.push("phi ");
             format_type(f, ty);

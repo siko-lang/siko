@@ -224,9 +224,10 @@ struct FunctionLowerer {
     }
 
     fn lower_call(fl: FunctionLowerer, info: FunctionCallInfo, result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
+        let fixed_param_tys = fl.lowerer.vararg_fixed_param_tys(info.qname.clone());
         let callee = LLVMValue.Global(fl.function_symbol(info.qname, info.kind));
         let args = fl.lower_args(info.args);
-        fl.emit_call(callee, args, result_ty, keep_result)
+        fl.emit_call(callee, args, result_ty, keep_result, fixed_param_tys)
     }
 
     fn lower_function_ptr_call(fl: FunctionLowerer, callee_expr: Expr, args: Vec[Expr], result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
@@ -237,18 +238,26 @@ struct FunctionLowerer {
         }
         let callee = fl.lower_expr(callee_expr);
         let args = fl.lower_args(args);
-        fl.emit_call(callee.value, args, result_ty, keep_result)
+        fl.emit_call(callee.value, args, result_ty, keep_result, None)
     }
 
-    fn emit_call(fl: FunctionLowerer, callee: LLVMValue, args: Vec[LLVMTypedValue], result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
+    fn emit_call(fl: FunctionLowerer, callee: LLVMValue, args: Vec[LLVMTypedValue], result_ty: LLVMType, keep_result: Bool, fixed_param_tys: Option[Vec[LLVMType]]) -> Option[LLVMTypedValue] {
         match result_ty {
             LLVMType.Void => {
-                fl.emit(None, LLVMInstructionKind.Call(LLVMType.Void, callee, args, []));
+                let kind = match fixed_param_tys {
+                    Some(param_tys) => LLVMInstructionKind.VarArgCall(LLVMType.Void, param_tys, callee, args, []),
+                    None => LLVMInstructionKind.Call(LLVMType.Void, callee, args, []),
+                };
+                fl.emit(None, kind);
                 None
             }
             ty => {
                 let result = if keep_result { Some(fl.fresh("call")) } else { None };
-                fl.emit(result.clone(), LLVMInstructionKind.Call(ty.clone(), callee, args, []));
+                let kind = match fixed_param_tys {
+                    Some(param_tys) => LLVMInstructionKind.VarArgCall(ty.clone(), param_tys, callee, args, []),
+                    None => LLVMInstructionKind.Call(ty.clone(), callee, args, []),
+                };
+                fl.emit(result.clone(), kind);
                 match result {
                     Some(name) => Some(LLVMTypedValue(ty, LLVMValue.Local(name))),
                     None => None,
@@ -726,6 +735,30 @@ struct Lowerer {
         }
     }
 
+    fn vararg_fixed_param_tys(l: Lowerer, qname: QualifiedName) -> Option[Vec[LLVMType]] {
+        match l.program.functions.get(qname) {
+            Some(fdef) => {
+                if !fdef.is_varargs {
+                    return None;
+                }
+                let params: Vec[LLVMType] = Vec.new();
+                for arg in fdef.args.iter() {
+                    params.push(l.lower_type(arg.type_def));
+                }
+                Some(params)
+            }
+            None => None,
+        }
+    }
+
+    fn is_runtime_defined_symbol(l: Lowerer, symbol: String) -> Bool {
+        symbol == "siko_pthread_join" ||
+        symbol == "get_saved_argc" ||
+        symbol == "get_saved_arg" ||
+        symbol == "get_environ" ||
+        symbol == "set_program_result"
+    }
+
     fn lower_sig(l: Lowerer, fdef: FunctionDef) -> LLVMFunctionSig {
         let params: Vec[LLVMParam] = Vec.new();
         for arg in fdef.args.iter() {
@@ -764,7 +797,12 @@ struct Lowerer {
             }
             match fdef.body {
                 Some(_) => functions.push(l.lower_definition(fdef)),
-                None => declarations.push(l.lower_declaration(fdef)),
+                None => {
+                    let symbol = l.fn_symbol(fdef);
+                    if !l.is_runtime_defined_symbol(symbol) {
+                        declarations.push(l.lower_declaration(fdef));
+                    }
+                }
             }
         }
     }
@@ -788,6 +826,7 @@ fn add_runtime_declarations(l: Lowerer, declarations: Vec[LLVMFunctionDecl]) {
     add_runtime_decl(l, declarations, "GC_init", LLVMType.Void, [], False, []);
     add_runtime_decl(l, declarations, "GC_malloc", LLVMType.Ptr, [LLVMType.Int(64)], False, []);
     add_runtime_decl(l, declarations, "abort", LLVMType.Void, [], False, ["noreturn"]);
+    add_runtime_decl(l, declarations, "pthread_join", LLVMType.Int(32), [LLVMType.Ptr, LLVMType.Ptr], False, []);
 }
 
 fn hex_digit(n: Int) -> String {
@@ -988,6 +1027,16 @@ fn build_globals(program: Program) -> Vec[LLVMGlobal] {
             None,
             [],
         ),
+        LLVMGlobal(
+            "environ",
+            LLVMLinkage.External,
+            LLVMUnnamedAddr.NoUnnamedAddr,
+            False,
+            LLVMType.Ptr,
+            None,
+            None,
+            [],
+        ),
     ];
     let names: Vec[String] = Vec.new();
     collect_string_globals(program, globals, names);
@@ -1035,6 +1084,168 @@ fn build_siko_malloc() -> LLVMFunctionDef {
         LLVMBasicBlock("ok", Vec.new(), LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("p"))))),
     ];
     LLVMFunctionDef(sig, blocks)
+}
+
+fn build_siko_pthread_join() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "siko_pthread_join",
+        LLVMLinkage.External,
+        None,
+        LLVMType.Int(32),
+        [
+            LLVMParam(LLVMType.Int(64), Some("thread"), []),
+            LLVMParam(LLVMType.Ptr, Some("retval"), []),
+        ],
+        False,
+        [],
+    );
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("pthread"),
+            LLVMInstructionKind.Cast(
+                LLVMCastOp.IntToPtr,
+                LLVMTypedValue(LLVMType.Int(64), LLVMValue.Local("thread")),
+                LLVMType.Ptr,
+            ),
+        ),
+        LLVMInstruction(
+            Some("result"),
+            LLVMInstructionKind.Call(
+                LLVMType.Int(32),
+                LLVMValue.Global("pthread_join"),
+                [
+                    LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("pthread")),
+                    LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("retval")),
+                ],
+                [],
+            ),
+        ),
+    ];
+    LLVMFunctionDef(
+        sig,
+        [LLVMBasicBlock(
+            "entry",
+            instrs,
+            LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("result")))),
+        )],
+    )
+}
+
+fn build_get_saved_argc() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "get_saved_argc",
+        LLVMLinkage.External,
+        None,
+        LLVMType.Int(32),
+        [],
+        False,
+        [],
+    );
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("argc"),
+            LLVMInstructionKind.Load(LLVMType.Int(32), LLVMValue.Global("_siko_argc"), None),
+        ),
+    ];
+    LLVMFunctionDef(
+        sig,
+        [LLVMBasicBlock(
+            "entry",
+            instrs,
+            LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("argc")))),
+        )],
+    )
+}
+
+fn build_get_saved_arg() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "get_saved_arg",
+        LLVMLinkage.External,
+        None,
+        LLVMType.Ptr,
+        [LLVMParam(LLVMType.Int(32), Some("index"), [])],
+        False,
+        [],
+    );
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("argv"),
+            LLVMInstructionKind.Load(LLVMType.Ptr, LLVMValue.Global("_siko_argv"), None),
+        ),
+        LLVMInstruction(
+            Some("arg_ptr"),
+            LLVMInstructionKind.GetElementPtr(
+                LLVMType.Ptr,
+                LLVMValue.Local("argv"),
+                [LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("index"))],
+                True,
+            ),
+        ),
+        LLVMInstruction(
+            Some("arg"),
+            LLVMInstructionKind.Load(LLVMType.Ptr, LLVMValue.Local("arg_ptr"), None),
+        ),
+    ];
+    LLVMFunctionDef(
+        sig,
+        [LLVMBasicBlock(
+            "entry",
+            instrs,
+            LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("arg")))),
+        )],
+    )
+}
+
+fn build_get_environ() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "get_environ",
+        LLVMLinkage.External,
+        None,
+        LLVMType.Ptr,
+        [],
+        False,
+        [],
+    );
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("env"),
+            LLVMInstructionKind.Load(LLVMType.Ptr, LLVMValue.Global("environ"), None),
+        ),
+    ];
+    LLVMFunctionDef(
+        sig,
+        [LLVMBasicBlock(
+            "entry",
+            instrs,
+            LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("env")))),
+        )],
+    )
+}
+
+fn build_set_program_result() -> LLVMFunctionDef {
+    let sig = LLVMFunctionSig(
+        "set_program_result",
+        LLVMLinkage.External,
+        None,
+        LLVMType.Void,
+        [LLVMParam(LLVMType.Int(32), Some("result"), [])],
+        False,
+        [],
+    );
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            None,
+            LLVMInstructionKind.Store(
+                LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("result")),
+                LLVMValue.Global("_siko_result"),
+                None,
+            ),
+        ),
+    ];
+    LLVMFunctionDef(
+        sig,
+        [LLVMBasicBlock("entry", instrs, LLVMTerminator.Ret(None))],
+    )
 }
 
 fn build_main() -> LLVMFunctionDef {
@@ -1098,6 +1309,11 @@ pub fn lower(program: Program) -> LLVMModule {
     l.lower_functions(declarations, functions);
     add_runtime_declarations(l, declarations);
     functions.push(build_siko_malloc());
+    functions.push(build_siko_pthread_join());
+    functions.push(build_get_saved_argc());
+    functions.push(build_get_saved_arg());
+    functions.push(build_get_environ());
+    functions.push(build_set_program_result());
     functions.push(build_main());
     LLVMModule(
         Some("siko"),
