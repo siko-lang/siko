@@ -819,6 +819,7 @@ pub struct ExprResolver {
                     desugar_for_loop(expr_resolver, env, result, pattern, iterable, body)?
                 }
                 S.Statement.WhileLoop(cond, body) => desugar_while_loop(expr_resolver, env, cond, body)?,
+                S.Statement.Defer(expr) => S.Statement.Defer(expr_resolver.resolve_expr(expr, env)?),
                 S.Statement.Declare(_) => panic("Declare statement found in resolver"),
                 S.Statement.Assign(lhs, rhs) => {
                     if let ExprKind.Index(container, idx) = lhs.kind {

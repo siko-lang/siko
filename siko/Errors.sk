@@ -3,6 +3,7 @@ module Siko.Errors {
 import Siko.Format.Utils
 import Siko.Instances.InstanceChecker
 import Siko.Interner as I
+import Siko.LowerDefer
 import Siko.MatchValidation
 import Siko.Monomorphizer.Error
 import Siko.Parser.Parser
@@ -99,6 +100,16 @@ pub fn report_resolve_error(e: ResolveError) {
         ResolveError.InvalidEffectInstanceMethod(method, effect_name) =>
             report("`${I.resolve(method.name())}` is not a method of effect `${I.resolve(effect_name.name())}`", Some(method.location)),
     }
+}
+
+pub fn report_defer_errors(errors: Vec[DeferError]) -> ! {
+    for e in errors {
+        match e {
+            DeferError.ControlFlowEscapesDefer(kind, location) =>
+                report("`${kind}` is not allowed to escape a deferred expression", Some(location)),
+        }
+    }
+    exit_with_error()
 }
 
 pub fn report_match_validation_errors(errors: Vec[MatchValidationError]) -> ! {

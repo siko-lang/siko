@@ -1,0 +1,106 @@
+module Main {
+
+// fall-through vs early return
+fn early(flag: Bool) -> Int {
+    defer println("early: cleanup");
+    if flag {
+        println("early: returning early");
+        return 1;
+    }
+    println("early: falling through");
+    2
+}
+
+// multiple defers run in reverse declaration order
+fn ordering() {
+    defer println("ordering: first registered");
+    defer println("ordering: second registered");
+    println("ordering: body");
+}
+
+// a defer in an inner block runs at the end of that block, not the function
+fn block_scope() {
+    println("block: before");
+    {
+        defer println("block: inner cleanup");
+        println("block: inside");
+    };
+    println("block: after");
+}
+
+// continue/break run every defer between them and the loop, innermost first
+fn loops() {
+    for i in 0..4 {
+        defer println("loop: iter ${i} done");
+        if i == 1 {
+            defer println("loop: skipping ${i}");
+            continue;
+        }
+        if i == 3 {
+            break;
+        }
+        println("loop: processing ${i}");
+    }
+    println("loop: done");
+}
+
+fn step(fail: Bool) -> Result[Int, String] {
+    if fail {
+        Err("boom")
+    } else {
+        Ok(7)
+    }
+}
+
+// the return hidden inside ? runs the defers too
+fn with_try(fail: Bool) -> Result[Int, String] {
+    defer println("try: cleanup");
+    let n = step(fail)?;
+    println("try: got ${n}");
+    Ok(n + 1)
+}
+
+// the deferred expression defines its own variables; each copy is renamed
+fn renamed(flag: Bool) -> Int {
+    defer {
+        let msg = "renamed: cleanup";
+        println(msg);
+    };
+    if flag {
+        return 1;
+    }
+    2
+}
+
+// the block value is evaluated before the defers run
+fn value_order() {
+    let x = 10;
+    let v = {
+        defer {
+            x = x + 5;
+        };
+        x
+    };
+    println("value: v=${v} x=${x}");
+}
+
+fn main() {
+    println("early(True)=${early(True)}");
+    println("early(False)=${early(False)}");
+    ordering();
+    block_scope();
+    loops();
+    match with_try(False) {
+        Ok(n) => println("try: ok ${n}"),
+        Err(e) => println("try: err ${e}"),
+    }
+    match with_try(True) {
+        Ok(n) => println("try: ok ${n}"),
+        Err(e) => println("try: err ${e}"),
+    }
+    println("renamed(True)=${renamed(True)}");
+    println("renamed(False)=${renamed(False)}");
+    value_order();
+}
+
+}

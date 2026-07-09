@@ -1,0 +1,307 @@
+module Siko.LowerDefer {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.Name
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Utils.VarAllocator
+import Siko.Utils.VarRenamer
+import Siko.Interner as I
+
+// Removes every Statement.Defer by replicating the deferred expression at each
+// point where execution can leave the enclosing block: return, break, continue
+// and normal fall-through. Runs right after resolution, so all implicit exits
+// (?, for/while, if let) are already explicit Return/Break/Continue nodes and
+// nothing later in the pipeline ever sees a defer. Each inserted copy is
+// alpha-renamed so every variable stays defined exactly once per function.
+
+pub enum DeferError {
+    // return/break/continue would escape the deferred expression itself
+    ControlFlowEscapesDefer(String, Location),
+}
+
+// One entry per enclosing block; is_loop marks the body of a Loop statement so
+// break/continue know where to stop collecting defers.
+struct Scope {
+    defers: Vec[Expr],
+    is_loop: Bool,
+}
+
+struct Lowerer {
+    var_alloc: VarAllocator,
+    scopes: Vec[Scope],
+    in_defer: Bool,
+    errors: Vec[DeferError],
+
+    // All defers a return runs through, in execution order: innermost scope
+    // first, reverse declaration order within a scope.
+    fn return_defers(l: Lowerer) -> Vec[Expr] {
+        let result = Vec.new();
+        let i = l.scopes.len() - 1;
+        while i >= 0 {
+            collect_reversed(l.scopes[i].defers, result);
+            i -= 1;
+        }
+        result
+    }
+
+    // Defers between a break/continue and its loop, loop body included.
+    // None means there is no enclosing loop in the current context.
+    fn loop_exit_defers(l: Lowerer) -> Option[Vec[Expr]] {
+        let result = Vec.new();
+        let i = l.scopes.len() - 1;
+        while i >= 0 {
+            let scope = l.scopes[i];
+            collect_reversed(scope.defers, result);
+            if scope.is_loop {
+                return Some(result);
+            }
+            i -= 1;
+        }
+        None
+    }
+
+    fn register_defer(l: Lowerer, expr: Expr) {
+        let scope = l.scopes.pop().expect("lower-defer: no scope");
+        scope.defers.push(expr);
+        l.scopes.push(scope);
+    }
+
+    // The deferred expression is its own control flow context: defers nested
+    // inside it are expanded relative to it, and control flow may not escape it.
+    fn lower_defer_expr(l: Lowerer, expr: Expr) -> Expr {
+        let saved_scopes = l.scopes;
+        let saved_in_defer = l.in_defer;
+        l.scopes = Vec.new();
+        l.in_defer = True;
+        let result = lower(expr, l);
+        l.scopes = saved_scopes;
+        l.in_defer = saved_in_defer;
+        result
+    }
+
+    // Same reset for lambda bodies: a lambda is a separate exit context and
+    // must not run the enclosing function's defers.
+    fn lower_lambda_body(l: Lowerer, body: Expr) -> Expr {
+        let saved_scopes = l.scopes;
+        let saved_in_defer = l.in_defer;
+        l.scopes = Vec.new();
+        l.in_defer = False;
+        let result = lower(body, l);
+        l.scopes = saved_scopes;
+        l.in_defer = saved_in_defer;
+        result
+    }
+
+    // Each copy is alpha-renamed so variables defined inside the deferred
+    // expression stay unique per function; free variables are untouched.
+    fn push_copies(l: Lowerer, out: Vec[S.Statement], defers: Vec[Expr]) {
+        for d in defers {
+            out.push(S.Statement.Expr(rename_variables(d, l.var_alloc)));
+        }
+    }
+
+    fn lower_stmts(l: Lowerer, stmts: Vec[S.Statement], is_loop: Bool) -> Vec[S.Statement] {
+        l.scopes.push(Scope(Vec.new(), is_loop));
+        let out: Vec[S.Statement] = Vec.new();
+        for stmt in stmts {
+            let lowered = match stmt {
+                S.Statement.Defer(expr) => {
+                    l.register_defer(l.lower_defer_expr(expr));
+                    continue;
+                }
+                S.Statement.Let(S.LetInfo(name, ty, rhs)) => S.Statement.Let(S.LetInfo(name, ty, lower(rhs, l))),
+                S.Statement.Assign(lhs, rhs) => S.Statement.Assign(lower(lhs, l), lower(rhs, l)),
+                S.Statement.Expr(e) => S.Statement.Expr(lower(e, l)),
+                S.Statement.TrailingExpr(e) => S.Statement.TrailingExpr(lower(e, l)),
+                S.Statement.Loop(BlockInfo(body)) => S.Statement.Loop(BlockInfo(l.lower_stmts(body, True))),
+                S.Statement.Declare(_) => stmt,
+                S.Statement.UnresolvedLet(_, _, _) => panic("lower-defer: UnresolvedLet"),
+                S.Statement.ForLoop(_, _, _) => panic("lower-defer: ForLoop must be desugared"),
+                S.Statement.WhileLoop(_, _) => panic("lower-defer: WhileLoop must be desugared"),
+            };
+            out.push(lowered);
+        }
+        let scope = l.scopes.pop().expect("lower-defer: scope stack underflow");
+        if !scope.defers.is_empty() {
+            l.append_fallthrough(out, scope.defers);
+        }
+        out
+    }
+
+    // break/continue run the defers of every scope up to and including the
+    // enclosing loop body.
+    fn lower_loop_exit(l: Lowerer, e: Expr, kind: String) -> Expr {
+        match l.loop_exit_defers() {
+            None => {
+                if l.in_defer {
+                    l.errors.push(DeferError.ControlFlowEscapesDefer(kind, e.location));
+                }
+                e
+            }
+            Some(defers) => {
+                if defers.is_empty() {
+                    return e;
+                }
+                let stmts = Vec.new();
+                l.push_copies(stmts, defers);
+                stmts.push(S.Statement.TrailingExpr(e));
+                Expr(ExprKind.Block(BlockInfo(stmts)), e.location, e.ty)
+            }
+        }
+    }
+
+    // Runs the block's own defers when control falls off its end. The block
+    // value is evaluated into a temp first so the defers run after it, and the
+    // temp keeps the value immune to mutation by the defers.
+    fn append_fallthrough(l: Lowerer, out: Vec[S.Statement], defers: Vec[Expr]) {
+        defers.reverse();
+        match out.last() {
+            Some(S.Statement.TrailingExpr(e)) => {
+                if e.is_divergent() {
+                    return;
+                }
+                out.pop();
+                let loc = e.location;
+                let tmp = l.var_alloc.allocate_temp();
+                out.push(S.Statement.Let(S.LetInfo(tmp, None, e)));
+                l.push_copies(out, defers);
+                out.push(S.Statement.TrailingExpr(Expr(ExprKind.Var(tmp), loc, None)));
+            }
+            Some(S.Statement.Expr(e)) => {
+                if e.is_divergent() {
+                    return;
+                }
+                l.push_copies(out, defers);
+            }
+            _ => {
+                l.push_copies(out, defers);
+            }
+        }
+    }
+}
+
+// defers are stored in declaration order; exits run them in reverse
+fn collect_reversed(defers: Vec[Expr], result: Vec[Expr]) {
+    let i = defers.len() - 1;
+    while i >= 0 {
+        result.push(defers[i]);
+        i -= 1;
+    }
+}
+
+trait Lower[T] {
+    fn lower(t: T, l: Lowerer) -> T
+}
+
+instance Lower[Expr] {
+    fn lower(e: Expr, l: Lowerer) -> Expr {
+        let loc = e.location;
+        let ty = e.ty;
+        match e.kind {
+            ExprKind.Block(BlockInfo(stmts)) =>
+                Expr(ExprKind.Block(BlockInfo(l.lower_stmts(stmts, False))), loc, ty),
+            // The return value is evaluated before the defers run, so it is
+            // bound to a temp first.
+            ExprKind.Return(inner) => {
+                let inner = lower(inner, l);
+                if l.in_defer {
+                    l.errors.push(DeferError.ControlFlowEscapesDefer("return", loc));
+                    return Expr(ExprKind.Return(inner), loc, ty);
+                }
+                let defers = l.return_defers();
+                if defers.is_empty() {
+                    return Expr(ExprKind.Return(inner), loc, ty);
+                }
+                let tmp = l.var_alloc.allocate_temp();
+                let stmts = [S.Statement.Let(S.LetInfo(tmp, None, inner))];
+                l.push_copies(stmts, defers);
+                let ret = Expr(ExprKind.Return(Expr(ExprKind.Var(tmp), loc, None)), loc, ty);
+                stmts.push(S.Statement.TrailingExpr(ret));
+                Expr(ExprKind.Block(BlockInfo(stmts)), loc, ty)
+            }
+            ExprKind.Break => l.lower_loop_exit(e, "break"),
+            ExprKind.Continue => l.lower_loop_exit(e, "continue"),
+            ExprKind.ResolvedLambda(args, body, capture_count) =>
+                Expr(ExprKind.ResolvedLambda(args, l.lower_lambda_body(body), capture_count), loc, ty),
+            ExprKind.UnresolvedLambda(_, _) => panic("lower-defer: UnresolvedLambda must be resolved"),
+            kind => Expr(lower(kind, l), loc, ty),
+        }
+    }
+}
+
+instance Lower[VariableName] = auto(Map, =)
+instance Lower[Location] = auto(Map, =)
+instance Lower[TypeDef] = auto(Map, =)
+instance Lower[I.String] = auto(Map, =)
+instance Lower[String] = auto(Map, =)
+instance Lower[Int] = auto(Map, =)
+instance Lower[U8] = auto(Map, =)
+instance Lower[Bool] = auto(Map, =)
+instance Lower[QualifiedName] = auto(Map, =)
+instance Lower[Name] = auto(Map, =)
+instance Lower[Identifier] = auto(Map, =)
+instance Lower[WitnessInfo] = auto(Map, =)
+instance Lower[FunctionKind] = auto(Map, =)
+instance Lower[BinaryOp] = auto(Map, =)
+instance Lower[UnaryOp] = auto(Map, =)
+instance Lower[LambdaArg] = auto(Map, =)
+instance Lower[ImplicitRefInfo] = auto(Map, =)
+instance Lower[FunctionPtrInfo] = auto(Map, =)
+instance Lower[NamedArgument] = auto(Map, =)
+instance Lower[NamedPatternArg] = auto(Map, =)
+
+instance Lower[HandlerSelection] = auto(Map)
+instance Lower[Pattern] = auto(Map)
+instance Lower[PatternKind] = auto(Map)
+instance Lower[NamedPatternInfo] = auto(Map)
+instance Lower[MatchArm] = auto(Map)
+instance Lower[CreateClosureInfo] = auto(Map)
+instance Lower[FunctionCallInfo] = auto(Map)
+instance Lower[TypeAssociatedCallInfo] = auto(Map)
+instance Lower[MethodCallInfo] = auto(Map)
+instance Lower[CallInfo] = auto(Map)
+instance Lower[WithInfo] = auto(Map)
+instance Lower[MatchInfo] = auto(Map)
+instance Lower[YieldInfo] = auto(Map)
+instance Lower[ExprKind] = auto(Map)
+
+instance Lower[BlockInfo] {
+    fn lower(b: BlockInfo, l: Lowerer) -> BlockInfo {
+        let BlockInfo(stmts) = b;
+        BlockInfo(l.lower_stmts(stmts, False))
+    }
+}
+
+instance[T: Lower[T]] Lower[Option[T]] {
+    fn lower(opt: Option[T], l: Lowerer) -> Option[T] {
+        opt.map(|t| lower(t, l))
+    }
+}
+
+instance[T: Lower[T]] Lower[Vec[T]] {
+    fn lower(vec: Vec[T], l: Lowerer) -> Vec[T] {
+        vec.into_iter().map(|t| lower(t, l)).collect()
+    }
+}
+
+pub fn lower_defers(program: Program) -> Vec[DeferError] {
+    let errors = Vec.new();
+    let keys: Vec[_] = program.functions.keys().collect();
+    for key in keys {
+        let func = program.functions[key];
+        if let Some(body) = func.body {
+            let l = Lowerer(func.var_allocator, Vec.new(), False, errors);
+            func.body = Some(lower(body, l));
+            program.functions.insert(key, func);
+        }
+    }
+    errors
+}
+
+}

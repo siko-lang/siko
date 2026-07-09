@@ -5,6 +5,7 @@ import Siko.Driver.Util
 import Siko.Parser.Parser
 import Siko.Parser.Module
 import Siko.Resolver
+import Siko.LowerDefer
 import Siko.Normalizer
 import Siko.BoundExpansion
 import Siko.Instances.InstanceChecker
@@ -75,6 +76,17 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 }
                 if config.test {
                     T.build_test_main(driver.program);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "lower-defer",
+            label: "Lowering defers...",
+            run: |driver| {
+                let defer_errors = lower_defers(driver.program);
+                if !defer_errors.is_empty() {
+                    report_defer_errors(defer_errors);
                 }
             },
             dump: Some(|driver| println(driver.program.format())),

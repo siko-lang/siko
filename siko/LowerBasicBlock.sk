@@ -120,6 +120,7 @@ struct BlockLowerer {
             S.Statement.UnresolvedLet(_, _, _) => panic("lower-basic-block: UnresolvedLet reached basic block lowering"),
             S.Statement.ForLoop(_, _, _) => panic("lower-basic-block: ForLoop reached basic block lowering"),
             S.Statement.WhileLoop(_, _) => panic("lower-basic-block: WhileLoop reached basic block lowering"),
+            S.Statement.Defer(_) => panic("lower-basic-block: Defer reached basic block lowering"),
         }
     }
 
@@ -512,7 +513,7 @@ fn validate_function(l: BlockLowerer, body: Expr) {
             S.Statement.Let(_) | S.Statement.Declare(_) | S.Statement.Assign(_, _) => {}
             S.Statement.TrailingExpr(_) => panic("lower-basic-block validator: TrailingExpr in lowered body"),
             S.Statement.Loop(_) => panic("lower-basic-block validator: Loop in lowered body"),
-            S.Statement.UnresolvedLet(_, _, _) | S.Statement.ForLoop(_, _, _) | S.Statement.WhileLoop(_, _) =>
+            S.Statement.UnresolvedLet(_, _, _) | S.Statement.ForLoop(_, _, _) | S.Statement.WhileLoop(_, _) | S.Statement.Defer(_) =>
                 panic("lower-basic-block validator: unexpected statement in lowered body"),
             S.Statement.Expr(e) => {
                 match e.kind {

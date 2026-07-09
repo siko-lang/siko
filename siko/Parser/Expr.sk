@@ -740,6 +740,14 @@ instance ExprParser[Parser] {
             parser.expect(TokenKind.RBrace)?;
             return Ok(S.Loop(BlockInfo(body)));
         }
+        if parser.peek() == TokenKind.KwDefer {
+            parser.advance();
+            let expr = parser.parse_expr()?;
+            if parser.peek() == TokenKind.Semicolon {
+                parser.advance();
+            }
+            return Ok(S.Defer(expr));
+        }
         if parser.peek() == TokenKind.KwLet {
             parser.advance();
             let pattern = parser.parse_pattern()?;
