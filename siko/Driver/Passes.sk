@@ -29,6 +29,8 @@ import Siko.LowerPointers
 import Siko.LowerEnums
 import Siko.CBackend.Lower as CBackend
 import Siko.CBackend.MiniC.Format as MiniC
+import Siko.LLVM.Lower as LLVMBackend
+import Siko.LLVM.Format as LLVMFormat
 import Siko.ValueTypes as ValueTypes
 import Siko.Errors
 import Std.Sys.Process as Sys
@@ -180,6 +182,78 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
         []
     };
 
+    let backend_passes: Vec[Pass] = if config.check_only {
+        []
+    } else if config.llvm {
+        [
+            Pass(
+                name: "llvm",
+                label: "Emitting LLVM...",
+                run: |driver| {
+                    let llvm_module = LLVMBackend.lower(driver.program);
+                    driver.llvm_source = LLVMFormat.format(llvm_module);
+                },
+                dump: Some(|driver| println(driver.llvm_source)),
+            ),
+            Pass(
+                name: "link",
+                label: "Linking...",
+                run: |driver| {
+                    let effective_output = if config.test && config.output == None {
+                        Some("/tmp/siko_test_runner")
+                    } else {
+                        config.output
+                    };
+                    if let Some(out) = effective_output {
+                        driver.link_llvm(out, config.optimize, config.san, config.tsan);
+                        if config.test {
+                            if config.trace { println("Running tests..."); }
+                            let result = Command.new(out).run();
+                            if !result.success() {
+                                Sys.exit(1.as_i32());
+                            }
+                        }
+                    }
+                },
+                dump: Some(|driver| println(driver.llvm_source)),
+            ),
+        ]
+    } else {
+        [
+            Pass(
+                name: "c",
+                label: "Emitting C...",
+                run: |driver| {
+                    let cprogram = CBackend.lower(driver.program);
+                    driver.c_source = MiniC.format(cprogram);
+                },
+                dump: Some(|driver| println(driver.c_source)),
+            ),
+            Pass(
+                name: "link",
+                label: "Linking...",
+                run: |driver| {
+                    let effective_output = if config.test && config.output == None {
+                        Some("/tmp/siko_test_runner")
+                    } else {
+                        config.output
+                    };
+                    if let Some(out) = effective_output {
+                        driver.link(out, config.optimize, config.san, config.tsan);
+                        if config.test {
+                            if config.trace { println("Running tests..."); }
+                            let result = Command.new(out).run();
+                            if !result.success() {
+                                Sys.exit(1.as_i32());
+                            }
+                        }
+                    }
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+        ]
+    };
+
     let lowering_passes: Vec[Pass] = if config.check_only {
         []
     } else {
@@ -280,41 +354,10 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 run: |driver| { lower_enums(driver.program); },
                 dump: Some(|driver| println(driver.program.format())),
             ),
-            Pass(
-                name: "c",
-                label: "Emitting C...",
-                run: |driver| {
-                    let cprogram = CBackend.lower(driver.program);
-                    driver.c_source = MiniC.format(cprogram);
-                },
-                dump: Some(|driver| println(driver.c_source)),
-            ),
-            Pass(
-                name: "link",
-                label: "Linking...",
-                run: |driver| {
-                    let effective_output = if config.test && config.output == None {
-                        Some("/tmp/siko_test_runner")
-                    } else {
-                        config.output
-                    };
-                    if let Some(out) = effective_output {
-                        driver.link(out, config.optimize, config.san, config.tsan);
-                        if config.test {
-                            if config.trace { println("Running tests..."); }
-                            let result = Command.new(out).run();
-                            if !result.success() {
-                                Sys.exit(1.as_i32());
-                            }
-                        }
-                    }
-                },
-                dump: Some(|driver| println(driver.program.format())),
-            ),
         ]
     };
 
-    core_passes + safety_passes + lowering_passes
+    core_passes + safety_passes + lowering_passes + backend_passes
 }
 
 }

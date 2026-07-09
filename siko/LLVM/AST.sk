@@ -1,0 +1,234 @@
+module Siko.LLVM.AST {
+
+// A small, structured representation of textual LLVM IR.
+//
+// The first LLVM backend can build this AST and serialize it as `.ll`. Later
+// bitcode/object emission should consume the same semantic shape or a lowered
+// variant of it, rather than parsing the text output back.
+
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+@derive(Clone)
+pub enum LLVMType {
+    Void,
+    Label,
+    Int(Int),
+    Ptr,
+    Array(Int, LLVMType),
+    Vector(Int, LLVMType),
+    // Identified type, printed as `%name`.
+    Named(String),
+    // Literal struct. Bool means packed (`<{ ... }>`).
+    Struct(Vec[LLVMType], Bool),
+    // Function type. Bool means varargs.
+    Function(LLVMType, Vec[LLVMType], Bool),
+}
+
+@derive(Clone)
+pub struct LLVMTypeDef {
+    pub name: String,
+    // None prints an opaque identified type declaration.
+    pub ty: Option[LLVMType],
+}
+
+// ─── Values ──────────────────────────────────────────────────────────────────
+
+@derive(Clone)
+pub struct LLVMTypedValue {
+    pub ty: LLVMType,
+    pub value: LLVMValue,
+}
+
+@derive(Clone)
+pub enum LLVMValue {
+    Local(String),
+    Global(String),
+    Int(String),
+    Bool(Bool),
+    Null,
+    Undef,
+    Poison,
+    ZeroInitializer,
+    // Printed as LLVM `c"..."`; intended for global byte-array constants.
+    StringLiteral(String),
+    Array(Vec[LLVMTypedValue]),
+    Vector(Vec[LLVMTypedValue]),
+    // Bool means packed.
+    Struct(Vec[LLVMTypedValue], Bool),
+    // Escape hatch for constants/intrinsics not modeled yet.
+    Raw(String),
+}
+
+// ─── Globals ─────────────────────────────────────────────────────────────────
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum LLVMLinkage {
+    External,
+    Internal,
+    Private,
+    Appending,
+    LinkOnceODR,
+    WeakODR,
+}
+
+@derive(Clone)
+pub enum LLVMUnnamedAddr {
+    NoUnnamedAddr,
+    UnnamedAddr,
+    LocalUnnamedAddr,
+}
+
+@derive(Clone)
+pub struct LLVMGlobal {
+    pub name: String,
+    pub linkage: LLVMLinkage,
+    pub unnamed_addr: LLVMUnnamedAddr,
+    pub constant: Bool,
+    pub ty: LLVMType,
+    // None is for external globals.
+    pub init: Option[LLVMValue],
+    pub align: Option[Int],
+    pub attrs: Vec[String],
+}
+
+// ─── Functions ───────────────────────────────────────────────────────────────
+
+@derive(Clone)
+pub struct LLVMParam {
+    pub ty: LLVMType,
+    pub name: Option[String],
+    pub attrs: Vec[String],
+}
+
+@derive(Clone)
+pub struct LLVMFunctionSig {
+    pub name: String,
+    pub linkage: LLVMLinkage,
+    pub calling_conv: Option[String],
+    pub ret: LLVMType,
+    pub params: Vec[LLVMParam],
+    pub varargs: Bool,
+    pub attrs: Vec[String],
+}
+
+@derive(Clone)
+pub struct LLVMFunctionDecl {
+    pub sig: LLVMFunctionSig,
+}
+
+@derive(Clone)
+pub struct LLVMFunctionDef {
+    pub sig: LLVMFunctionSig,
+    pub blocks: Vec[LLVMBasicBlock],
+}
+
+// ─── Instructions ────────────────────────────────────────────────────────────
+
+@derive(Clone)
+pub enum LLVMBinaryOp {
+    Add,
+    Sub,
+    Mul,
+    UDiv,
+    SDiv,
+    URem,
+    SRem,
+    And,
+    Or,
+    Xor,
+    Shl,
+    LShr,
+    AShr,
+}
+
+@derive(Clone)
+pub enum LLVMIntPredicate {
+    Eq,
+    Ne,
+    Ugt,
+    Uge,
+    Ult,
+    Ule,
+    Sgt,
+    Sge,
+    Slt,
+    Sle,
+}
+
+@derive(Clone)
+pub enum LLVMCastOp {
+    Trunc,
+    ZExt,
+    SExt,
+    BitCast,
+    PtrToInt,
+    IntToPtr,
+}
+
+@derive(Clone)
+pub struct LLVMPhiIncoming {
+    pub value: LLVMValue,
+    pub label: String,
+}
+
+@derive(Clone)
+pub enum LLVMInstructionKind {
+    Alloca(LLVMType, Option[Int]),
+    Load(LLVMType, LLVMValue, Option[Int]),
+    Store(LLVMTypedValue, LLVMValue, Option[Int]),
+    Binary(LLVMBinaryOp, LLVMType, LLVMValue, LLVMValue),
+    ICmp(LLVMIntPredicate, LLVMType, LLVMValue, LLVMValue),
+    GetElementPtr(LLVMType, LLVMValue, Vec[LLVMTypedValue], Bool),
+    ExtractValue(LLVMType, LLVMValue, Vec[Int]),
+    InsertValue(LLVMType, LLVMValue, LLVMTypedValue, Vec[Int]),
+    Cast(LLVMCastOp, LLVMTypedValue, LLVMType),
+    Call(LLVMType, LLVMValue, Vec[LLVMTypedValue], Vec[String]),
+    Phi(LLVMType, Vec[LLVMPhiIncoming]),
+    Comment(String),
+    Raw(String),
+}
+
+@derive(Clone)
+pub struct LLVMInstruction {
+    // None for void instructions like store/call void/comment/raw.
+    pub result: Option[String],
+    pub kind: LLVMInstructionKind,
+}
+
+// ─── Terminators ─────────────────────────────────────────────────────────────
+
+@derive(Clone)
+pub struct LLVMSwitchCase {
+    pub value: LLVMValue,
+    pub label: String,
+}
+
+@derive(Clone)
+pub enum LLVMTerminator {
+    Ret(Option[LLVMTypedValue]),
+    Br(String),
+    CondBr(LLVMTypedValue, String, String),
+    Switch(LLVMTypedValue, String, Vec[LLVMSwitchCase]),
+    Unreachable,
+}
+
+@derive(Clone)
+pub struct LLVMBasicBlock {
+    pub label: String,
+    pub instrs: Vec[LLVMInstruction],
+    pub term: LLVMTerminator,
+}
+
+// ─── Module ──────────────────────────────────────────────────────────────────
+
+pub struct LLVMModule {
+    pub source_filename: Option[String],
+    pub target_triple: Option[String],
+    pub data_layout: Option[String],
+    pub types: Vec[LLVMTypeDef],
+    pub globals: Vec[LLVMGlobal],
+    pub declarations: Vec[LLVMFunctionDecl],
+    pub functions: Vec[LLVMFunctionDef],
+}
+
+}

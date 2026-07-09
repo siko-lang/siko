@@ -1,0 +1,404 @@
+module Siko.LLVM.Lower {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.CBackend.Util
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.LLVM.AST
+
+// Initial direct Program -> LLVM AST lowering. This starts with an alloca-based
+// lowering for the post-lower-enums body subset needed by empty programs and
+// generated zero-field constructors.
+
+@derive(Clone)
+struct LocalSlot {
+    ty: LLVMType,
+    ptr: String,
+}
+
+struct FunctionLowerer {
+    lowerer: Lowerer,
+    locals: Map[VariableName, LocalSlot],
+    instrs: Vec[LLVMInstruction],
+    temp: Int,
+    term: Option[LLVMTerminator],
+
+    fn new(lowerer: Lowerer) -> FunctionLowerer {
+        FunctionLowerer(lowerer, Map.new(), Vec.new(), 0, None)
+    }
+
+    fn fresh(fl: FunctionLowerer, hint: String) -> String {
+        let name = "${hint}_${fl.temp}";
+        fl.temp = fl.temp + 1;
+        name
+    }
+
+    fn emit(fl: FunctionLowerer, result: Option[String], kind: LLVMInstructionKind) {
+        fl.instrs.push(LLVMInstruction(result, kind));
+    }
+
+    fn add_local(fl: FunctionLowerer, name: VariableName, ty: LLVMType) -> LocalSlot {
+        let ptr = var_name(name.clone()) + "_slot";
+        let slot = LocalSlot(ty.clone(), ptr.clone());
+        fl.emit(Some(ptr), LLVMInstructionKind.Alloca(ty, None));
+        fl.locals.insert(name, slot.clone());
+        slot
+    }
+
+    fn add_param(fl: FunctionLowerer, arg: FunctionArg) {
+        let ty = fl.lowerer.lower_type(arg.type_def);
+        let slot = fl.add_local(arg.name.clone(), ty.clone());
+        fl.emit(
+            None,
+            LLVMInstructionKind.Store(
+                LLVMTypedValue(ty, LLVMValue.Local(var_name(arg.name))),
+                LLVMValue.Local(slot.ptr),
+                None,
+            ),
+        );
+    }
+
+    fn local(fl: FunctionLowerer, name: VariableName) -> LocalSlot {
+        fl.locals.get(name).expect("llvm: unknown local")
+    }
+
+    fn function_symbol(fl: FunctionLowerer, qname: QualifiedName) -> String {
+        match fl.lowerer.program.functions.get(qname) {
+            Some(fdef) => fl.lowerer.fn_symbol(fdef),
+            None => fn_name(qname),
+        }
+    }
+
+    fn lower_args(fl: FunctionLowerer, args: Vec[Expr]) -> Vec[LLVMTypedValue] {
+        let lowered: Vec[LLVMTypedValue] = Vec.new();
+        for arg in args {
+            lowered.push(fl.lower_expr(arg));
+        }
+        lowered
+    }
+
+    fn lower_call(fl: FunctionLowerer, info: FunctionCallInfo, result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
+        let args = fl.lower_args(info.args);
+        let callee = LLVMValue.Global(fl.function_symbol(info.qname));
+        match result_ty {
+            LLVMType.Void => {
+                fl.emit(None, LLVMInstructionKind.Call(LLVMType.Void, callee, args, []));
+                None
+            }
+            ty => {
+                let result = if keep_result { Some(fl.fresh("call")) } else { None };
+                fl.emit(result.clone(), LLVMInstructionKind.Call(ty.clone(), callee, args, []));
+                match result {
+                    Some(name) => Some(LLVMTypedValue(ty, LLVMValue.Local(name))),
+                    None => None,
+                }
+            }
+        }
+    }
+
+    fn lower_expr(fl: FunctionLowerer, expr: Expr) -> LLVMTypedValue {
+        let ty = fl.lowerer.lower_type(expr.ty.expect("llvm: expression has no type"));
+        match expr.kind {
+            ExprKind.IntLiteral(v) => LLVMTypedValue(ty, LLVMValue.Int(v)),
+            ExprKind.CharLiteral(v) => LLVMTypedValue(ty, LLVMValue.Int(v.as_int().to_string())),
+            ExprKind.Var(name) => {
+                let slot = fl.local(name);
+                let result = fl.fresh("load");
+                fl.emit(
+                    Some(result.clone()),
+                    LLVMInstructionKind.Load(slot.ty.clone(), LLVMValue.Local(slot.ptr), None),
+                );
+                LLVMTypedValue(slot.ty, LLVMValue.Local(result))
+            }
+            ExprKind.FunctionCall(info) => {
+                match fl.lower_call(info, ty, True) {
+                    Some(value) => value,
+                    None => panic("llvm: void call used as value"),
+                }
+            }
+            ExprKind.Paren(inner) => fl.lower_expr(inner),
+            _ => panic("llvm: unsupported value expression"),
+        }
+    }
+
+    fn lower_stmt_expr(fl: FunctionLowerer, expr: Expr) {
+        match expr.kind {
+            ExprKind.Label(_) => {}
+            ExprKind.Return(value) => {
+                let ret = fl.lower_expr(value);
+                fl.term = Some(LLVMTerminator.Ret(Some(ret)));
+            }
+            ExprKind.FunctionCall(info) => {
+                let ty = fl.lowerer.lower_type(expr.ty.expect("llvm: call has no type"));
+                fl.lower_call(info, ty, False);
+            }
+            ExprKind.Goto(_) => panic("llvm: Goto lowering is not implemented yet"),
+            ExprKind.Switch(_, _) => panic("llvm: Switch lowering is not implemented yet"),
+            _ => {
+                fl.lower_expr(expr);
+            }
+        }
+    }
+
+    fn lower_stmt(fl: FunctionLowerer, stmt: S.Statement) {
+        if fl.term.is_some() {
+            return;
+        }
+        match stmt {
+            S.Statement.Let(info) => {
+                let ty_def = info.ty.or(info.rhs.ty.clone()).expect("llvm: let has no type");
+                let slot = fl.add_local(info.name, fl.lowerer.lower_type(ty_def));
+                let value = fl.lower_expr(info.rhs);
+                fl.emit(None, LLVMInstructionKind.Store(value, LLVMValue.Local(slot.ptr), None));
+            }
+            S.Statement.Declare(info) => {
+                let ty = fl.lowerer.lower_type(info.ty.expect("llvm: declare has no type"));
+                fl.add_local(info.name, ty);
+            }
+            S.Statement.Assign(_, _) => panic("llvm: Assign lowering is not implemented yet"),
+            S.Statement.Expr(expr) => fl.lower_stmt_expr(expr),
+            S.Statement.TrailingExpr(_) => panic("llvm: TrailingExpr reached backend"),
+            S.Statement.Loop(_) => panic("llvm: Loop reached backend"),
+            S.Statement.UnresolvedLet(_, _, _) => panic("llvm: UnresolvedLet reached backend"),
+            S.Statement.ForLoop(_, _, _) => panic("llvm: ForLoop reached backend"),
+            S.Statement.WhileLoop(_, _) => panic("llvm: WhileLoop reached backend"),
+            S.Statement.Defer(_) => panic("llvm: Defer reached backend"),
+        }
+    }
+
+    fn lower_body(fl: FunctionLowerer, fdef: FunctionDef) -> LLVMBasicBlock {
+        for arg in fdef.args {
+            fl.add_param(arg);
+        }
+        let body = fdef.body.expect("llvm: function definition has no body");
+        let stmts = match body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => stmts,
+            _ => panic("llvm: function body is not a block"),
+        };
+        for stmt in stmts {
+            fl.lower_stmt(stmt);
+        }
+        let term = match fl.term {
+            Some(term) => term,
+            None => LLVMTerminator.Unreachable,
+        };
+        LLVMBasicBlock("entry", fl.instrs, term)
+    }
+}
+
+struct Lowerer {
+    program: Program,
+    builtin_int_types: Map[QualifiedName, LLVMType],
+
+    fn new(program: Program) -> Lowerer {
+        let builtin_int_types: Map[QualifiedName, LLVMType] = Map.new();
+        builtin_int_types.insert(B.get_int_type_qn().as_mono(), LLVMType.Int(64));
+        builtin_int_types.insert(B.get_i8_type_qn().as_mono(), LLVMType.Int(8));
+        builtin_int_types.insert(B.get_i16_type_qn().as_mono(), LLVMType.Int(16));
+        builtin_int_types.insert(B.get_i32_type_qn().as_mono(), LLVMType.Int(32));
+        builtin_int_types.insert(B.get_i64_type_qn().as_mono(), LLVMType.Int(64));
+        builtin_int_types.insert(B.get_u8_type_qn().as_mono(), LLVMType.Int(8));
+        builtin_int_types.insert(B.get_u16_type_qn().as_mono(), LLVMType.Int(16));
+        builtin_int_types.insert(B.get_u32_type_qn().as_mono(), LLVMType.Int(32));
+        builtin_int_types.insert(B.get_u64_type_qn().as_mono(), LLVMType.Int(64));
+        Lowerer(program, builtin_int_types)
+    }
+
+    fn is_value_type(l: Lowerer, qname: QualifiedName) -> Bool {
+        if let Some(s) = l.program.structs.get(qname) {
+            return s.value_type;
+        }
+        if let Some(e) = l.program.enums.get(qname) {
+            return e.value_type;
+        }
+        False
+    }
+
+    fn is_array_struct(l: Lowerer, qname: QualifiedName) -> Bool {
+        qname.base_name() == B.get_array_type_qn()
+    }
+
+    fn lower_type(l: Lowerer, ty: TypeDef) -> LLVMType {
+        match ty {
+            TypeDef.Never(_) => LLVMType.Void,
+            TypeDef.Fn(_) => panic("llvm: closure type reached backend"),
+            TypeDef.FnPtr(_, _) => LLVMType.Ptr,
+            TypeDef.Named(NamedInfo(name, _)) => {
+                let resolved = name.resolved();
+                if let Some(llvm_ty) = l.builtin_int_types.get(resolved) {
+                    llvm_ty
+                } else {
+                    LLVMType.Named(mangle(resolved.hashed()))
+                }
+            }
+            TypeDef.Ptr(_) => LLVMType.Ptr,
+            TypeDef.Array(elem, n) => LLVMType.Array(n, l.lower_type(elem)),
+            TypeDef.Void => LLVMType.Void,
+            TypeDef.VoidPtr => LLVMType.Ptr,
+            ty => panic("llvm: unexpected type ${ty.to_string()}"),
+        }
+    }
+
+    // Types embedded in monomorphic qnames (notably array element args) did not
+    // pass through lower-pointers, so preserve the C backend's representation
+    // rule here as well.
+    fn lower_repr_type(l: Lowerer, ty: TypeDef) -> LLVMType {
+        match ty {
+            TypeDef.Named(NamedInfo(name, _)) => {
+                let resolved = name.resolved();
+                if l.builtin_int_types.get(resolved).is_none() && !l.is_value_type(resolved) {
+                    LLVMType.Ptr
+                } else {
+                    l.lower_type(ty)
+                }
+            }
+            TypeDef.Ptr(_) => LLVMType.Ptr,
+            _ => l.lower_type(ty),
+        }
+    }
+
+    fn lower_structs(l: Lowerer) -> Vec[LLVMTypeDef] {
+        let defs: Vec[LLVMTypeDef] = Vec.new();
+        for sdef in l.program.structs.values() {
+            let qname = sdef.qualified_name.unwrap();
+            if sdef.is_builtin() {
+                if l.is_array_struct(qname) {
+                    defs.push(l.lower_array_struct(qname));
+                }
+                continue;
+            }
+            let fields: Vec[LLVMType] = Vec.new();
+            for field in sdef.fields.iter() {
+                fields.push(l.lower_type(field.ty));
+            }
+            defs.push(LLVMTypeDef(
+                mangle(qname.hashed()),
+                Some(LLVMType.Struct(fields, sdef.is_packed())),
+            ));
+        }
+        defs
+    }
+
+    fn lower_array_struct(l: Lowerer, qname: QualifiedName) -> LLVMTypeDef {
+        let args = qname.type_args();
+        let elem_ty = l.lower_repr_type(args[0]);
+        let n = match args[1] {
+            TypeDef.Numeric(n) => n,
+            _ => panic("llvm: Array second type arg is not Numeric"),
+        };
+        LLVMTypeDef(
+            mangle(qname.hashed()),
+            Some(LLVMType.Struct([LLVMType.Array(n, elem_ty)], False)),
+        )
+    }
+
+    fn fn_symbol(l: Lowerer, fdef: FunctionDef) -> String {
+        if fdef.is_extern() {
+            if let Some(c_name) = fdef.extern_c_name() {
+                return I.resolve(c_name);
+            }
+        }
+        fn_name(fdef.qualified_name.unwrap())
+    }
+
+    fn lower_sig(l: Lowerer, fdef: FunctionDef) -> LLVMFunctionSig {
+        let params: Vec[LLVMParam] = Vec.new();
+        for arg in fdef.args.iter() {
+            params.push(LLVMParam(l.lower_type(arg.type_def), Some(var_name(arg.name)), []));
+        }
+        let ret_ty = l.lower_type(fdef.result_type.unwrap());
+        let attrs: Vec[String] = Vec.new();
+        match fdef.result_type.unwrap() {
+            TypeDef.Never(_) => attrs.push("noreturn"),
+            _ => {}
+        }
+        LLVMFunctionSig(
+            l.fn_symbol(fdef),
+            LLVMLinkage.External,
+            None,
+            ret_ty,
+            params,
+            fdef.is_varargs,
+            attrs,
+        )
+    }
+
+    fn lower_declaration(l: Lowerer, fdef: FunctionDef) -> LLVMFunctionDecl {
+        LLVMFunctionDecl(l.lower_sig(fdef))
+    }
+
+    fn lower_definition(l: Lowerer, fdef: FunctionDef) -> LLVMFunctionDef {
+        let block = FunctionLowerer.new(l).lower_body(fdef.clone());
+        let blocks: Vec[LLVMBasicBlock] = [
+            block,
+        ];
+        LLVMFunctionDef(l.lower_sig(fdef), blocks)
+    }
+
+    fn lower_functions(l: Lowerer, declarations: Vec[LLVMFunctionDecl], functions: Vec[LLVMFunctionDef]) {
+        for fdef in l.program.functions.values() {
+            if fdef.is_builtin() {
+                continue;
+            }
+            match fdef.body {
+                Some(_) => functions.push(l.lower_definition(fdef)),
+                None => declarations.push(l.lower_declaration(fdef)),
+            }
+        }
+    }
+}
+
+fn build_main() -> LLVMFunctionDef {
+    let params: Vec[LLVMParam] = [
+        LLVMParam(LLVMType.Int(32), Some("argc"), []),
+        LLVMParam(LLVMType.Ptr, Some("argv"), []),
+    ];
+    let tuple_ty = LLVMType.Named("__tuple");
+    let instrs: Vec[LLVMInstruction] = [
+        LLVMInstruction(
+            Some("main_result"),
+            LLVMInstructionKind.Call(tuple_ty, LLVMValue.Global("Main_main"), [], []),
+        ),
+    ];
+    let ret = LLVMTypedValue(LLVMType.Int(32), LLVMValue.Int("0"));
+    let blocks: Vec[LLVMBasicBlock] = [
+        LLVMBasicBlock("entry", instrs, LLVMTerminator.Ret(Some(ret))),
+    ];
+    LLVMFunctionDef(
+        LLVMFunctionSig(
+            "main",
+            LLVMLinkage.External,
+            None,
+            LLVMType.Int(32),
+            params,
+            False,
+            [],
+        ),
+        blocks,
+    )
+}
+
+pub fn lower(program: Program) -> LLVMModule {
+    let l = Lowerer.new(program);
+    let declarations: Vec[LLVMFunctionDecl] = Vec.new();
+    let functions: Vec[LLVMFunctionDef] = Vec.new();
+    l.lower_functions(declarations, functions);
+    functions.push(build_main());
+    LLVMModule(
+        Some("siko"),
+        Some("arm64-apple-macosx26.0.0"),
+        None,
+        l.lower_structs(),
+        Vec.new(),
+        declarations,
+        functions,
+    )
+}
+
+}

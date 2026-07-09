@@ -35,6 +35,7 @@ Useful flags:
 
 - `--bless`: rewrite `output.txt` snapshots from current output.
 - `--valgrind`: run success-case binaries under Valgrind.
+- `--llvm`: pass `--llvm` to every compiler invocation.
 - `--c <compiler>`: use a compiler other than `./siko.bin`.
 
 ## License

@@ -7,7 +7,7 @@ import Siko.Config
 pub fn parse_cli_args() -> Option[Config] {
     let args = Sys.get_args();
     if args.len() < 2 {
-        println("usage: siko build|check [--pass <resolve|normalize>] <path> [path ...]");
+        println("usage: siko build|check [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
         return None;
     }
     let check_only = False;
@@ -23,7 +23,7 @@ pub fn parse_cli_args() -> Option[Config] {
         }
         _ => {
             println("unknown command: " + cmd);
-            println("usage: siko build|check|test [--pass <resolve|normalize>] <path> [path ...]");
+            println("usage: siko build|check|test [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
             return None;
         }
     }
@@ -47,6 +47,7 @@ pub fn parse_cli_args() -> Option[Config] {
     let tsan = False;
     let no_std = False;
     let dump_package_purity = False;
+    let llvm = False;
     let i = 2;
     while i < args.len() {
         if args[i] == "--pass" {
@@ -88,6 +89,7 @@ pub fn parse_cli_args() -> Option[Config] {
                 "--tsan"            => { tsan = True; }
                 "--no-std"              => { no_std = True; }
                 "--dump-package-purity" => { dump_package_purity = True; }
+                "--llvm"               => { llvm = True; }
                 _                   => { paths.push(args[i]); }
             }
         }
@@ -130,7 +132,8 @@ pub fn parse_cli_args() -> Option[Config] {
         tsan: tsan,
         no_std: no_std,
         std_path: std_path,
-        test: test))
+        test: test,
+        llvm: llvm))
 }
 
 }
