@@ -27,20 +27,20 @@ pub struct TcpListener {
         let setsockopt_result = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, 4.as_i32());
         if setsockopt_result < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
-            fd.close();
+            defer fd.close();
             return Err(Error.with_message(errno, "setsockopt SO_REUSEADDR"));
         }
         let addr = SockaddrIn.new(Domain.AF_INET, port, 0.as_u32());
         let bind_result = Std.Libc.Socket.bind(sock, &addr, addr.len().as_int().as_i32());
         if bind_result < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
-            fd.close();
+            defer fd.close();
             return Err(Error.with_message(errno, "bind :${port}"));
         }
         let listen_result = Std.Libc.Socket.listen(sock, 128.as_i32());
         if listen_result < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
-            fd.close();
+            defer fd.close();
             return Err(Error.new(errno));
         }
         Ok(TcpListener(fd))

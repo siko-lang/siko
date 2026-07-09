@@ -34,7 +34,7 @@ pub struct TcpStream {
         let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
         if ret < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
-            fd.close();
+            defer fd.close();
             return Err(Error.new(errno));
         }
         Ok(TcpStream.new(sock))
@@ -54,7 +54,7 @@ pub struct TcpStream {
         if ret < 0.as_i32() {
             let errno = Std.Arch.Errno.get_errno();
             if errno != Std.Arch.Errno.Errno.EINPROGRESS {
-                s.close();
+                defer s.close();
                 return Err(Error.new(errno));
             }
         }

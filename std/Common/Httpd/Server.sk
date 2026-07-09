@@ -57,6 +57,7 @@ fn send_response(socket: TcpNetwork.Socket, version: String, response: Response,
 }
 
 pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
+    defer socket.close();
     let raw = read_request(socket);
     let req = match Request.parse(raw) {
         Some(r) => r,
@@ -64,7 +65,6 @@ pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
             send_response(socket, "HTTP/1.0", Response.new(
                 "400 Bad Request", "text/plain", "Bad Request"),
                 is_head: False);
-            socket.close();
             return;
         }
     };
@@ -72,7 +72,6 @@ pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
     let is_head = req.method() == "HEAD";
     let response = handler(req);
     send_response(socket, version, response, is_head);
-    socket.close();
 }
 
 pub fn run(handler: fn(Request) -> Response, port: U16) -> Result[(), Error] {

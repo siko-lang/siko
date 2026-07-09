@@ -59,50 +59,28 @@ instance Writer[File] {
 
 pub fn write_file(path: String, content: String) -> Result[(), Error] {
     let file = File.create(path)?;
-    let write_result = file.write(content.as_slice());
-    let close_result = file.close();
-    match write_result {
-        Ok(_) => close_result,
-        Err(e) => {
-            close_result;
-            Err(e)
-        }
-    }
+    defer file.close();
+    file.write(content.as_slice())?;
+    Ok(())
 }
 
 pub fn read_file(path: String) -> Result[String, Error] {
     let file = File.open(path)?;
+    defer file.close();
     let file_size = match file.stat() {
         Ok(s) if s.size > 0.as_i64() => s.size.as_int(),
         _ => 8192,
     };
     let sb = StringBuilder.new();
     let buf: Vec[U8] = Vec.with_value(file_size, 0.as_u8());
-    let read_error: Option[Error] = None;
     loop {
-        let n = match file.read(buf.slice()) {
-            Ok(n) => n,
-            Err(e) => {
-                read_error = Some(e);
-                break;
-            }
-        };
+        let n = file.read(buf.slice())?;
         if n == 0 {
             break;
         }
         sb.push(String.from_slice(buf.slice().sub(0, n)));
     }
-    let close_result = file.close();
-    match read_error {
-        Some(e) => {
-            close_result;
-            Err(e)
-        }
-        None => {
-            close_result?;
-            Ok(sb.to_string())
-        }
-    }
+    Ok(sb.to_string())
 }
 
 }

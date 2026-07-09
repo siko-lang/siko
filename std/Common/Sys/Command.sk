@@ -81,7 +81,8 @@ pub struct ChildProcess {
     @safe
     pub fn close_stdin(child: ChildProcess) {
         if child.stdin_fd >= 0.as_i32() {
-            Unistd.close(child.stdin_fd);
+            let fd = child.stdin_fd;
+            defer Unistd.close(fd);
             child.stdin_fd = -1.as_i32();
         }
     }
@@ -229,15 +230,15 @@ pub struct Command {
                 if Unistd.dup2(stdout_write, 1.as_i32()) < 0.as_i32() {
                     exit(1.as_i32());
                 }
-                Unistd.close(stdout_read);
-                Unistd.close(stdout_write);
+                defer Unistd.close(stdout_read);
+                defer Unistd.close(stdout_write);
             }
             if stdin_read >= 0.as_i32() {
                 if Unistd.dup2(stdin_read, 0.as_i32()) < 0.as_i32() {
                     exit(1.as_i32());
                 }
-                Unistd.close(stdin_write);
-                Unistd.close(stdin_read);
+                defer Unistd.close(stdin_write);
+                defer Unistd.close(stdin_read);
             }
             close_child_fds();
             if let Some(dir) = cmd.work_dir {
@@ -249,15 +250,16 @@ pub struct Command {
             cmd.exec_child()
         } else {
             if stdout_write >= 0.as_i32() {
-                Unistd.close(stdout_write);
+                defer Unistd.close(stdout_write);
             }
             if stdin_read >= 0.as_i32() {
-                Unistd.close(stdin_read);
+                defer Unistd.close(stdin_read);
             }
             let captured = gc_allocate();
             let capture_thread = if cmd.capture_stdout {
                 let t = T.spawn(|| {
                     let fd = FileDescriptor.new(stdout_read);
+                    defer fd.close();
                     let buf: Vec[U8] = Vec.with_value(4096, 0.as_u8());
                     let bytes: Vec[U8] = Vec.new();
                     loop {
@@ -271,7 +273,6 @@ pub struct Command {
                             bytes.push(chunk[i]);
                         }
                     }
-                    fd.close();
                     *captured = String.from_slice(bytes.slice());
                 });
                 Some(t)

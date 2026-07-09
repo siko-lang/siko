@@ -130,9 +130,9 @@ pub struct EventLoop {
             Some(tfd) => {
                 el.fd_to_timer.remove(tfd);
                 el.timer_callbacks.remove(id);
+                defer Std.Libc.Unistd.close(tfd);
                 let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
                 epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, tfd, &dummy);
-                Std.Libc.Unistd.close(tfd);
             }
         }
     }
@@ -167,7 +167,9 @@ pub struct EventLoop {
                     el.timer_to_fd.remove(id);
                     let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
                     epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
-                    Std.Libc.Unistd.close(fd);
+                    {
+                        defer Std.Libc.Unistd.close(fd);
+                    };
                     match el.timer_callbacks.remove(id) {
                         None => {}
                         Some(cb) => cb(),
