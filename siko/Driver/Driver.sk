@@ -3,10 +3,8 @@ module Siko.Driver {
 import Siko.Driver.Passes
 import Siko.Parser.Module
 import Siko.AST.Module
-import Siko.CLI as CLI
 import Siko.Errors
-import Siko.LSP as LSP
-import Siko.Report as Report
+import Siko.Diagnostics
 import Std.Sys.Process as Sys
 import Std.Sys.Command
 import Siko.Config
@@ -16,6 +14,8 @@ import Std.Time
 import Std.Map
 import Std.Set
 
+pub implicit current: Driver
+
 pub struct Driver {
     pass: Option[String],
     pub program: Program,
@@ -23,6 +23,7 @@ pub struct Driver {
     pub pkg_reachability: Map[String, Set[String]],
     pub c_source: String,
     pub llvm_source: String,
+    pub diagnostics: Vec[Diagnostic],
 
     pub fn new() -> Driver {
         Driver(
@@ -32,6 +33,7 @@ pub struct Driver {
             pkg_reachability: Map.new(),
             c_source: "",
             llvm_source: "",
+            diagnostics: Vec.new(),
         )
     }
 
@@ -41,7 +43,7 @@ pub struct Driver {
             let start = Instant.now();
             (pass.run)(d);
             if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
-            if Report.has_errors() {
+            if !d.diagnostics.is_empty() {
                 return;
             }
             if pass.run_sanity_check {
@@ -158,25 +160,29 @@ pub struct Driver {
         }
     }
 
-    pub fn compile(d: Driver) {
-        let config = match CLI.parse_cli_args() {
-            None => {
-                exit_with_error();
-            }
-            Some(config) => config,
-        };
-        set_config(config);
-        if config.lsp {
-            LSP.run_server();
-        } else {
-            d.pass = config.pass;
+    pub fn compile(d: Driver, pass: Option[String]) {
+        with current = d {
+            d.pass = pass;
             let passes = build_passes(d);
             d.run_passes(passes);
-            if Report.has_errors() {
-                exit_with_error();
-            }
         }
+    }
+
+    pub fn report_diagnostics_and_exit(d: Driver) {
+        for di in d.diagnostics {
+            di.print();
+        }
+        if !d.diagnostics.is_empty() {
+            exit_with_error();
+        }
+    }
+
+    pub fn get_diagnostics(d: Driver) -> Vec[Diagnostic] {
+        d.diagnostics
     }
 }
 
+pub fn add_diagnostic(d: Diagnostic) {
+    current.diagnostics.push(d);
+}
 }

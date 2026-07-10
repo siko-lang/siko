@@ -5,24 +5,36 @@ import Siko.Constants.Builtins as B
 import Siko.FileManager
 import Siko.Config
 import Siko.Driver
-import Siko.Report
+import Siko.Errors
+import Siko.LSP as LSP
+import Siko.CLI as CLI
 
 pub fn name_cache_entry() {
     let name_cache = B.build_cache();
     with B.name_cache = name_cache {
-        let driver = Driver.new();
-        driver.compile();
+        if get_config().lsp {
+            LSP.run_server();
+        } else {
+            let driver = Driver.new();
+            driver.compile(get_config().pass);
+            driver.report_diagnostics_and_exit();
+        }
     }
 }
 
 fn main() {
     let fm = FileManager.new();
     let config = Config.new();
-    let sink = DiagnosticSink.new(False);
     with I.Compiler.compile = name_cache_entry,
          Siko.FileManager.filemanager = fm,
-         Siko.Report.sink = sink,
          Siko.Config.current = config {
+        let config = match CLI.parse_cli_args() {
+            None => {
+                exit_with_error();
+            }
+            Some(config) => config,
+        };
+        set_config(config);
         I.run();
     }
 }

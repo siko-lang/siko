@@ -1,0 +1,43 @@
+module Siko.Diagnostics.Util {
+
+// Compute the byte offsets of line starts, e.g. "a\nb" -> [0, 2]
+pub fn compute_line_starts(source: String) -> Vec[Int] {
+    let line_starts: Vec[Int] = Vec.new();
+    line_starts.push(0);
+    let source_bytes = source.as_slice();
+    for i in 0..source.len() {
+        if source_bytes[i] == '\n' {
+            line_starts.push(i + 1);
+        }
+    }
+    line_starts
+}
+
+// Convert a byte offset into a 0-based (line, column) pair, e.g. offset 0 -> (0, 0)
+pub fn line_col(line_starts: Vec[Int], byte: Int) -> (Int, Int) {
+    let line = line_of(line_starts, byte);
+    (line, byte - line_starts[line])
+}
+
+pub fn line_of(line_starts: Vec[Int], byte: Int) -> Int {
+    let result = 0;
+    for i in 0..line_starts.len() {
+        if line_starts[i] <= byte {
+            result = i;
+        } else {
+            break;
+        }
+    }
+    result
+}
+
+pub fn pad_left(n: Int, width: Int) -> String {
+    let s = n.to_string();
+    let pad = "";
+    for _ in s.len()..width {
+        pad = pad + " ";
+    }
+    pad + s
+}
+
+}

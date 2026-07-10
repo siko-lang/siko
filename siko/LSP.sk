@@ -1,9 +1,9 @@
 module Siko.LSP {
 
 import Siko.Driver
-import Siko.Driver.Passes
 import Siko.FileManager
-import Siko.Report
+import Siko.Diagnostics as D
+import Siko.Diagnostics.Util as D
 import Std.Fs.Directory as Directory
 import Std.IO.Buffered as Buffered
 import Std.Json
@@ -19,7 +19,7 @@ struct FileDiagnostic {
     col: Int,
     end_line: Int,
     end_col: Int,
-    severity: Severity,
+    severity: D.Severity,
     message: String,
 }
 
@@ -176,29 +176,26 @@ fn check_and_publish(previously_published: Vec[String]) -> Vec[String] {
 // Run the check passes with fresh compiler state and collect the diagnostics
 fn run_check() -> Vec[FileDiagnostic] {
     let fm = FileManager.new();
-    let sink = DiagnosticSink.new(True);
-    with Siko.FileManager.filemanager = fm,
-         Siko.Report.sink = sink {
+    with Siko.FileManager.filemanager = fm {
         let driver = Driver.new();
-        let passes = build_passes(driver);
-        driver.run_passes(passes);
-        resolve_diagnostics()
+        driver.compile(None);
+        resolve_diagnostics(driver)
     }
 }
 
 // Turn the collected diagnostics into path + line/column form
 // while the file manager of the check run is still in scope
-fn resolve_diagnostics() -> Vec[FileDiagnostic] {
+fn resolve_diagnostics(d: Driver) -> Vec[FileDiagnostic] {
     let result: Vec[FileDiagnostic] = Vec.new();
-    for d in Siko.Report.get_diagnostics() {
+    for d in d.get_diagnostics() {
         match d.location {
             Some(location) => {
                 let path = Siko.FileManager.get_name(location.file_id);
                 let source = Siko.FileManager.get_content(location.file_id);
-                let line_starts = Siko.Report.compute_line_starts(source);
-                let (line, col) = Siko.Report.line_col(line_starts, location.span.start);
+                let line_starts = D.compute_line_starts(source);
+                let (line, col) = D.line_col(line_starts, location.span.start);
                 let span_end = location.span.end.max(location.span.start);
-                let (end_line, end_col) = Siko.Report.line_col(line_starts, span_end);
+                let (end_line, end_col) = D.line_col(line_starts, span_end);
                 result.push(FileDiagnostic(Some(path), line, col, end_line, end_col, d.severity, d.message));
             }
             None => {
@@ -219,10 +216,10 @@ fn to_lsp_diagnostic(d: FileDiagnostic) -> Json {
          ("message", Json.Str(d.message))])
 }
 
-fn severity_code(severity: Severity) -> Int {
+fn severity_code(severity: D.Severity) -> Int {
     match severity {
-        Severity.Error => 1,
-        Severity.Warning => 2,
+        D.Severity.Error => 1,
+        D.Severity.Warning => 2,
     }
 }
 
