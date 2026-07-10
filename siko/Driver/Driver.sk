@@ -169,10 +169,14 @@ pub struct Driver {
     }
 
     pub fn report_diagnostics_and_exit(d: Driver) {
+        let error = False;
         for di in d.diagnostics {
             di.print();
+            if di.severity.is_error() {
+                error = True;
+            }
         }
-        if !d.diagnostics.is_empty() {
+        if error {
             exit_with_error();
         }
     }

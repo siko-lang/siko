@@ -8,7 +8,8 @@ SIKO_TARGET_OS ?= macos
 export SIKO_ROOT
 export SIKO_TARGET_OS
 
-BOOTSTRAP_SOURCE = bootstrap/source_$(SIKO_TARGET_OS).c
+BOOTSTRAP_SOURCE_C = bootstrap/source_$(SIKO_TARGET_OS).c
+BOOTSTRAP_SOURCE_LL = bootstrap/source_$(SIKO_TARGET_OS).ll
 
 .PHONY: test
 
@@ -20,12 +21,12 @@ test: siko.bin runner.bin
 test-valgrind: runner.bin
 	./runner.bin --valgrind
 
-siko.bin: base.bin $(SIKO_SK)
-	./base.bin build siko -O -o siko.bin
+siko.bin: base_ll.bin $(SIKO_SK)
+	./base_ll.bin build siko -O -o siko.bin
 
 .PHONY: check
-check: base.bin $(SIKO_SK)
-	./base.bin check siko
+check: base_ll.bin $(SIKO_SK)
+	./base_ll.bin check siko
 
 siko2.bin: siko.bin
 	./siko.bin build siko -O -o siko2.bin
@@ -33,12 +34,18 @@ siko2.bin: siko.bin
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin
 
-base.bin: $(BOOTSTRAP_SOURCE)
-	cat $(BOOTSTRAP_SOURCE) | ./link.sh -O -o base.bin
+base_c.bin: $(BOOTSTRAP_SOURCE_C)
+	cat $(BOOTSTRAP_SOURCE_C) | ./link.py -O -o base_c.bin
 
+base_ll.bin: $(BOOTSTRAP_SOURCE_LL)
+	cat $(BOOTSTRAP_SOURCE_LL) | ./link.py --llvm -O -o base_ll.bin
+
+.PHONY: refresh
 refresh:
 	SIKO_TARGET_OS=linux ./siko.bin build siko --pass c > bootstrap/source_linux.c
+	SIKO_TARGET_OS=linux ./siko.bin build siko --llvm --pass llvm > bootstrap/source_linux.ll
 	SIKO_TARGET_OS=macos ./siko.bin build siko --pass c > bootstrap/source_macos.c
+	SIKO_TARGET_OS=macos ./siko.bin build siko --llvm --pass llvm > bootstrap/source_macos.ll
 
 ssg.bin: siko.bin $(SSG_SK)
 	./siko.bin build ssg -o ssg.bin
