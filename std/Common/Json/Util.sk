@@ -273,4 +273,71 @@ fn error(message: String) -> JsonError {
     JsonError.Custom(message)
 }
 
+// Serialize a Json value into compact JSON text, e.g. Json.Number(5) -> "5"
+pub fn serialize(json: Json) -> String {
+    let sb = StringBuilder.new();
+    write_value(sb, json);
+    sb.to_string()
+}
+
+fn write_value(sb: StringBuilder, json: Json) {
+    match json {
+        Json.Null => sb.push("null"),
+        Json.Boolean(b) => sb.push(if b { "true" } else { "false" }),
+        Json.Number(n) => sb.push(n.to_string()),
+        Json.Str(s) => write_string(sb, s),
+        Json.Array(items) => {
+            sb.push("[");
+            let first = True;
+            for item in items {
+                if !first {
+                    sb.push(",");
+                }
+                first = False;
+                write_value(sb, item);
+            }
+            sb.push("]");
+        }
+        Json.Object(fields) => {
+            sb.push("{");
+            let first = True;
+            for (name, value) in fields {
+                if !first {
+                    sb.push(",");
+                }
+                first = False;
+                write_string(sb, name);
+                sb.push(":");
+                write_value(sb, value);
+            }
+            sb.push("}");
+        }
+    }
+}
+
+// Write a JSON string literal with escaping, e.g. `a"b` -> `"a\"b"`
+fn write_string(sb: StringBuilder, s: String) {
+    sb.push("\"");
+    let bytes = s.as_slice();
+    for i in 0..s.len() {
+        let c = bytes[i];
+        if c == '"' {
+            sb.push("\\\"");
+        } else if c == '\\' {
+            sb.push("\\\\");
+        } else if c == '\n' {
+            sb.push("\\n");
+        } else if c == '\t' {
+            sb.push("\\t");
+        } else if c == '\r' {
+            sb.push("\\r");
+        } else if c < 32.as_u8() {
+            sb.push("\\u00${to_hex(c.as_int())}");
+        } else {
+            sb.push(String.from_byte(c));
+        }
+    }
+    sb.push("\"");
+}
+
 }

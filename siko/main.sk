@@ -5,6 +5,7 @@ import Siko.Constants.Builtins as B
 import Siko.FileManager
 import Siko.Config
 import Siko.Driver
+import Siko.Report
 
 pub fn name_cache_entry() {
     let name_cache = B.build_cache();
@@ -17,8 +18,10 @@ pub fn name_cache_entry() {
 fn main() {
     let fm = FileManager.new();
     let config = Config.new();
+    let sink = DiagnosticSink.new(False);
     with I.Compiler.compile = name_cache_entry,
          Siko.FileManager.filemanager = fm,
+         Siko.Report.sink = sink,
          Siko.Config.current = config {
         I.run();
     }

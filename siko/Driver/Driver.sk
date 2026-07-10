@@ -5,6 +5,8 @@ import Siko.Parser.Module
 import Siko.AST.Module
 import Siko.CLI as CLI
 import Siko.Errors
+import Siko.LSP as LSP
+import Siko.Report as Report
 import Std.Sys.Process as Sys
 import Std.Sys.Command
 import Siko.Config
@@ -33,12 +35,15 @@ pub struct Driver {
         )
     }
 
-    fn run_passes(d: Driver, passes: Vec[Pass]) {
+    pub fn run_passes(d: Driver, passes: Vec[Pass]) {
         let trace = get_config().trace;
         for pass in passes {
             let start = Instant.now();
             (pass.run)(d);
             if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
+            if Report.has_errors() {
+                return;
+            }
             if pass.run_sanity_check {
                 SanityCheck.check_program(d.program);
             }
@@ -161,9 +166,16 @@ pub struct Driver {
             Some(config) => config,
         };
         set_config(config);
-        d.pass = config.pass;
-        let passes = build_passes(d);
-        d.run_passes(passes);
+        if config.lsp {
+            LSP.run_server();
+        } else {
+            d.pass = config.pass;
+            let passes = build_passes(d);
+            d.run_passes(passes);
+            if Report.has_errors() {
+                exit_with_error();
+            }
+        }
     }
 }
 

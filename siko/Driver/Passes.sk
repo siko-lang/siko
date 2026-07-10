@@ -72,12 +72,13 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 match resolver.resolve(driver.all_modules, driver.pkg_reachability) {
                     Err(e) => {
                         report_resolve_error(e);
-                        exit_with_error();
                     }
-                    Ok(program) => { driver.program = program; }
-                }
-                if config.test {
-                    T.build_test_main(driver.program);
+                    Ok(program) => {
+                        driver.program = program;
+                        if config.test {
+                            T.build_test_main(driver.program);
+                        }
+                    }
                 }
             },
             dump: Some(|driver| println(driver.program.format())),
@@ -106,7 +107,6 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 match check_canonical_instances(driver.program) {
                     Err(e) => {
                         report_instance_error(e);
-                        exit_with_error();
                     }
                     Ok(_) => {}
                 }

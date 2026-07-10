@@ -23,9 +23,8 @@ pub fn report_parse_error(e: ParserError) {
     report(e.message, Some(e.location));
 }
 
-pub fn report_parse_errors(errors: Vec[ParserError]) -> ! {
+pub fn report_parse_errors(errors: Vec[ParserError]) {
     for e in errors { report_parse_error(e); }
-    exit_with_error()
 }
 
 pub fn report_instance_error(e: InstanceError) {
@@ -102,19 +101,17 @@ pub fn report_resolve_error(e: ResolveError) {
     }
 }
 
-pub fn report_defer_errors(errors: Vec[DeferError]) -> ! {
+pub fn report_defer_errors(errors: Vec[DeferError]) {
     for e in errors {
         match e {
             DeferError.ControlFlowEscapesDefer(kind, location) =>
                 report("`${kind}` is not allowed to escape a deferred expression", Some(location)),
         }
     }
-    exit_with_error()
 }
 
-pub fn report_match_validation_errors(errors: Vec[MatchValidationError]) -> ! {
+pub fn report_match_validation_errors(errors: Vec[MatchValidationError]) {
     for e in errors { report_match_validation_error(e); }
-    exit_with_error()
 }
 
 pub fn report_match_validation_error(e: MatchValidationError) {
@@ -126,9 +123,8 @@ pub fn report_match_validation_error(e: MatchValidationError) {
     }
 }
 
-pub fn report_mono_errors(errors: Vec[MonoError]) -> ! {
+pub fn report_mono_errors(errors: Vec[MonoError]) {
     for e in errors { report_mono_error(e); }
-    exit_with_error()
 }
 
 pub fn report_mono_error(error: MonoError) {
@@ -142,9 +138,8 @@ pub fn report_mono_error(error: MonoError) {
     }
 }
 
-pub fn report_type_errors(errors: Vec[TypeError]) -> ! {
+pub fn report_type_errors(errors: Vec[TypeError]) {
     for e in errors { report_type_error(e); }
-    exit_with_error()
 }
 
 pub fn report_type_error(e: TypeError) {
@@ -192,9 +187,8 @@ pub fn report_type_error(e: TypeError) {
     }
 }
 
-pub fn report_safety_errors(errors: Vec[SafetyError]) -> ! {
+pub fn report_safety_errors(errors: Vec[SafetyError]) {
     for e in errors { report_safety_error(e); }
-    exit_with_error()
 }
 
 pub fn report_safety_error(e: SafetyError) {
@@ -210,9 +204,8 @@ pub fn report_safety_error(e: SafetyError) {
     }
 }
 
-pub fn report_purity_errors(errors: Vec[PurityError]) -> ! {
+pub fn report_purity_errors(errors: Vec[PurityError]) {
     for e in errors { report_purity_error(e); }
-    exit_with_error()
 }
 
 pub fn report_purity_error(e: PurityError) {
@@ -220,22 +213,22 @@ pub fn report_purity_error(e: PurityError) {
         PurityError.PureInMixedCycle(location) =>
             report("@pure function is in a mutual recursion cycle with non-pure functions", Some(location)),
         PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns) => {
-            report("package `${pkg_name}` declares `pure = true` but contains impure functions", None);
+            let message = "package `${pkg_name}` declares `pure = true` but contains impure functions\n";
             for impure_fn in impure_fns {
                 let reason_str = match impure_fn.reason {
                     ImpurityReason.DirectlyUnsafe => "directly unsafe/extern",
                     ImpurityReason.CallsImpure(dep) => "calls impure `${dep.name()}`",
                     ImpurityReason.UsesImpureHandler(dep) => "uses impure effect handler `${dep.name()}`",
                 };
-                println("  impure: `${impure_fn.name.name()}`: ${reason_str}");
+                message = message + "\n  impure: `${impure_fn.name.name()}`: ${reason_str}";
             }
+            report(message, None);
         }
     }
 }
 
-pub fn report_value_type_errors(errors: Vec[ValueTypeError]) -> ! {
+pub fn report_value_type_errors(errors: Vec[ValueTypeError]) {
     for e in errors { report_value_type_error(e); }
-    exit_with_error()
 }
 
 pub fn report_value_type_error(e: ValueTypeError) {

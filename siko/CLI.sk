@@ -22,23 +22,28 @@ fn read_target_info() -> Option[TargetInfo] {
 pub fn parse_cli_args() -> Option[Config] {
     let args = Sys.get_args();
     if args.len() < 2 {
-        println("usage: siko build|check [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
+        println("usage: siko build|check|lsp [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
         return None;
     }
     let check_only = False;
     let cmd = args[1];
     let test = False;
+    let lsp = False;
     match cmd {
         "build" => {}
         "check" => {
             check_only = True;
+        }
+        "lsp" => {
+            check_only = True;
+            lsp = True;
         }
         "test" => {
             test = True;
         }
         _ => {
             println("unknown command: " + cmd);
-            println("usage: siko build|check|test [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
+            println("usage: siko build|check|test|lsp [--llvm] [--pass <resolve|normalize>] <path> [path ...]");
             return None;
         }
     }
@@ -153,7 +158,8 @@ pub fn parse_cli_args() -> Option[Config] {
         std_path: std_path,
         target_info: target_info,
         test: test,
-        llvm: llvm))
+        llvm: llvm,
+        lsp: lsp))
 }
 
 }

@@ -1,0 +1,251 @@
+module Siko.LSP {
+
+import Siko.Driver
+import Siko.Driver.Passes
+import Siko.FileManager
+import Siko.Report
+import Std.Fs.Directory as Directory
+import Std.IO.Buffered as Buffered
+import Std.Json
+import Std.Json.Util as JsonUtil
+import Std.Libc.FileDescriptor as FD
+import Std.Map
+import Std.StringBuilder
+
+// A diagnostic resolved into a path and 0-based line/column range
+struct FileDiagnostic {
+    file: Option[String],
+    line: Int,
+    col: Int,
+    end_line: Int,
+    end_col: Int,
+    severity: Severity,
+    message: String,
+}
+
+// Serve the LSP protocol over stdin/stdout, rechecking the project on every save
+pub fn run_server() {
+    let reader = Buffered.Reader.new(FD.get_stdin(), 8192);
+    let published: Vec[String] = Vec.new();
+    loop {
+        let body = match read_message(reader) {
+            Some(body) => body,
+            None => break, // stdin closed, the editor is gone
+        };
+        let message = match JsonUtil.parse(body) {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let method = match message.get_field("method") {
+            Ok(Json.Str(method)) => method,
+            _ => continue,
+        };
+        let id = match message.get_field("id") {
+            Ok(id) => Some(id),
+            Err(_) => None,
+        };
+        match method {
+            "initialize" => send_response(id, initialize_result()),
+            "initialized" => { published = check_and_publish(published); }
+            "textDocument/didSave" => { published = check_and_publish(published); }
+            "shutdown" => send_response(id, Json.Null),
+            "exit" => break,
+            _ => {
+                // requests must be answered, unknown notifications can be dropped
+                match id {
+                    Some(_) => send_method_not_found(id, method),
+                    None => {}
+                }
+            }
+        }
+    }
+}
+
+// Read one "Content-Length: N\r\n\r\n<body>" framed message from stdin
+fn read_message(reader: Buffered.Reader[FD.FileDescriptor]) -> Option[String] {
+    let content_length = 0;
+    loop {
+        match reader.read_line() {
+            Ok(Some(line)) => {
+                if line == "" {
+                    break;
+                }
+                if line.starts_with("Content-Length: ") {
+                    match line.substring(16, line.len()).parse_int(10) {
+                        Ok(n) => { content_length = n; }
+                        Err(_) => {}
+                    }
+                }
+            }
+            _ => return None,
+        }
+    }
+    if content_length <= 0 {
+        return None;
+    }
+    let buf: Vec[U8] = Vec.with_value(content_length, 0.as_u8());
+    match reader.read_full(buf.slice()) {
+        Ok(_) => Some(String.from_slice(buf.slice())),
+        Err(_) => None,
+    }
+}
+
+// Write one framed message to stdout
+fn send(message: Json) {
+    let body = JsonUtil.serialize(message);
+    print("Content-Length: ${body.len()}\r\n\r\n${body}");
+}
+
+fn obj(fields: Vec[(String, Json)]) -> Json {
+    let m: Map[String, Json] = Map.new();
+    for (name, value) in fields {
+        m.insert(name, value);
+    }
+    Json.Object(m)
+}
+
+fn send_response(id: Option[Json], result: Json) {
+    let id = match id {
+        Some(id) => id,
+        None => Json.Null,
+    };
+    send(obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("result", result)]));
+}
+
+fn send_method_not_found(id: Option[Json], method: String) {
+    let id = match id {
+        Some(id) => id,
+        None => Json.Null,
+    };
+    let error = obj([("code", Json.Number(-32601)), ("message", Json.Str("method not found: ${method}"))]);
+    send(obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("error", error)]));
+}
+
+fn send_notification(method: String, params: Json) {
+    send(obj([("jsonrpc", Json.Str("2.0")), ("method", Json.Str(method)), ("params", params)]));
+}
+
+fn initialize_result() -> Json {
+    let sync = obj([("openClose", Json.Boolean(True)),
+                    ("change", Json.Number(0)),
+                    ("save", Json.Boolean(True))]);
+    obj([("capabilities", obj([("textDocumentSync", sync)])),
+         ("serverInfo", obj([("name", Json.Str("siko"))]))])
+}
+
+// Check the whole project and publish fresh diagnostics for every affected file,
+// clearing the files that were published in the previous round
+fn check_and_publish(previously_published: Vec[String]) -> Vec[String] {
+    let diagnostics = run_check();
+    let root = Directory.get_current_dir().expect("getcwd failed");
+    let by_uri: Map[String, Vec[Json]] = Map.new();
+    for d in diagnostics {
+        match d.file {
+            Some(file) => {
+                let uri = path_to_uri(root, file);
+                let items = match by_uri.get(uri) {
+                    Some(items) => items,
+                    None => Vec.new(),
+                };
+                items.push(to_lsp_diagnostic(d));
+                by_uri.insert(uri, items);
+            }
+            None => {
+                // no location: surface it in the editor as a message
+                let params = obj([("type", Json.Number(severity_code(d.severity))),
+                                  ("message", Json.Str(d.message))]);
+                send_notification("window/showMessage", params);
+            }
+        }
+    }
+    let published: Vec[String] = Vec.new();
+    for (uri, items) in by_uri {
+        let params = obj([("uri", Json.Str(uri)), ("diagnostics", Json.Array(items))]);
+        send_notification("textDocument/publishDiagnostics", params);
+        published.push(uri);
+    }
+    for uri in previously_published {
+        if !published.contains(uri) {
+            let params = obj([("uri", Json.Str(uri)), ("diagnostics", Json.empty_array())]);
+            send_notification("textDocument/publishDiagnostics", params);
+        }
+    }
+    published
+}
+
+// Run the check passes with fresh compiler state and collect the diagnostics
+fn run_check() -> Vec[FileDiagnostic] {
+    let fm = FileManager.new();
+    let sink = DiagnosticSink.new(True);
+    with Siko.FileManager.filemanager = fm,
+         Siko.Report.sink = sink {
+        let driver = Driver.new();
+        let passes = build_passes(driver);
+        driver.run_passes(passes);
+        resolve_diagnostics()
+    }
+}
+
+// Turn the collected diagnostics into path + line/column form
+// while the file manager of the check run is still in scope
+fn resolve_diagnostics() -> Vec[FileDiagnostic] {
+    let result: Vec[FileDiagnostic] = Vec.new();
+    for d in Siko.Report.get_diagnostics() {
+        match d.location {
+            Some(location) => {
+                let path = Siko.FileManager.get_name(location.file_id);
+                let source = Siko.FileManager.get_content(location.file_id);
+                let line_starts = Siko.Report.compute_line_starts(source);
+                let (line, col) = Siko.Report.line_col(line_starts, location.span.start);
+                let span_end = location.span.end.max(location.span.start);
+                let (end_line, end_col) = Siko.Report.line_col(line_starts, span_end);
+                result.push(FileDiagnostic(Some(path), line, col, end_line, end_col, d.severity, d.message));
+            }
+            None => {
+                result.push(FileDiagnostic(None, 0, 0, 0, 0, d.severity, d.message));
+            }
+        }
+    }
+    result
+}
+
+fn to_lsp_diagnostic(d: FileDiagnostic) -> Json {
+    let start = obj([("line", Json.Number(d.line)), ("character", Json.Number(d.col))]);
+    let end = obj([("line", Json.Number(d.end_line)), ("character", Json.Number(d.end_col))]);
+    let range = obj([("start", start), ("end", end)]);
+    obj([("range", range),
+         ("severity", Json.Number(severity_code(d.severity))),
+         ("source", Json.Str("siko")),
+         ("message", Json.Str(d.message))])
+}
+
+fn severity_code(severity: Severity) -> Int {
+    match severity {
+        Severity.Error => 1,
+        Severity.Warning => 2,
+    }
+}
+
+// Build a file:// URI from a possibly relative path, e.g. "siko/Report.sk" -> "file:///root/siko/Report.sk"
+fn path_to_uri(root: String, path: String) -> String {
+    let abs = if path.starts_with("/") {
+        path
+    } else {
+        "${root}/${path}"
+    };
+    let sb = StringBuilder.new();
+    sb.push("file://");
+    let bytes = abs.as_slice();
+    for i in 0..abs.len() {
+        let c = bytes[i];
+        if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+           || c == '/' || c == '.' || c == '-' || c == '_' || c == '~' {
+            sb.push(String.from_byte(c));
+        } else {
+            sb.push("%" + to_hex(c.as_int(), uppercase: True));
+        }
+    }
+    sb.to_string()
+}
+
+}

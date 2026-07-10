@@ -18,13 +18,20 @@ pub fn assert(condition: Bool, msg: String = "") -> () {
     }
 }
 
+// Format a byte as two hex digits, e.g. 27 -> "1b" (or "1B" if uppercase)
+pub fn to_hex(v: Int, uppercase: Bool = False) -> String {
+    let digits = if uppercase {
+        "0123456789ABCDEF".as_slice()
+    } else {
+        "0123456789abcdef".as_slice()
+    };
+    String.from_byte(digits[v / 16]) + String.from_byte(digits[v % 16])
+}
+
 pub fn bytes_to_hex(bytes: Vec[U8]) -> String {
-    let hex_chars = "0123456789abcdef".as_slice();
     let result = "";
     for b in bytes {
-        let hi = b.as_int().shr(4).band(0xf);
-        let lo = b.as_int().band(0xf);
-        result = result + String.from_byte(hex_chars[hi]) + String.from_byte(hex_chars[lo]);
+        result = result + to_hex(b.as_int());
     }
     result
 }
