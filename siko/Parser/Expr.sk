@@ -263,15 +263,27 @@ instance ExprParser[Parser] {
                         if parser.peek() == TokenKind.LParen {
                             parser.advance();
                             let args = Vec.new();
+                            let named_args = Vec.new();
                             while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
-                                args.push(parser.parse_expr()?);
+                                match parser.peek() {
+                                    TokenKind.VarIdentifier(name) if parser.peek_next() == TokenKind.Colon => {
+                                        let index = args.len();
+                                        parser.advance();
+                                        parser.advance();
+                                        args.push(parser.parse_expr()?);
+                                        named_args.push(NamedArgument(index, name));
+                                    }
+                                    _ => {
+                                        args.push(parser.parse_expr()?);
+                                    }
+                                }
                                 if parser.peek() == TokenKind.Comma {
                                     parser.advance();
                                 }
                             }
                             parser.expect(TokenKind.RParen)?;
                             let location = parser.loc(start, parser.cur_pos());
-                            expr = Expr(ExprKind.MethodCall(MethodCallInfo(expr, ident, args, Vec.new())), location, None);
+                            expr = Expr(ExprKind.MethodCall(MethodCallInfo(expr, ident, args, named_args)), location, None);
                         } else {
                             let location = parser.loc(start, parser.cur_pos());
                             expr = Expr(ExprKind.FieldAccess(expr, ident), location, None);

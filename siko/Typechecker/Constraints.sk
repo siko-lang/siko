@@ -22,7 +22,7 @@ pub enum ConstraintKind {
     Unify(lhs: TypeDef, rhs: TypeDef),
     HasField(receiver: TypeDef, field: I.String, result: TypeDef),
     HasTupleIndex(receiver: TypeDef, index: Int, result: TypeDef),
-    CallMethod(receiver: TypeDef, method: I.String, args: Vec[TypeDef], result: TypeDef),
+    CallMethod(receiver: TypeDef, method: I.String, args: Vec[TypeDef], result: TypeDef, named_args: Vec[E.NamedArgument]),
     CallFunction(qname: QualifiedName, kind: E.FunctionKind, args: Vec[TypeDef], result: TypeDef, is_coroutine_create: Bool),
     CallTypeAssociated(ty: TypeDef, qname: QualifiedName, args: Vec[TypeDef], result: TypeDef),
     DynamicCall(callee: TypeDef, args: Vec[TypeDef], result: TypeDef),
@@ -44,12 +44,13 @@ pub enum ConstraintKind {
                 ConstraintKind.HasField(receiver: sub.apply(receiver), field: field, result: sub.apply(result)),
             ConstraintKind.HasTupleIndex(receiver, index, result) =>
                 ConstraintKind.HasTupleIndex(receiver: sub.apply(receiver), index: index, result: sub.apply(result)),
-            ConstraintKind.CallMethod(receiver, method, args, result) =>
+            ConstraintKind.CallMethod(receiver, method, args, result, named_args) =>
                 ConstraintKind.CallMethod(
                     receiver: sub.apply(receiver),
                     method: method,
                     args: sub.apply_all(args),
                     result: sub.apply(result),
+                    named_args: named_args,
                 ),
             ConstraintKind.CallFunction(qname, kind, args, result, is_co) =>
                 ConstraintKind.CallFunction(
@@ -121,7 +122,7 @@ pub enum ConstraintKind {
                 "HasField(${format_type(receiver)}.${field} -> ${format_type(result)})",
             ConstraintKind.HasTupleIndex(receiver, index, result) =>
                 "HasTupleIndex(${format_type(receiver)}.${index} -> ${format_type(result)})",
-            ConstraintKind.CallMethod(receiver, method, args, result) =>
+            ConstraintKind.CallMethod(receiver, method, args, result, _) =>
                 "CallMethod(${format_type(receiver)}.${method}(${format_types(args)}) -> ${format_type(result)})",
             ConstraintKind.CallFunction(qname, kind, args, result, is_co) =>
                 "CallFunction[${kind.to_string()}] ${qname.name()}(${format_types(args)}) -> ${format_type(result)}${if is_co { " [co]" } else { "" }}",

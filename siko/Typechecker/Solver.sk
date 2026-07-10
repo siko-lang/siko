@@ -12,6 +12,7 @@ import Siko.Instances.FunctionInstanceResolver
 import Siko.Instances.InstanceResolver
 import Siko.Interner as I
 import Siko.Location
+import Siko.Typechecker.Collector
 import Siko.Typechecker.Constraints as C
 import Siko.Typechecker.Error
 import Siko.Typechecker.Finalize
@@ -299,7 +300,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             }
         }
 
-        C.ConstraintKind.CallMethod(receiver, method, args, result) => {
+        C.ConstraintKind.CallMethod(receiver, method, args, result, named_args) => {
             let resolved = ctx.sub.apply(receiver);
             let method_qname = match resolved {
                 TypeDef.Var(TypeVar.Var(n)) => return ProcessResult.Pending([n]),
@@ -331,6 +332,18 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
             };
 
             let fndef = ctx.program.functions.get(method_qname).unwrap();
+            if !named_args.is_empty() {
+                // fndef.args[0] is the receiver; named args index the explicit args
+                if check_named_arg_count(named_args, fndef.args.len() - 1) {
+                    return ProcessResult.Failed(TypeError.TooManyNamedArgs(method_qname.name(), fndef.args.len() - 1, named_args.len(), location));
+                }
+                for na in named_args {
+                    let expected = fndef.args[na.index + 1].name.get_user_name();
+                    if expected != na.name {
+                        return ProcessResult.Failed(TypeError.WrongNamedArgument(method_qname.name(), na.name, expected, location));
+                    }
+                }
+            }
             let kind = match fndef.extern_c_name() {
                 Some(name) => FunctionKind.Extern(Some(name)),
                 None => if fndef.is_extern() { FunctionKind.Extern(None) } else { if fndef.is_builtin() { FunctionKind.Builtin } else { FunctionKind.UserDefined } },
