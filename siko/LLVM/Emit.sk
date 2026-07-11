@@ -1,0 +1,486 @@
+module Siko.LLVM.Emit {
+
+// Alternative LLVM backend: replays the LLVMModule AST through the LLVM-C
+// builder API (Siko.LLVM.CApi) instead of formatting textual IR. The module is
+// verified and printed back as IR text so the downstream link step is shared
+// with the textual backend.
+
+import Std.Map
+import Siko.LLVM.AST
+import Siko.LLVM.CApi
+
+struct Emitter {
+    ctx: Context,
+    m: Module,
+    types: Map[String, TypeRef],
+    globals: Map[String, Value],
+
+    fn new(ctx: Context, m: Module) -> Emitter {
+        Emitter(ctx, m, Map.new(), Map.new())
+    }
+
+    fn emit_type(e: Emitter, ty: LLVMType) -> TypeRef {
+        match ty {
+            LLVMType.Void => e.ctx.void_type(),
+            LLVMType.Label => panic("llvm emit: label type has no LLVM-C representation"),
+            LLVMType.Int(bits) => e.ctx.int_type(bits),
+            LLVMType.Ptr => e.ctx.ptr_type(),
+            LLVMType.Array(n, elem) => e.emit_type(elem).array_type(n),
+            LLVMType.Vector(n, elem) => e.emit_type(elem).vector_type(n),
+            LLVMType.Named(name) => e.types.get(name).expect("llvm emit: unknown named type ${name}").clone(),
+            LLVMType.Struct(fields, packed) => {
+                let field_tys: Vec[TypeRef] = Vec.new();
+                for field in fields {
+                    field_tys.push(e.emit_type(field));
+                }
+                e.ctx.struct_type(field_tys, packed)
+            }
+            LLVMType.Function(ret, params, varargs) => e.emit_fn_type(ret, params, varargs),
+        }
+    }
+
+    fn emit_fn_type(e: Emitter, ret: LLVMType, params: Vec[LLVMType], varargs: Bool) -> TypeRef {
+        let param_tys: Vec[TypeRef] = Vec.new();
+        for param in params {
+            param_tys.push(e.emit_type(param));
+        }
+        e.emit_type(ret).function_type(param_tys, varargs)
+    }
+
+    fn global_value(e: Emitter, name: String) -> Value {
+        e.globals.get(name).expect("llvm emit: unknown global ${name}").clone()
+    }
+
+    fn emit_const(e: Emitter, ty: LLVMType, value: LLVMValue) -> Value {
+        match value {
+            LLVMValue.Local(name) => panic("llvm emit: local ${name} is not a constant"),
+            LLVMValue.Global(name) => e.global_value(name),
+            LLVMValue.Int(text) => e.emit_type(ty).const_int_text(text),
+            LLVMValue.Bool(b) => e.ctx.int_type(1).const_int(if b { 1.as_u64() } else { 0.as_u64() }, False),
+            LLVMValue.Null => e.emit_type(ty).const_null(),
+            LLVMValue.Undef => e.emit_type(ty).undef(),
+            LLVMValue.Poison => e.emit_type(ty).poison(),
+            LLVMValue.ZeroInitializer => e.emit_type(ty).const_null(),
+            LLVMValue.StringLiteral(s) => e.ctx.const_string(s),
+            LLVMValue.Array(values) => {
+                let elem_ty = match ty {
+                    LLVMType.Array(_, elem) => elem,
+                    _ => panic("llvm emit: array constant with non-array type"),
+                };
+                e.emit_type(elem_ty).const_array(e.emit_const_list(values))
+            }
+            LLVMValue.Vector(values) => panic("llvm emit: vector constants are not supported"),
+            LLVMValue.Struct(values, packed) => {
+                match ty {
+                    LLVMType.Named(name) => e.types.get(name).expect("llvm emit: unknown named type ${name}").const_named_struct(e.emit_const_list(values)),
+                    _ => e.ctx.const_struct(e.emit_const_list(values), packed),
+                }
+            }
+        }
+    }
+
+    fn emit_const_list(e: Emitter, values: Vec[LLVMTypedValue]) -> Vec[Value] {
+        let consts: Vec[Value] = Vec.new();
+        for value in values {
+            consts.push(e.emit_const(value.ty, value.value));
+        }
+        consts
+    }
+}
+
+fn map_linkage(linkage: LLVMLinkage) -> Linkage {
+    match linkage {
+        LLVMLinkage.External => Linkage.External,
+        LLVMLinkage.Internal => Linkage.Internal,
+        LLVMLinkage.Private => Linkage.Private,
+        LLVMLinkage.Appending => Linkage.Appending,
+        LLVMLinkage.LinkOnceODR => Linkage.LinkOnceODR,
+        LLVMLinkage.WeakODR => Linkage.WeakODR,
+    }
+}
+
+fn map_unnamed_addr(ua: LLVMUnnamedAddr) -> UnnamedAddr {
+    match ua {
+        LLVMUnnamedAddr.NoUnnamedAddr => UnnamedAddr.NoUnnamedAddr,
+        LLVMUnnamedAddr.UnnamedAddr => UnnamedAddr.GlobalUnnamedAddr,
+        LLVMUnnamedAddr.LocalUnnamedAddr => UnnamedAddr.LocalUnnamedAddr,
+    }
+}
+
+fn map_binary_op(op: LLVMBinaryOp) -> BinaryOp {
+    match op {
+        LLVMBinaryOp.Add => BinaryOp.Add,
+        LLVMBinaryOp.Sub => BinaryOp.Sub,
+        LLVMBinaryOp.Mul => BinaryOp.Mul,
+        LLVMBinaryOp.UDiv => BinaryOp.UDiv,
+        LLVMBinaryOp.SDiv => BinaryOp.SDiv,
+        LLVMBinaryOp.URem => BinaryOp.URem,
+        LLVMBinaryOp.SRem => BinaryOp.SRem,
+        LLVMBinaryOp.And => BinaryOp.And,
+        LLVMBinaryOp.Or => BinaryOp.Or,
+        LLVMBinaryOp.Xor => BinaryOp.Xor,
+        LLVMBinaryOp.Shl => BinaryOp.Shl,
+        LLVMBinaryOp.LShr => BinaryOp.LShr,
+        LLVMBinaryOp.AShr => BinaryOp.AShr,
+    }
+}
+
+fn map_predicate(pred: LLVMIntPredicate) -> IntPredicate {
+    match pred {
+        LLVMIntPredicate.Eq => IntPredicate.Eq,
+        LLVMIntPredicate.Ne => IntPredicate.Ne,
+        LLVMIntPredicate.Ugt => IntPredicate.Ugt,
+        LLVMIntPredicate.Uge => IntPredicate.Uge,
+        LLVMIntPredicate.Ult => IntPredicate.Ult,
+        LLVMIntPredicate.Ule => IntPredicate.Ule,
+        LLVMIntPredicate.Sgt => IntPredicate.Sgt,
+        LLVMIntPredicate.Sge => IntPredicate.Sge,
+        LLVMIntPredicate.Slt => IntPredicate.Slt,
+        LLVMIntPredicate.Sle => IntPredicate.Sle,
+    }
+}
+
+fn map_cast_op(op: LLVMCastOp) -> CastOp {
+    match op {
+        LLVMCastOp.Trunc => CastOp.Trunc,
+        LLVMCastOp.ZExt => CastOp.ZExt,
+        LLVMCastOp.SExt => CastOp.SExt,
+        LLVMCastOp.BitCast => CastOp.BitCast,
+        LLVMCastOp.PtrToInt => CastOp.PtrToInt,
+        LLVMCastOp.IntToPtr => CastOp.IntToPtr,
+    }
+}
+
+struct PhiFixup {
+    phi: Value,
+    ty: LLVMType,
+    incoming: Vec[LLVMPhiIncoming],
+}
+
+struct FnEmitter {
+    e: Emitter,
+    b: Builder,
+    blocks: Map[String, BasicBlock],
+    locals: Map[String, Value],
+    phi_fixups: Vec[PhiFixup],
+
+    fn new(e: Emitter, b: Builder) -> FnEmitter {
+        FnEmitter(e, b, Map.new(), Map.new(), Vec.new())
+    }
+
+    fn block(fe: FnEmitter, label: String) -> BasicBlock {
+        fe.blocks.get(label).expect("llvm emit: unknown block ${label}").clone()
+    }
+
+    fn value(fe: FnEmitter, ty: LLVMType, value: LLVMValue) -> Value {
+        match value {
+            LLVMValue.Local(name) => fe.locals.get(name).expect("llvm emit: unknown local ${name}").clone(),
+            _ => fe.e.emit_const(ty, value),
+        }
+    }
+
+    fn typed_value(fe: FnEmitter, tv: LLVMTypedValue) -> Value {
+        fe.value(tv.ty, tv.value)
+    }
+
+    fn define(fe: FnEmitter, result: Option[String], value: Value) {
+        if let Some(name) = result {
+            value.set_name(name);
+            fe.locals.insert(name, value);
+        }
+    }
+
+    fn result_name(result: Option[String]) -> String {
+        match result {
+            Some(name) => name,
+            None => "",
+        }
+    }
+
+    fn emit_instruction(fe: FnEmitter, instr: LLVMInstruction) {
+        let name = result_name(instr.result);
+        match instr.kind {
+            LLVMInstructionKind.Alloca(ty, align) => {
+                let slot = fe.b.build_alloca(fe.e.emit_type(ty), name);
+                if let Some(a) = align {
+                    slot.set_alignment(a);
+                }
+                fe.define(instr.result, slot);
+            }
+            LLVMInstructionKind.Load(ty, ptr, align) => {
+                let loaded = fe.b.build_load(fe.e.emit_type(ty), fe.value(LLVMType.Ptr, ptr), name);
+                if let Some(a) = align {
+                    loaded.set_alignment(a);
+                }
+                fe.define(instr.result, loaded);
+            }
+            LLVMInstructionKind.Store(value, ptr, align) => {
+                let store = fe.b.build_store(fe.typed_value(value), fe.value(LLVMType.Ptr, ptr));
+                if let Some(a) = align {
+                    store.set_alignment(a);
+                }
+            }
+            LLVMInstructionKind.Binary(op, ty, lhs, rhs) => {
+                let result = fe.b.build_binary(map_binary_op(op), fe.value(ty.clone(), lhs), fe.value(ty, rhs), name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.ICmp(pred, ty, lhs, rhs) => {
+                let result = fe.b.build_icmp(map_predicate(pred), fe.value(ty.clone(), lhs), fe.value(ty, rhs), name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.GetElementPtr(ty, ptr, indices, inbounds) => {
+                let index_values: Vec[Value] = Vec.new();
+                for index in indices {
+                    index_values.push(fe.typed_value(index));
+                }
+                let result = fe.b.build_gep(fe.e.emit_type(ty), fe.value(LLVMType.Ptr, ptr), index_values, inbounds, name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.ExtractValue(ty, aggregate, indices) => {
+                let result = fe.value(ty, aggregate);
+                for index in indices {
+                    result = fe.b.build_extract_value(result, index, name);
+                }
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.InsertValue(ty, aggregate, value, indices) => {
+                if indices.len() != 1 {
+                    panic("llvm emit: insertvalue with ${indices.len()} indices is not supported");
+                }
+                let result = fe.b.build_insert_value(fe.value(ty, aggregate), fe.typed_value(value), indices[0], name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.Cast(op, value, dest_ty) => {
+                let result = fe.b.build_cast(map_cast_op(op), fe.typed_value(value), fe.e.emit_type(dest_ty), name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.Call(ret_ty, callee, args, _) => {
+                let arg_tys: Vec[LLVMType] = Vec.new();
+                for arg in args {
+                    arg_tys.push(arg.ty.clone());
+                }
+                let fn_ty = fe.e.emit_fn_type(ret_ty, arg_tys, False);
+                let result = fe.b.build_call(fn_ty, fe.value(LLVMType.Ptr, callee), fe.emit_args(args), name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.VarArgCall(ret_ty, fixed_param_tys, callee, args, _) => {
+                let fn_ty = fe.e.emit_fn_type(ret_ty, fixed_param_tys, True);
+                let result = fe.b.build_call(fn_ty, fe.value(LLVMType.Ptr, callee), fe.emit_args(args), name);
+                fe.define(instr.result, result);
+            }
+            LLVMInstructionKind.Phi(ty, incoming) => {
+                let phi = fe.b.build_phi(fe.e.emit_type(ty.clone()), name);
+                fe.phi_fixups.push(PhiFixup(phi, ty, incoming));
+                fe.define(instr.result, phi);
+            }
+            LLVMInstructionKind.Comment(_) => {}
+        }
+    }
+
+    fn emit_args(fe: FnEmitter, args: Vec[LLVMTypedValue]) -> Vec[Value] {
+        let values: Vec[Value] = Vec.new();
+        for arg in args {
+            values.push(fe.typed_value(arg));
+        }
+        values
+    }
+
+    fn emit_terminator(fe: FnEmitter, term: LLVMTerminator) {
+        match term {
+            LLVMTerminator.Ret(value) => {
+                match value {
+                    Some(v) => fe.b.build_ret(fe.typed_value(v)),
+                    None => fe.b.build_ret_void(),
+                }
+            }
+            LLVMTerminator.Br(label) => fe.b.build_br(fe.block(label)),
+            LLVMTerminator.CondBr(cond, then_label, else_label) => {
+                fe.b.build_cond_br(fe.typed_value(cond), fe.block(then_label), fe.block(else_label));
+            }
+            LLVMTerminator.Switch(value, default_label, cases) => {
+                let switch_ty = value.ty.clone();
+                let switch_instr = fe.b.build_switch(fe.typed_value(value), fe.block(default_label), cases.len());
+                for case in cases {
+                    switch_instr.add_case(fe.e.emit_const(switch_ty.clone(), case.value), fe.block(case.label));
+                }
+            }
+            LLVMTerminator.Unreachable => fe.b.build_unreachable(),
+        }
+    }
+
+    // Phi incoming values may be defined after the phi itself, so they are
+    // resolved only once the whole function body has been emitted.
+    fn apply_phi_fixups(fe: FnEmitter) {
+        for fixup in fe.phi_fixups {
+            let values: Vec[Value] = Vec.new();
+            let blocks: Vec[BasicBlock] = Vec.new();
+            for inc in fixup.incoming {
+                values.push(fe.value(fixup.ty.clone(), inc.value));
+                blocks.push(fe.block(inc.label));
+            }
+            fixup.phi.add_incoming(values, blocks);
+        }
+    }
+}
+
+fn sig_fn_type(e: Emitter, sig: LLVMFunctionSig) -> TypeRef {
+    let param_tys: Vec[LLVMType] = Vec.new();
+    for param in sig.params {
+        param_tys.push(param.ty.clone());
+    }
+    e.emit_fn_type(sig.ret, param_tys, sig.varargs)
+}
+
+fn add_function(e: Emitter, sig: LLVMFunctionSig) -> Value {
+    if sig.calling_conv.is_some() {
+        panic("llvm emit: calling conventions are not supported");
+    }
+    let f = e.m.add_function(sig.name, sig_fn_type(e, sig));
+    f.set_linkage(map_linkage(sig.linkage));
+    for attr in sig.attrs {
+        f.add_fn_attribute(e.ctx.enum_attr(attr));
+    }
+    for (i, param) in sig.params.iter().enumerate() {
+        if !param.attrs.is_empty() {
+            panic("llvm emit: parameter attributes are not supported");
+        }
+        if let Some(param_name) = param.name {
+            f.param(i).set_name(param_name);
+        }
+    }
+    e.globals.insert(sig.name, f);
+    f
+}
+
+fn emit_function_body(e: Emitter, func: LLVMFunctionDef, f: Value) {
+    let b = e.ctx.create_builder();
+    let fe = FnEmitter.new(e, b);
+    for (i, param) in func.sig.params.iter().enumerate() {
+        if let Some(param_name) = param.name {
+            fe.locals.insert(param_name, f.param(i));
+        }
+    }
+    for block in func.blocks.iter() {
+        fe.blocks.insert(block.label, e.ctx.append_block(f, block.label));
+    }
+    for block in func.blocks {
+        b.position_at_end(fe.block(block.label));
+        for instr in block.instrs {
+            fe.emit_instruction(instr);
+        }
+        fe.emit_terminator(block.term);
+    }
+    fe.apply_phi_fixups();
+    b.dispose();
+}
+
+// Builds and verifies the LLVM module in the given context. The caller owns
+// the returned module and must dispose it (before disposing the context).
+fn build(ctx: Context, llvm_module: LLVMModule) -> Module {
+    let module_name = match llvm_module.source_filename.clone() {
+        Some(name) => name,
+        None => "siko",
+    };
+    let m = ctx.create_module(module_name);
+    if let Some(source) = llvm_module.source_filename {
+        m.set_source_file_name(source);
+    }
+    if let Some(layout) = llvm_module.data_layout {
+        m.set_data_layout(layout);
+    }
+    if let Some(triple) = llvm_module.target_triple {
+        m.set_target_triple(triple);
+    }
+
+    let e = Emitter.new(ctx, m);
+
+    // Named types are created opaque first so struct bodies can refer to each
+    // other in any order.
+    for tdef in llvm_module.types.iter() {
+        e.types.insert(tdef.name, ctx.named_struct(tdef.name));
+    }
+    for tdef in llvm_module.types {
+        match tdef.ty {
+            Some(LLVMType.Struct(fields, packed)) => {
+                let field_tys: Vec[TypeRef] = Vec.new();
+                for field in fields {
+                    field_tys.push(e.emit_type(field));
+                }
+                e.types.get(tdef.name).expect("llvm emit: unknown named type").set_body(field_tys, packed);
+            }
+            Some(_) => panic("llvm emit: named type ${tdef.name} is not a struct"),
+            None => {}
+        }
+    }
+
+    // Globals and functions are registered before initializers and bodies so
+    // constants and calls can reference them regardless of order.
+    for global in llvm_module.globals.iter() {
+        let g = m.add_global(e.emit_type(global.ty.clone()), global.name);
+        g.set_linkage(map_linkage(global.linkage.clone()));
+        g.set_unnamed_addr(map_unnamed_addr(global.unnamed_addr.clone()));
+        g.set_global_constant(global.constant);
+        if let Some(a) = global.align {
+            g.set_alignment(a);
+        }
+        if !global.attrs.is_empty() {
+            panic("llvm emit: global attributes are not supported");
+        }
+        e.globals.insert(global.name, g);
+    }
+    for decl in llvm_module.declarations {
+        add_function(e, decl.sig);
+    }
+    let fns: Vec[Value] = Vec.new();
+    for func in llvm_module.functions.iter() {
+        let f = add_function(e, func.sig);
+        // Boehm GC needs the last stack reference to an object to survive
+        // until the call returns; tail-call optimization can destroy it.
+        f.add_fn_attribute(ctx.string_attr("disable-tail-calls", "true"));
+        fns.push(f);
+    }
+
+    for global in llvm_module.globals {
+        if let Some(init) = global.init {
+            e.global_value(global.name).set_initializer(e.emit_const(global.ty, init));
+        }
+    }
+    for (i, func) in llvm_module.functions.iter().enumerate() {
+        emit_function_body(e, func, fns[i]);
+    }
+
+    if let Some(error) = m.verify() {
+        panic("llvm emit: module verification failed: ${error}");
+    }
+    m
+}
+
+// Returns the module as textual LLVM IR.
+pub fn emit(llvm_module: LLVMModule) -> String {
+    let ctx = Context.new();
+    let m = build(ctx, llvm_module);
+    let text = m.print_to_string();
+    m.dispose();
+    ctx.dispose();
+    text
+}
+
+// Compiles the module to an object file at the given path. With optimize the
+// standard default<O3> pipeline runs before codegen.
+pub fn emit_object(llvm_module: LLVMModule, path: String, optimize: Bool) {
+    let triple = llvm_module.target_triple.clone().expect("llvm emit: module has no target triple");
+    let ctx = Context.new();
+    let m = build(ctx, llvm_module);
+    initialize_targets();
+    let tm = Target.from_triple(triple.clone()).create_machine(triple, optimize);
+    tm.apply_data_layout(m);
+    if optimize {
+        m.run_passes("default<O3>", tm);
+    }
+    tm.emit_object(m, path);
+    tm.dispose();
+    m.dispose();
+    ctx.dispose();
+}
+
+}

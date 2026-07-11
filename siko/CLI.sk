@@ -63,13 +63,21 @@ pub fn parse_cli_args() -> Option[Config] {
     let check_safety = True;
     let output = None;
     let optimize = False;
-    let san = False;
-    let tsan = False;
     let no_std = False;
     let dump_package_purity = False;
+    let llvm_api = True;
+    let obj = False;
+    let link_args = Vec.new();
     let i = 2;
     while i < args.len() {
-        if args[i] == "--pass" {
+        if args[i] == "--link-arg" {
+            i += 1;
+            if i >= args.len() {
+                println("error: --link-arg requires an argument");
+                return None;
+            }
+            link_args.push(args[i]);
+        } else if args[i] == "--pass" {
             i += 1;
             if i >= args.len() {
                 println("error: --pass requires an argument");
@@ -104,14 +112,23 @@ pub fn parse_cli_args() -> Option[Config] {
                 "--trace"           => { trace = True; }
                 "--no-check-safety" => { check_safety = False; }
                 "-O"                => { optimize = True; }
-                "--san"             => { san = True; }
-                "--tsan"            => { tsan = True; }
+                "--llvm-api"        => { llvm_api = True; }
+                "--llvm-old"        => { llvm_api = False; }
+                "-c"                => { obj = True; }
                 "--no-std"              => { no_std = True; }
                 "--dump-package-purity" => { dump_package_purity = True; }
                 _                   => { paths.push(args[i]); }
             }
         }
         i += 1;
+    }
+    if obj && output == None {
+        println("error: -c requires -o <output>");
+        return None;
+    }
+    if obj && !llvm_api {
+        println("error: -c requires the LLVM API backend, remove --llvm-old");
+        return None;
     }
     let std_path = if no_std {
         None
@@ -150,13 +167,14 @@ pub fn parse_cli_args() -> Option[Config] {
         dump_package_purity: dump_package_purity,
         output: output,
         optimize: optimize,
-        san: san,
-        tsan: tsan,
         no_std: no_std,
         std_path: std_path,
         target_info: target_info,
         test: test,
-        lsp: lsp))
+        lsp: lsp,
+        llvm_api: llvm_api,
+        obj: obj,
+        link_args: link_args))
 }
 
 }

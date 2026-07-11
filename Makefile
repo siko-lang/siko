@@ -8,7 +8,7 @@ SIKO_TARGET_OS ?= macos
 export SIKO_ROOT
 export SIKO_TARGET_OS
 
-BOOTSTRAP_SOURCE_LL = bootstrap/source_$(SIKO_TARGET_OS).ll
+BOOTSTRAP_SOURCE_OBJ = bootstrap/source_$(SIKO_TARGET_OS).o
 
 .PHONY: test
 
@@ -32,13 +32,13 @@ siko2.bin: siko.bin
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin
 
-base.bin: $(BOOTSTRAP_SOURCE_LL)
-	cat $(BOOTSTRAP_SOURCE_LL) | ./link.py -O -o base.bin
+base.bin: $(BOOTSTRAP_SOURCE_OBJ)
+	./link.py -o base.bin $(BOOTSTRAP_SOURCE_OBJ)
 
 .PHONY: refresh
 refresh:
-	SIKO_TARGET_OS=linux ./siko.bin build siko --pass llvm > bootstrap/source_linux.ll
-	SIKO_TARGET_OS=macos ./siko.bin build siko --pass llvm > bootstrap/source_macos.ll
+	SIKO_TARGET_OS=linux ./siko.bin build siko -O -c -o bootstrap/source_linux.o
+	SIKO_TARGET_OS=macos ./siko.bin build siko -O -c -o bootstrap/source_macos.o
 
 ssg.bin: siko.bin $(SSG_SK)
 	./siko.bin build ssg -o ssg.bin

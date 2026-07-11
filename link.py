@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""Link Siko-generated C or LLVM IR read from stdin using clang."""
+"""Link Siko-generated LLVM IR (stdin) or object files (arguments) using clang."""
 
 import os
 import subprocess
 import sys
 
 
-USAGE = "usage: ... | link.py [--llvm] -o <output> [-O] [--debug] [--san] [--tsan]"
+USAGE = "usage: ... | link.py [--llvm] -o <output> [-O] [--debug] [objects...]"
 
 TARGET_TRIPLETS = {
     "linux": "x86_64-pc-linux-gnu",
@@ -18,9 +18,8 @@ def parse_args(argv):
     output = ""
     optimize = False
     debug = False
-    san = False
-    tsan = False
     llvm = True
+    objects = []
 
     i = 0
     while i < len(argv):
@@ -32,12 +31,10 @@ def parse_args(argv):
             optimize = True
         elif arg == "--debug":
             debug = True
-        elif arg == "--san":
-            san = True
-        elif arg == "--tsan":
-            tsan = True
         elif arg == "--llvm":
             llvm = True
+        elif arg.endswith(".o"):
+            objects.append(arg)
         else:
             print(f"unknown argument: {arg}", file=sys.stderr)
             sys.exit(1)
@@ -47,11 +44,7 @@ def parse_args(argv):
         print(USAGE, file=sys.stderr)
         sys.exit(1)
 
-    if san and tsan:
-        print("error: --san and --tsan are mutually exclusive", file=sys.stderr)
-        sys.exit(1)
-
-    return output, optimize, debug, san, tsan, llvm
+    return output, optimize, debug, llvm, objects
 
 
 def get_gc_args(llvm):
@@ -71,8 +64,41 @@ def get_gc_args(llvm):
     return gc_flags.split()
 
 
-def build_clang_args(output, optimize, debug, san, tsan, llvm):
+def get_llvm_lib_args():
+    """Linker flags for libLLVM, used by programs that call the LLVM-C API
+    (such as the compiler itself). Returns no flags when llvm-config is not
+    available; programs that do not use the LLVM-C API still link fine."""
+    candidates = [os.environ.get("LLVM_CONFIG"), "llvm-config"]
+    if sys.platform == "darwin":
+        candidates.append("/opt/homebrew/opt/llvm/bin/llvm-config")
+    for candidate in candidates:
+        if not candidate:
+            continue
+        try:
+            result = subprocess.run(
+                [candidate, "--libdir"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                check=False,
+            )
+        except FileNotFoundError:
+            continue
+        if result.returncode == 0:
+            libdir = result.stdout.strip()
+            return [f"-L{libdir}", "-lLLVM", f"-Wl,-rpath,{libdir}"]
+    return []
+
+
+def build_clang_args(output, optimize, debug, llvm, objects):
     args = ["clang"]
+
+    if objects:
+        # Objects are already compiled; clang only acts as the linker driver.
+        args.extend(objects + ["-o", output])
+        args.extend(get_gc_args(True))
+        args.extend(get_llvm_lib_args())
+        return args
 
     if llvm:
         target_os = os.environ.get("SIKO_TARGET_OS", "")
@@ -107,25 +133,14 @@ def build_clang_args(output, optimize, debug, san, tsan, llvm):
     if debug:
         args.extend(["-g", "-fno-omit-frame-pointer"])
 
-    if san:
-        args.extend(
-            [
-                "-fsanitize=address,undefined",
-                "-fno-sanitize=leak",
-                "-fno-omit-frame-pointer",
-                "-g",
-            ]
-        )
-    elif tsan:
-        args.extend(["-fsanitize=thread", "-fno-omit-frame-pointer", "-g"])
-
     args.extend(get_gc_args(llvm))
+    args.extend(get_llvm_lib_args())
     return args
 
 
 def main(argv):
-    output, optimize, debug, san, tsan, llvm = parse_args(argv)
-    clang_args = build_clang_args(output, optimize, debug, san, tsan, llvm)
+    output, optimize, debug, llvm, objects = parse_args(argv)
+    clang_args = build_clang_args(output, optimize, debug, llvm, objects)
     os.execvp(clang_args[0], clang_args)
 
 

@@ -1,6 +1,7 @@
 module Siko.Driver.Passes {
 
 import Siko.Driver
+import Std.Fs.File as Fs
 import Siko.Driver.Util
 import Siko.Parser.Parser
 import Siko.Parser.Module
@@ -29,6 +30,7 @@ import Siko.LowerPointers
 import Siko.LowerEnums
 import Siko.LLVM.Lower as LLVMBackend
 import Siko.LLVM.Format as LLVMFormat
+import Siko.LLVM.Emit as LLVMEmit
 import Siko.ValueTypes as ValueTypes
 import Siko.Errors
 import Std.Sys.Process as Sys
@@ -189,9 +191,15 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 label: "Emitting LLVM...",
                 run: |driver| {
                     let llvm_module = LLVMBackend.lower(driver.program);
-                    driver.llvm_source = LLVMFormat.format(llvm_module);
+                    if get_config().llvm_api {
+                        // Kept as AST; the link pass emits an object file and
+                        // the dump callback prints IR through the API.
+                        driver.llvm_module = Some(llvm_module);
+                    } else {
+                        driver.llvm_source = LLVMFormat.format(llvm_module);
+                    }
                 },
-                dump: Some(|driver| println(driver.llvm_source)),
+                dump: Some(|driver| driver.dump_llvm()),
             ),
             Pass(
                 name: "link",
@@ -203,7 +211,19 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                         config.output
                     };
                     if let Some(out) = effective_output {
-                        driver.link_llvm(out, config.optimize, config.san, config.tsan);
+                        match driver.llvm_module {
+                            Some(llvm_module) => {
+                                if config.obj {
+                                    LLVMEmit.emit_object(llvm_module, out, config.optimize);
+                                    return;
+                                }
+                                let object_path = "${out}.o";
+                                LLVMEmit.emit_object(llvm_module, object_path, config.optimize);
+                                driver.link_object(object_path, out);
+                                Fs.remove_file(object_path).unwrap();
+                            }
+                            None => driver.link_llvm(out, config.optimize),
+                        }
                         if config.test {
                             if config.trace { println("Running tests..."); }
                             let result = Command.new(out).run();
@@ -213,7 +233,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                         }
                     }
                 },
-                dump: Some(|driver| println(driver.llvm_source)),
+                dump: Some(|driver| driver.dump_llvm()),
             ),
         ]
     };

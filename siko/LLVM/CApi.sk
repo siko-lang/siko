@@ -1,0 +1,1147 @@
+module Siko.LLVM.CApi {
+
+// Object-oriented wrapper over the LLVM-C builder API. The raw externs stay
+// private; users go through Context/Module/Builder/TypeRef/Value methods.
+//
+// Enum codes below mirror the LLVM-C enums in llvm-c/Core.h and must stay in
+// sync with the linked LLVM version.
+
+import Std.Libc.String
+import Std.Ptr
+import Std.Intrinsics
+
+// ─── Raw bindings ────────────────────────────────────────────────────────────
+
+@extern("C")
+@rename("LLVMContextCreate")
+fn llvm_context_create() -> void*
+
+@extern("C")
+@rename("LLVMContextDispose")
+fn llvm_context_dispose(ctx: void*) -> void
+
+@extern("C")
+@rename("LLVMModuleCreateWithNameInContext")
+fn llvm_module_create_with_name_in_context(name: *I8, ctx: void*) -> void*
+
+@extern("C")
+@rename("LLVMDisposeModule")
+fn llvm_dispose_module(m: void*) -> void
+
+@extern("C")
+@rename("LLVMSetTarget")
+fn llvm_set_target(m: void*, triple: *I8) -> void
+
+@extern("C")
+@rename("LLVMSetDataLayout")
+fn llvm_set_data_layout(m: void*, layout: *I8) -> void
+
+@extern("C")
+@rename("LLVMSetSourceFileName")
+fn llvm_set_source_file_name(m: void*, name: *U8, len: U64) -> void
+
+@extern("C")
+@rename("LLVMPrintModuleToString")
+fn llvm_print_module_to_string(m: void*) -> *U8
+
+@extern("C")
+@rename("LLVMDisposeMessage")
+fn llvm_dispose_message(msg: *U8) -> void
+
+@extern("C")
+@rename("LLVMVerifyModule")
+fn llvm_verify_module(m: void*, action: I32, out_message: **U8) -> I32
+
+@extern("C")
+@rename("LLVMVoidTypeInContext")
+fn llvm_void_type_in_context(ctx: void*) -> void*
+
+@extern("C")
+@rename("LLVMIntTypeInContext")
+fn llvm_int_type_in_context(ctx: void*, bits: U32) -> void*
+
+@extern("C")
+@rename("LLVMPointerTypeInContext")
+fn llvm_pointer_type_in_context(ctx: void*, address_space: U32) -> void*
+
+@extern("C")
+@rename("LLVMArrayType2")
+fn llvm_array_type2(elem: void*, count: U64) -> void*
+
+@extern("C")
+@rename("LLVMVectorType")
+fn llvm_vector_type(elem: void*, count: U32) -> void*
+
+@extern("C")
+@rename("LLVMStructTypeInContext")
+fn llvm_struct_type_in_context(ctx: void*, elems: *void*, count: U32, packed: I32) -> void*
+
+@extern("C")
+@rename("LLVMStructCreateNamed")
+fn llvm_struct_create_named(ctx: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMStructSetBody")
+fn llvm_struct_set_body(st: void*, elems: *void*, count: U32, packed: I32) -> void
+
+@extern("C")
+@rename("LLVMFunctionType")
+fn llvm_function_type(ret: void*, params: *void*, count: U32, varargs: I32) -> void*
+
+@extern("C")
+@rename("LLVMConstInt")
+fn llvm_const_int(ty: void*, value: U64, sign_extend: I32) -> void*
+
+@extern("C")
+@rename("LLVMConstIntOfString")
+fn llvm_const_int_of_string(ty: void*, text: *I8, radix: U8) -> void*
+
+@extern("C")
+@rename("LLVMConstNull")
+fn llvm_const_null(ty: void*) -> void*
+
+@extern("C")
+@rename("LLVMGetUndef")
+fn llvm_get_undef(ty: void*) -> void*
+
+@extern("C")
+@rename("LLVMGetPoison")
+fn llvm_get_poison(ty: void*) -> void*
+
+@extern("C")
+@rename("LLVMConstStringInContext")
+fn llvm_const_string_in_context(ctx: void*, text: *U8, len: U32, dont_null_terminate: I32) -> void*
+
+@extern("C")
+@rename("LLVMConstArray2")
+fn llvm_const_array2(elem_ty: void*, values: *void*, count: U64) -> void*
+
+@extern("C")
+@rename("LLVMConstVector")
+fn llvm_const_vector(values: *void*, count: U32) -> void*
+
+@extern("C")
+@rename("LLVMConstStructInContext")
+fn llvm_const_struct_in_context(ctx: void*, values: *void*, count: U32, packed: I32) -> void*
+
+@extern("C")
+@rename("LLVMConstNamedStruct")
+fn llvm_const_named_struct(st: void*, values: *void*, count: U32) -> void*
+
+@extern("C")
+@rename("LLVMAddGlobal")
+fn llvm_add_global(m: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMSetInitializer")
+fn llvm_set_initializer(g: void*, value: void*) -> void
+
+@extern("C")
+@rename("LLVMSetGlobalConstant")
+fn llvm_set_global_constant(g: void*, constant: I32) -> void
+
+@extern("C")
+@rename("LLVMSetLinkage")
+fn llvm_set_linkage(g: void*, linkage: I32) -> void
+
+@extern("C")
+@rename("LLVMSetUnnamedAddress")
+fn llvm_set_unnamed_address(g: void*, unnamed_addr: I32) -> void
+
+@extern("C")
+@rename("LLVMSetAlignment")
+fn llvm_set_alignment(v: void*, align: U32) -> void
+
+@extern("C")
+@rename("LLVMAddFunction")
+fn llvm_add_function(m: void*, name: *I8, fn_ty: void*) -> void*
+
+@extern("C")
+@rename("LLVMGetParam")
+fn llvm_get_param(f: void*, index: U32) -> void*
+
+@extern("C")
+@rename("LLVMSetValueName2")
+fn llvm_set_value_name2(v: void*, name: *U8, len: U64) -> void
+
+@extern("C")
+@rename("LLVMGetEnumAttributeKindForName")
+fn llvm_get_enum_attribute_kind_for_name(name: *U8, len: U64) -> U32
+
+@extern("C")
+@rename("LLVMCreateEnumAttribute")
+fn llvm_create_enum_attribute(ctx: void*, kind: U32, value: U64) -> void*
+
+@extern("C")
+@rename("LLVMCreateStringAttribute")
+fn llvm_create_string_attribute(ctx: void*, key: *U8, key_len: U32, value: *U8, value_len: U32) -> void*
+
+@extern("C")
+@rename("LLVMAddAttributeAtIndex")
+fn llvm_add_attribute_at_index(f: void*, index: U32, attr: void*) -> void
+
+@extern("C")
+@rename("LLVMAppendBasicBlockInContext")
+fn llvm_append_basic_block_in_context(ctx: void*, f: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMCreateBuilderInContext")
+fn llvm_create_builder_in_context(ctx: void*) -> void*
+
+@extern("C")
+@rename("LLVMDisposeBuilder")
+fn llvm_dispose_builder(b: void*) -> void
+
+@extern("C")
+@rename("LLVMPositionBuilderAtEnd")
+fn llvm_position_builder_at_end(b: void*, bb: void*) -> void
+
+@extern("C")
+@rename("LLVMBuildAlloca")
+fn llvm_build_alloca(b: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildLoad2")
+fn llvm_build_load2(b: void*, ty: void*, ptr: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildStore")
+fn llvm_build_store(b: void*, value: void*, ptr: void*) -> void*
+
+@extern("C")
+@rename("LLVMBuildAdd")
+fn llvm_build_add(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildSub")
+fn llvm_build_sub(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildMul")
+fn llvm_build_mul(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildUDiv")
+fn llvm_build_udiv(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildSDiv")
+fn llvm_build_sdiv(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildURem")
+fn llvm_build_urem(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildSRem")
+fn llvm_build_srem(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildAnd")
+fn llvm_build_and(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildOr")
+fn llvm_build_or(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildXor")
+fn llvm_build_xor(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildShl")
+fn llvm_build_shl(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildLShr")
+fn llvm_build_lshr(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildAShr")
+fn llvm_build_ashr(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildICmp")
+fn llvm_build_icmp(b: void*, pred: I32, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildGEP2")
+fn llvm_build_gep2(b: void*, ty: void*, ptr: void*, indices: *void*, count: U32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildInBoundsGEP2")
+fn llvm_build_in_bounds_gep2(b: void*, ty: void*, ptr: void*, indices: *void*, count: U32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildExtractValue")
+fn llvm_build_extract_value(b: void*, agg: void*, index: U32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildInsertValue")
+fn llvm_build_insert_value(b: void*, agg: void*, value: void*, index: U32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildTrunc")
+fn llvm_build_trunc(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildZExt")
+fn llvm_build_zext(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildSExt")
+fn llvm_build_sext(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildBitCast")
+fn llvm_build_bit_cast(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildPtrToInt")
+fn llvm_build_ptr_to_int(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildIntToPtr")
+fn llvm_build_int_to_ptr(b: void*, value: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildCall2")
+fn llvm_build_call2(b: void*, fn_ty: void*, callee: void*, args: *void*, count: U32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildPhi")
+fn llvm_build_phi(b: void*, ty: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMAddIncoming")
+fn llvm_add_incoming(phi: void*, values: *void*, blocks: *void*, count: U32) -> void
+
+@extern("C")
+@rename("LLVMBuildRet")
+fn llvm_build_ret(b: void*, value: void*) -> void*
+
+@extern("C")
+@rename("LLVMBuildRetVoid")
+fn llvm_build_ret_void(b: void*) -> void*
+
+@extern("C")
+@rename("LLVMBuildBr")
+fn llvm_build_br(b: void*, bb: void*) -> void*
+
+@extern("C")
+@rename("LLVMBuildCondBr")
+fn llvm_build_cond_br(b: void*, cond: void*, then_bb: void*, else_bb: void*) -> void*
+
+@extern("C")
+@rename("LLVMBuildSwitch")
+fn llvm_build_switch(b: void*, value: void*, else_bb: void*, num_cases: U32) -> void*
+
+@extern("C")
+@rename("LLVMAddCase")
+fn llvm_add_case(switch_instr: void*, on_value: void*, bb: void*) -> void
+
+@extern("C")
+@rename("LLVMBuildUnreachable")
+fn llvm_build_unreachable(b: void*) -> void*
+
+// The LLVMInitializeAll* helpers are static inline functions in the headers,
+// so the per-target entry points are bound instead.
+
+@extern("C")
+@rename("LLVMInitializeAArch64TargetInfo")
+fn llvm_initialize_aarch64_target_info() -> void
+
+@extern("C")
+@rename("LLVMInitializeAArch64Target")
+fn llvm_initialize_aarch64_target() -> void
+
+@extern("C")
+@rename("LLVMInitializeAArch64TargetMC")
+fn llvm_initialize_aarch64_target_mc() -> void
+
+@extern("C")
+@rename("LLVMInitializeAArch64AsmPrinter")
+fn llvm_initialize_aarch64_asm_printer() -> void
+
+@extern("C")
+@rename("LLVMInitializeX86TargetInfo")
+fn llvm_initialize_x86_target_info() -> void
+
+@extern("C")
+@rename("LLVMInitializeX86Target")
+fn llvm_initialize_x86_target() -> void
+
+@extern("C")
+@rename("LLVMInitializeX86TargetMC")
+fn llvm_initialize_x86_target_mc() -> void
+
+@extern("C")
+@rename("LLVMInitializeX86AsmPrinter")
+fn llvm_initialize_x86_asm_printer() -> void
+
+@extern("C")
+@rename("LLVMGetTargetFromTriple")
+fn llvm_get_target_from_triple(triple: *I8, target: *void*, error_message: **U8) -> I32
+
+@extern("C")
+@rename("LLVMCreateTargetMachine")
+fn llvm_create_target_machine(target: void*, triple: *I8, cpu: *I8, features: *I8, level: I32, reloc: I32, code_model: I32) -> void*
+
+@extern("C")
+@rename("LLVMDisposeTargetMachine")
+fn llvm_dispose_target_machine(tm: void*) -> void
+
+@extern("C")
+@rename("LLVMTargetMachineEmitToFile")
+fn llvm_target_machine_emit_to_file(tm: void*, m: void*, filename: *I8, codegen: I32, error_message: **U8) -> I32
+
+@extern("C")
+@rename("LLVMCreateTargetDataLayout")
+fn llvm_create_target_data_layout(tm: void*) -> void*
+
+@extern("C")
+@rename("LLVMSetModuleDataLayout")
+fn llvm_set_module_data_layout(m: void*, td: void*) -> void
+
+@extern("C")
+@rename("LLVMDisposeTargetData")
+fn llvm_dispose_target_data(td: void*) -> void
+
+@extern("C")
+@rename("LLVMCreatePassBuilderOptions")
+fn llvm_create_pass_builder_options() -> void*
+
+@extern("C")
+@rename("LLVMDisposePassBuilderOptions")
+fn llvm_dispose_pass_builder_options(options: void*) -> void
+
+@extern("C")
+@rename("LLVMRunPasses")
+fn llvm_run_passes(m: void*, passes: *I8, tm: void*, options: void*) -> void*
+
+@extern("C")
+@rename("LLVMGetErrorMessage")
+fn llvm_get_error_message(err: void*) -> *U8
+
+@extern("C")
+@rename("LLVMDisposeErrorMessage")
+fn llvm_dispose_error_message(msg: *U8) -> void
+
+// ─── Enums ───────────────────────────────────────────────────────────────────
+
+pub enum Linkage {
+    External,
+    Internal,
+    Private,
+    Appending,
+    LinkOnceODR,
+    WeakODR,
+
+    // Codes from LLVMLinkage in llvm-c/Core.h.
+    fn code(l: Linkage) -> I32 {
+        match l {
+            Linkage.External => 0.as_i32(),
+            Linkage.LinkOnceODR => 3.as_i32(),
+            Linkage.WeakODR => 6.as_i32(),
+            Linkage.Appending => 7.as_i32(),
+            Linkage.Internal => 8.as_i32(),
+            Linkage.Private => 9.as_i32(),
+        }
+    }
+}
+
+pub enum UnnamedAddr {
+    NoUnnamedAddr,
+    LocalUnnamedAddr,
+    GlobalUnnamedAddr,
+
+    // Codes from LLVMUnnamedAddr in llvm-c/Core.h.
+    fn code(ua: UnnamedAddr) -> I32 {
+        match ua {
+            UnnamedAddr.NoUnnamedAddr => 0.as_i32(),
+            UnnamedAddr.LocalUnnamedAddr => 1.as_i32(),
+            UnnamedAddr.GlobalUnnamedAddr => 2.as_i32(),
+        }
+    }
+}
+
+pub enum IntPredicate {
+    Eq,
+    Ne,
+    Ugt,
+    Uge,
+    Ult,
+    Ule,
+    Sgt,
+    Sge,
+    Slt,
+    Sle,
+
+    // Codes from LLVMIntPredicate in llvm-c/Core.h (LLVMIntEQ = 32, ...).
+    fn code(p: IntPredicate) -> I32 {
+        match p {
+            IntPredicate.Eq => 32.as_i32(),
+            IntPredicate.Ne => 33.as_i32(),
+            IntPredicate.Ugt => 34.as_i32(),
+            IntPredicate.Uge => 35.as_i32(),
+            IntPredicate.Ult => 36.as_i32(),
+            IntPredicate.Ule => 37.as_i32(),
+            IntPredicate.Sgt => 38.as_i32(),
+            IntPredicate.Sge => 39.as_i32(),
+            IntPredicate.Slt => 40.as_i32(),
+            IntPredicate.Sle => 41.as_i32(),
+        }
+    }
+}
+
+pub enum BinaryOp {
+    Add,
+    Sub,
+    Mul,
+    UDiv,
+    SDiv,
+    URem,
+    SRem,
+    And,
+    Or,
+    Xor,
+    Shl,
+    LShr,
+    AShr,
+}
+
+pub enum CastOp {
+    Trunc,
+    ZExt,
+    SExt,
+    BitCast,
+    PtrToInt,
+    IntToPtr,
+}
+
+// ─── Argument marshalling ────────────────────────────────────────────────────
+
+@unsafe
+fn null_handles() -> *void* {
+    transmute(0)
+}
+
+@unsafe
+fn handle_ptr(handles: Vec[void*]) -> *void* {
+    if handles.is_empty() {
+        null_handles()
+    } else {
+        handles.as_ptr()
+    }
+}
+
+@safe
+fn type_handles(types: Vec[TypeRef]) -> Vec[void*] {
+    let handles: Vec[void*] = Vec.new();
+    for ty in types {
+        handles.push(ty.handle);
+    }
+    handles
+}
+
+@safe
+fn value_handles(values: Vec[Value]) -> Vec[void*] {
+    let handles: Vec[void*] = Vec.new();
+    for v in values {
+        handles.push(v.handle);
+    }
+    handles
+}
+
+@safe
+fn block_handles(blocks: Vec[BasicBlock]) -> Vec[void*] {
+    let handles: Vec[void*] = Vec.new();
+    for bb in blocks {
+        handles.push(bb.handle);
+    }
+    handles
+}
+
+fn bool_flag(b: Bool) -> I32 {
+    if b { 1.as_i32() } else { 0.as_i32() }
+}
+
+// ─── Wrapper objects ─────────────────────────────────────────────────────────
+
+@value_type
+pub struct TypeRef {
+    handle: void*,
+
+    @safe
+    pub fn array_type(elem: TypeRef, count: Int) -> TypeRef {
+        TypeRef(llvm_array_type2(elem.handle, count.as_u64()))
+    }
+
+    @safe
+    pub fn vector_type(elem: TypeRef, count: Int) -> TypeRef {
+        TypeRef(llvm_vector_type(elem.handle, count.as_u32()))
+    }
+
+    @safe
+    pub fn function_type(ret: TypeRef, params: Vec[TypeRef], varargs: Bool) -> TypeRef {
+        let handles = type_handles(params);
+        TypeRef(llvm_function_type(ret.handle, handle_ptr(handles), handles.len().as_u32(), bool_flag(varargs)))
+    }
+
+    @safe
+    pub fn set_body(st: TypeRef, fields: Vec[TypeRef], packed: Bool) {
+        let handles = type_handles(fields);
+        llvm_struct_set_body(st.handle, handle_ptr(handles), handles.len().as_u32(), bool_flag(packed));
+    }
+
+    @safe
+    pub fn const_int(ty: TypeRef, value: U64, sign_extend: Bool) -> Value {
+        Value(llvm_const_int(ty.handle, value, bool_flag(sign_extend)))
+    }
+
+    // Parses decimal text, including a leading minus sign.
+    @safe
+    pub fn const_int_text(ty: TypeRef, text: String) -> Value {
+        let c_text = CString.from_string(text);
+        Value(llvm_const_int_of_string(ty.handle, c_text.as_ptr(), 10.as_u8()))
+    }
+
+    // Also produces zeroinitializer for aggregate types.
+    @safe
+    pub fn const_null(ty: TypeRef) -> Value {
+        Value(llvm_const_null(ty.handle))
+    }
+
+    @safe
+    pub fn undef(ty: TypeRef) -> Value {
+        Value(llvm_get_undef(ty.handle))
+    }
+
+    @safe
+    pub fn poison(ty: TypeRef) -> Value {
+        Value(llvm_get_poison(ty.handle))
+    }
+
+    @safe
+    pub fn const_array(elem_ty: TypeRef, values: Vec[Value]) -> Value {
+        let handles = value_handles(values);
+        Value(llvm_const_array2(elem_ty.handle, handle_ptr(handles), handles.len().as_u64()))
+    }
+
+    @safe
+    pub fn const_named_struct(st: TypeRef, values: Vec[Value]) -> Value {
+        let handles = value_handles(values);
+        Value(llvm_const_named_struct(st.handle, handle_ptr(handles), handles.len().as_u32()))
+    }
+}
+
+@value_type
+pub struct Value {
+    handle: void*,
+
+    @safe
+    pub fn set_initializer(g: Value, value: Value) {
+        llvm_set_initializer(g.handle, value.handle);
+    }
+
+    @safe
+    pub fn set_global_constant(g: Value, constant: Bool) {
+        llvm_set_global_constant(g.handle, bool_flag(constant));
+    }
+
+    @safe
+    pub fn set_linkage(g: Value, linkage: Linkage) {
+        llvm_set_linkage(g.handle, linkage.code());
+    }
+
+    @safe
+    pub fn set_unnamed_addr(g: Value, ua: UnnamedAddr) {
+        llvm_set_unnamed_address(g.handle, ua.code());
+    }
+
+    @safe
+    pub fn set_alignment(v: Value, align: Int) {
+        llvm_set_alignment(v.handle, align.as_u32());
+    }
+
+    @safe
+    pub fn set_name(v: Value, name: String) {
+        llvm_set_value_name2(v.handle, name.as_ptr(), name.len().as_u64());
+    }
+
+    @safe
+    pub fn add_fn_attribute(f: Value, attr: Attribute) {
+        // LLVMAttributeFunctionIndex is -1; the C API takes it as unsigned.
+        llvm_add_attribute_at_index(f.handle, 4294967295.as_u32(), attr.handle);
+    }
+
+    @safe
+    pub fn param(f: Value, index: Int) -> Value {
+        Value(llvm_get_param(f.handle, index.as_u32()))
+    }
+
+    @safe
+    pub fn add_incoming(phi: Value, values: Vec[Value], blocks: Vec[BasicBlock]) {
+        let value_hs = value_handles(values);
+        let block_hs = block_handles(blocks);
+        llvm_add_incoming(phi.handle, handle_ptr(value_hs), handle_ptr(block_hs), value_hs.len().as_u32());
+    }
+
+    @safe
+    pub fn add_case(switch_instr: Value, on_value: Value, bb: BasicBlock) {
+        llvm_add_case(switch_instr.handle, on_value.handle, bb.handle);
+    }
+}
+
+@value_type
+pub struct BasicBlock {
+    handle: void*,
+}
+
+@value_type
+pub struct Attribute {
+    handle: void*,
+}
+
+@value_type
+pub struct Context {
+    handle: void*,
+
+    @safe
+    pub fn new() -> Context {
+        Context(llvm_context_create())
+    }
+
+    @safe
+    pub fn create_module(ctx: Context, name: String) -> Module {
+        let c_name = CString.from_string(name);
+        Module(llvm_module_create_with_name_in_context(c_name.as_ptr(), ctx.handle))
+    }
+
+    @safe
+    pub fn void_type(ctx: Context) -> TypeRef {
+        TypeRef(llvm_void_type_in_context(ctx.handle))
+    }
+
+    @safe
+    pub fn int_type(ctx: Context, bits: Int) -> TypeRef {
+        TypeRef(llvm_int_type_in_context(ctx.handle, bits.as_u32()))
+    }
+
+    @safe
+    pub fn ptr_type(ctx: Context) -> TypeRef {
+        TypeRef(llvm_pointer_type_in_context(ctx.handle, 0.as_u32()))
+    }
+
+    @safe
+    pub fn struct_type(ctx: Context, fields: Vec[TypeRef], packed: Bool) -> TypeRef {
+        let handles = type_handles(fields);
+        TypeRef(llvm_struct_type_in_context(ctx.handle, handle_ptr(handles), handles.len().as_u32(), bool_flag(packed)))
+    }
+
+    @safe
+    pub fn named_struct(ctx: Context, name: String) -> TypeRef {
+        let c_name = CString.from_string(name);
+        TypeRef(llvm_struct_create_named(ctx.handle, c_name.as_ptr()))
+    }
+
+    // The bytes are used verbatim (embedded NULs allowed), no NUL is appended.
+    @safe
+    pub fn const_string(ctx: Context, s: String) -> Value {
+        Value(llvm_const_string_in_context(ctx.handle, s.as_ptr(), s.len().as_u32(), 1.as_i32()))
+    }
+
+    @safe
+    pub fn const_struct(ctx: Context, values: Vec[Value], packed: Bool) -> Value {
+        let handles = value_handles(values);
+        Value(llvm_const_struct_in_context(ctx.handle, handle_ptr(handles), handles.len().as_u32(), bool_flag(packed)))
+    }
+
+    @safe
+    pub fn enum_attr(ctx: Context, name: String) -> Attribute {
+        let kind = llvm_get_enum_attribute_kind_for_name(name.as_ptr(), name.len().as_u64());
+        if kind == 0.as_u32() {
+            panic("llvm capi: unknown enum attribute: ${name}");
+        }
+        Attribute(llvm_create_enum_attribute(ctx.handle, kind, 0.as_u64()))
+    }
+
+    @safe
+    pub fn string_attr(ctx: Context, key: String, value: String) -> Attribute {
+        Attribute(llvm_create_string_attribute(
+            ctx.handle,
+            key.as_ptr(),
+            key.len().as_u32(),
+            value.as_ptr(),
+            value.len().as_u32(),
+        ))
+    }
+
+    @safe
+    pub fn append_block(ctx: Context, f: Value, name: String) -> BasicBlock {
+        let c_name = CString.from_string(name);
+        BasicBlock(llvm_append_basic_block_in_context(ctx.handle, f.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn create_builder(ctx: Context) -> Builder {
+        Builder(llvm_create_builder_in_context(ctx.handle))
+    }
+
+    // All modules created in this context must be disposed first.
+    @safe
+    pub fn dispose(ctx: Context) {
+        llvm_context_dispose(ctx.handle);
+    }
+}
+
+@value_type
+pub struct Module {
+    handle: void*,
+
+    @safe
+    pub fn set_target_triple(m: Module, triple: String) {
+        let c_triple = CString.from_string(triple);
+        llvm_set_target(m.handle, c_triple.as_ptr());
+    }
+
+    @safe
+    pub fn set_data_layout(m: Module, layout: String) {
+        let c_layout = CString.from_string(layout);
+        llvm_set_data_layout(m.handle, c_layout.as_ptr());
+    }
+
+    @safe
+    pub fn set_source_file_name(m: Module, name: String) {
+        llvm_set_source_file_name(m.handle, name.as_ptr(), name.len().as_u64());
+    }
+
+    @safe
+    pub fn add_global(m: Module, ty: TypeRef, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_add_global(m.handle, ty.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn add_function(m: Module, name: String, fn_ty: TypeRef) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_add_function(m.handle, c_name.as_ptr(), fn_ty.handle))
+    }
+
+    @safe
+    pub fn print_to_string(m: Module) -> String {
+        let msg = llvm_print_module_to_string(m.handle);
+        let text = from_cstring(msg);
+        llvm_dispose_message(msg);
+        text
+    }
+
+    // Returns the verifier error message, or None if the module is valid.
+    @safe
+    pub fn verify(m: Module) -> Option[String] {
+        let msg = get_null_ptr();
+        // 2 = LLVMReturnStatusAction.
+        let failed = llvm_verify_module(m.handle, 2.as_i32(), &msg);
+        if failed == 0.as_i32() {
+            if !is_null_ptr(msg) {
+                llvm_dispose_message(msg);
+            }
+            return None;
+        }
+        let text = from_cstring(msg);
+        llvm_dispose_message(msg);
+        Some(text)
+    }
+
+    // Runs a new-pass-manager pipeline described by a textual pipeline string,
+    // e.g. "default<O3>". Panics if the pipeline fails.
+    @safe
+    pub fn run_passes(m: Module, passes: String, tm: TargetMachine) {
+        let c_passes = CString.from_string(passes.clone());
+        let options = llvm_create_pass_builder_options();
+        let err = llvm_run_passes(m.handle, c_passes.as_ptr(), tm.handle, options);
+        llvm_dispose_pass_builder_options(options);
+        if !is_null_voidptr(err) {
+            let msg = llvm_get_error_message(err);
+            let text = from_cstring(msg);
+            llvm_dispose_error_message(msg);
+            panic("llvm capi: pass pipeline ${passes} failed: ${text}");
+        }
+    }
+
+    @safe
+    pub fn dispose(m: Module) {
+        llvm_dispose_module(m.handle);
+    }
+}
+
+// Registers the codegen backends for the supported targets (AArch64 and X86).
+// Must be called before Target.from_triple.
+@safe
+pub fn initialize_targets() {
+    llvm_initialize_aarch64_target_info();
+    llvm_initialize_aarch64_target();
+    llvm_initialize_aarch64_target_mc();
+    llvm_initialize_aarch64_asm_printer();
+    llvm_initialize_x86_target_info();
+    llvm_initialize_x86_target();
+    llvm_initialize_x86_target_mc();
+    llvm_initialize_x86_asm_printer();
+}
+
+@value_type
+pub struct Target {
+    handle: void*,
+
+    @safe
+    pub fn from_triple(triple: String) -> Target {
+        let c_triple = CString.from_string(triple.clone());
+        let target = get_null_voidptr();
+        let msg = get_null_ptr();
+        let failed = llvm_get_target_from_triple(c_triple.as_ptr(), &target, &msg);
+        if failed != 0.as_i32() {
+            let text = from_cstring(msg);
+            llvm_dispose_message(msg);
+            panic("llvm capi: no target for triple ${triple}: ${text}");
+        }
+        Target(target)
+    }
+
+    @safe
+    pub fn create_machine(t: Target, triple: String, optimize: Bool) -> TargetMachine {
+        let c_triple = CString.from_string(triple);
+        let c_cpu = CString.from_string("");
+        let c_features = CString.from_string("");
+        // Codes from llvm-c/TargetMachine.h: codegen level None = 0,
+        // Aggressive = 3; reloc PIC = 2; code model default = 0.
+        let level = if optimize { 3.as_i32() } else { 0.as_i32() };
+        TargetMachine(llvm_create_target_machine(t.handle, c_triple.as_ptr(), c_cpu.as_ptr(), c_features.as_ptr(), level, 2.as_i32(), 0.as_i32()))
+    }
+}
+
+@value_type
+pub struct TargetMachine {
+    handle: void*,
+
+    // Stamps the target's data layout onto the module. Without it the
+    // optimization pipeline would run with a default layout and miscompile.
+    @safe
+    pub fn apply_data_layout(tm: TargetMachine, m: Module) {
+        let td = llvm_create_target_data_layout(tm.handle);
+        llvm_set_module_data_layout(m.handle, td);
+        llvm_dispose_target_data(td);
+    }
+
+    @safe
+    pub fn emit_object(tm: TargetMachine, m: Module, path: String) {
+        let c_path = CString.from_string(path.clone());
+        let msg = get_null_ptr();
+        // 1 = LLVMObjectFile.
+        let failed = llvm_target_machine_emit_to_file(tm.handle, m.handle, c_path.as_ptr(), 1.as_i32(), &msg);
+        if failed != 0.as_i32() {
+            let text = from_cstring(msg);
+            llvm_dispose_message(msg);
+            panic("llvm capi: emitting object file ${path} failed: ${text}");
+        }
+    }
+
+    @safe
+    pub fn dispose(tm: TargetMachine) {
+        llvm_dispose_target_machine(tm.handle);
+    }
+}
+
+@value_type
+pub struct Builder {
+    handle: void*,
+
+    @safe
+    pub fn position_at_end(b: Builder, bb: BasicBlock) {
+        llvm_position_builder_at_end(b.handle, bb.handle);
+    }
+
+    @safe
+    pub fn dispose(b: Builder) {
+        llvm_dispose_builder(b.handle);
+    }
+
+    @safe
+    pub fn build_alloca(b: Builder, ty: TypeRef, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_alloca(b.handle, ty.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_load(b: Builder, ty: TypeRef, ptr: Value, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_load2(b.handle, ty.handle, ptr.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_store(b: Builder, value: Value, ptr: Value) -> Value {
+        Value(llvm_build_store(b.handle, value.handle, ptr.handle))
+    }
+
+    @safe
+    pub fn build_binary(b: Builder, op: BinaryOp, lhs: Value, rhs: Value, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        let handle = match op {
+            BinaryOp.Add => llvm_build_add(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Sub => llvm_build_sub(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Mul => llvm_build_mul(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.UDiv => llvm_build_udiv(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.SDiv => llvm_build_sdiv(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.URem => llvm_build_urem(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.SRem => llvm_build_srem(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.And => llvm_build_and(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Or => llvm_build_or(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Xor => llvm_build_xor(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Shl => llvm_build_shl(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.LShr => llvm_build_lshr(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.AShr => llvm_build_ashr(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+        };
+        Value(handle)
+    }
+
+    @safe
+    pub fn build_icmp(b: Builder, pred: IntPredicate, lhs: Value, rhs: Value, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_icmp(b.handle, pred.code(), lhs.handle, rhs.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_gep(b: Builder, ty: TypeRef, ptr: Value, indices: Vec[Value], inbounds: Bool, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        let handles = value_handles(indices);
+        let handle = if inbounds {
+            llvm_build_in_bounds_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr())
+        } else {
+            llvm_build_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr())
+        };
+        Value(handle)
+    }
+
+    @safe
+    pub fn build_extract_value(b: Builder, agg: Value, index: Int, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_extract_value(b.handle, agg.handle, index.as_u32(), c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_insert_value(b: Builder, agg: Value, value: Value, index: Int, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_insert_value(b.handle, agg.handle, value.handle, index.as_u32(), c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_cast(b: Builder, op: CastOp, value: Value, ty: TypeRef, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        let handle = match op {
+            CastOp.Trunc => llvm_build_trunc(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.ZExt => llvm_build_zext(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.SExt => llvm_build_sext(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.BitCast => llvm_build_bit_cast(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.PtrToInt => llvm_build_ptr_to_int(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.IntToPtr => llvm_build_int_to_ptr(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+        };
+        Value(handle)
+    }
+
+    @safe
+    pub fn build_call(b: Builder, fn_ty: TypeRef, callee: Value, args: Vec[Value], name: String) -> Value {
+        let c_name = CString.from_string(name);
+        let handles = value_handles(args);
+        Value(llvm_build_call2(b.handle, fn_ty.handle, callee.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_phi(b: Builder, ty: TypeRef, name: String) -> Value {
+        let c_name = CString.from_string(name);
+        Value(llvm_build_phi(b.handle, ty.handle, c_name.as_ptr()))
+    }
+
+    @safe
+    pub fn build_ret(b: Builder, value: Value) {
+        llvm_build_ret(b.handle, value.handle);
+    }
+
+    @safe
+    pub fn build_ret_void(b: Builder) {
+        llvm_build_ret_void(b.handle);
+    }
+
+    @safe
+    pub fn build_br(b: Builder, bb: BasicBlock) {
+        llvm_build_br(b.handle, bb.handle);
+    }
+
+    @safe
+    pub fn build_cond_br(b: Builder, cond: Value, then_bb: BasicBlock, else_bb: BasicBlock) {
+        llvm_build_cond_br(b.handle, cond.handle, then_bb.handle, else_bb.handle);
+    }
+
+    @safe
+    pub fn build_switch(b: Builder, value: Value, else_bb: BasicBlock, num_cases: Int) -> Value {
+        Value(llvm_build_switch(b.handle, value.handle, else_bb.handle, num_cases.as_u32()))
+    }
+
+    @safe
+    pub fn build_unreachable(b: Builder) {
+        llvm_build_unreachable(b.handle);
+    }
+}
+
+
+// Handles are plain pointers into LLVM-owned memory; cloning copies the
+// handle, not the underlying object.
+
+instance Clone[TypeRef] {
+    @safe
+    fn clone(a: TypeRef) -> TypeRef {
+        TypeRef(a.handle)
+    }
+}
+
+instance Clone[Value] {
+    @safe
+    fn clone(a: Value) -> Value {
+        Value(a.handle)
+    }
+}
+
+instance Clone[BasicBlock] {
+    @safe
+    fn clone(a: BasicBlock) -> BasicBlock {
+        BasicBlock(a.handle)
+    }
+}
+
+instance Clone[Attribute] {
+    @safe
+    fn clone(a: Attribute) -> Attribute {
+        Attribute(a.handle)
+    }
+}
+
+instance Clone[Context] {
+    @safe
+    fn clone(a: Context) -> Context {
+        Context(a.handle)
+    }
+}
+
+instance Clone[Module] {
+    @safe
+    fn clone(a: Module) -> Module {
+        Module(a.handle)
+    }
+}
+
+instance Clone[Builder] {
+    @safe
+    fn clone(a: Builder) -> Builder {
+        Builder(a.handle)
+    }
+}
+
+}
