@@ -2,7 +2,6 @@ module Siko.LLVM.Util {
 
 import Siko.AST.Expr
 import Siko.AST.QualifiedName
-import Siko.Interner as I
 
 pub fn mangle(name: String) -> String {
     let s = name.trim_start_matches("$");
@@ -49,13 +48,6 @@ pub fn var_name(n: VariableName) -> String {
 
 pub fn fn_name(qualified_name: QualifiedName) -> String {
     mangle(qualified_name.hashed())
-}
-
-// Struct field names are prefixed so a Siko field can never collide with a
-// C keyword or with the generated code's own locals/parameters (a field
-// literally named `result` used to break the constructor bodies).
-pub fn struct_field_name(name: I.String) -> String {
-    "f_${I.resolve(name)}"
 }
 
 }

@@ -29,7 +29,6 @@ import Siko.LowerBasicBlock
 import Siko.LowerPointers
 import Siko.LowerEnums
 import Siko.LLVM.Lower as LLVMBackend
-import Siko.LLVM.Format as LLVMFormat
 import Siko.LLVM.Emit as LLVMEmit
 import Siko.ValueTypes as ValueTypes
 import Siko.Errors
@@ -191,13 +190,9 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 label: "Emitting LLVM...",
                 run: |driver| {
                     let llvm_module = LLVMBackend.lower(driver.program);
-                    if get_config().llvm_api {
-                        // Kept as AST; the link pass emits an object file and
-                        // the dump callback prints IR through the API.
-                        driver.llvm_module = Some(llvm_module);
-                    } else {
-                        driver.llvm_source = LLVMFormat.format(llvm_module);
-                    }
+                    // Kept as AST; the link pass emits an object file and
+                    // the dump callback prints IR through the API.
+                    driver.llvm_module = Some(llvm_module);
                 },
                 dump: Some(|driver| driver.dump_llvm()),
             ),
@@ -222,7 +217,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                                 driver.link_object(object_path, out);
                                 Fs.remove_file(object_path).unwrap();
                             }
-                            None => driver.link_llvm(out, config.optimize),
+                            None => panic("No llvm module found during linking"),
                         }
                         if config.test {
                             if config.trace { println("Running tests..."); }

@@ -65,7 +65,6 @@ pub fn parse_cli_args() -> Option[Config] {
     let optimize = False;
     let no_std = False;
     let dump_package_purity = False;
-    let llvm_api = True;
     let obj = False;
     let link_args = Vec.new();
     let i = 2;
@@ -112,8 +111,6 @@ pub fn parse_cli_args() -> Option[Config] {
                 "--trace"           => { trace = True; }
                 "--no-check-safety" => { check_safety = False; }
                 "-O"                => { optimize = True; }
-                "--llvm-api"        => { llvm_api = True; }
-                "--llvm-old"        => { llvm_api = False; }
                 "-c"                => { obj = True; }
                 "--no-std"              => { no_std = True; }
                 "--dump-package-purity" => { dump_package_purity = True; }
@@ -124,10 +121,6 @@ pub fn parse_cli_args() -> Option[Config] {
     }
     if obj && output == None {
         println("error: -c requires -o <output>");
-        return None;
-    }
-    if obj && !llvm_api {
-        println("error: -c requires the LLVM API backend, remove --llvm-old");
         return None;
     }
     let std_path = if no_std {
@@ -172,7 +165,6 @@ pub fn parse_cli_args() -> Option[Config] {
         target_info: target_info,
         test: test,
         lsp: lsp,
-        llvm_api: llvm_api,
         obj: obj,
         link_args: link_args))
 }

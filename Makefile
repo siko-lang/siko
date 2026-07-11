@@ -32,7 +32,7 @@ siko2.bin: siko.bin
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin
 
-base.bin: $(BOOTSTRAP_SOURCE_OBJ)
+base.bin: $(BOOTSTRAP_SOURCE_OBJ) link.py
 	./link.py -o base.bin $(BOOTSTRAP_SOURCE_OBJ)
 
 .PHONY: refresh

@@ -116,42 +116,6 @@ pub struct Driver {
         args
     }
 
-    // Compiles and links textual LLVM IR by piping it through clang.
-    pub fn link_llvm(d: Driver, output: String, optimize: Bool) {
-        let args: Vec[String] = Vec.new();
-        args.push("-target");
-        args.push(get_config().target_info.target_triplet);
-        args.push("-x");
-        args.push("ir");
-        args.push("-");
-        if optimize {
-            args.push("-O3");
-        }
-        for arg in common_link_args(output) {
-            args.push(arg);
-        }
-        let clang = Command.new("clang").with_path().with_stdin_pipe();
-        for arg in args {
-            clang = clang.arg(arg);
-        }
-        let child = clang.spawn();
-        match child.write_stdin(d.llvm_source) {
-            Err(e) => {
-                println("error: failed to write to clang stdin: ${e}");
-                exit_with_error();
-            }
-            Ok(_) => {}
-        }
-        child.close_stdin();
-        let result = child.wait();
-        if !result.success() {
-            println("clang failed");
-            exit_with_error();
-        }
-    }
-
-    // Links an already-compiled object file; clang only acts as the linker
-    // driver here (startup objects, default libraries, search paths).
     pub fn link_object(d: Driver, object_path: String, output: String) {
         let clang = Command.new("clang").with_path().arg(object_path);
         for arg in common_link_args(output) {
@@ -164,12 +128,10 @@ pub struct Driver {
         }
     }
 
-    // Prints the compiled program as textual LLVM IR, whichever backend
-    // produced it.
     pub fn dump_llvm(d: Driver) {
         match d.llvm_module {
             Some(llvm_module) => println(Emit.emit(llvm_module)),
-            None => println(d.llvm_source),
+            None => panic("No llvm module in driver"),
         }
     }
 
