@@ -1081,10 +1081,10 @@ fn peel_ptrs(ty: TypeDef) -> TypeDef {
 pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
     let sig_types = alias_sig_types(func);
     let shape_groups: Map[TypeDef, Vec[TypeDef]] = Map.new();
-    for t in sig_types {
+    for t in sig_types.iter() {
         let key = erase_vars(t.clone());
         let group = shape_groups.get(key).unwrap_or(Vec.new());
-        group.push(t);
+        group.push(t.clone());
         shape_groups.insert(key, group);
     }
     for (_, group) in shape_groups {
@@ -1094,6 +1094,22 @@ pub fn apply_closure_alias(ctx: FlowCtx, func: FunctionDef) {
         let first = ctx.nodes(signature_ty_vars(group[0].clone()));
         for i in 1..group.len() {
             ctx.unify(first.clone(), ctx.nodes(signature_ty_vars(group[i].clone())));
+        }
+    }
+    // A callback's parameters also alias same-shaped sibling signature
+    // types: in f(cb: fn*(*T) -> void*, arg: *T) the C side calls cb with
+    // arg, a flow no Siko body expresses (and one a wrapper body cannot
+    // carry once it launders the values through void*).
+    for t in sig_types.iter() {
+        if let TypeDef.FnPtr(param_tys, _) = t.clone() {
+            for p in param_tys.iter() {
+                let key = erase_vars(p.clone());
+                for s in sig_types.iter() {
+                    if erase_vars(s.clone()) == key {
+                        ctx.unify(ctx.nodes(signature_ty_vars(p.clone())), ctx.nodes(signature_ty_vars(s.clone())));
+                    }
+                }
+            }
         }
     }
 }
