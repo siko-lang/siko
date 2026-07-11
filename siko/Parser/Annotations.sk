@@ -2,7 +2,6 @@ module Siko.Parser.Annotations {
 
 import Siko.AST.Annotations
 import Siko.AST.Expr
-import Siko.AST.Function
 import Siko.AST.Name
 import Siko.Interner as I
 import Siko.Parser.Parser
@@ -109,44 +108,26 @@ instance AnnotationParser[Parser] {
                         }
                         "extern" => {
                             parser.advance();
-                            if parser.peek() == TokenKind.LParen {
-                                parser.advance();
-                                match parser.peek() {
-                                    TokenKind.StringLiteral(abi) if I.resolve(abi) == "C" => {
-                                        parser.advance();
-                                        let (header, alt_name) = if parser.peek() == TokenKind.Comma {
-                                            parser.advance();
-                                            let h = match parser.peek() {
-                                                TokenKind.StringLiteral(h) => {
-                                                    parser.advance();
-                                                    Some(h)
-                                                }
-                                                _ => return Err(ParseError.new("expected header string after @extern(\"C\",", parser.cur_pos()))
-                                            };
-                                            let n = if parser.peek() == TokenKind.Comma {
-                                                parser.advance();
-                                                match parser.peek() {
-                                                    TokenKind.StringLiteral(n) => {
-                                                        parser.advance();
-                                                        Some(n)
-                                                    }
-                                                    _ => return Err(ParseError.new("expected alt name string after header in @extern(\"C\",...,", parser.cur_pos()))
-                                                }
-                                            } else {
-                                                None
-                                            };
-                                            (h, n)
-                                        } else {
-                                            (None, None)
-                                        };
-                                        parser.expect(TokenKind.RParen)?;
-                                        let extern_cfg = ExternConfig(header, alt_name);
-                                        annotations.push(Annotation.Extern(ExternAnnotation(ExternMode.C(extern_cfg))));
-                                    }
-                                    _ => return Err(ParseError.new("expected \"C\" in @extern(...)", parser.cur_pos()))
+                            parser.expect(TokenKind.LParen)?;
+                            match parser.peek() {
+                                TokenKind.StringLiteral(abi) if I.resolve(abi) == "C" => {
+                                    parser.advance();
+                                    parser.expect(TokenKind.RParen)?;
+                                    annotations.push(Annotation.ExternC);
                                 }
-                            } else {
-                                annotations.push(Annotation.Extern(ExternAnnotation(ExternMode.Builtin)));
+                                _ => return Err(ParseError.new("expected \"C\" in @extern(...)", parser.cur_pos()))
+                            }
+                        }
+                        "rename" => {
+                            parser.advance();
+                            parser.expect(TokenKind.LParen)?;
+                            match parser.peek() {
+                                TokenKind.StringLiteral(name) => {
+                                    parser.advance();
+                                    parser.expect(TokenKind.RParen)?;
+                                    annotations.push(Annotation.Rename(name));
+                                }
+                                _ => return Err(ParseError.new("expected name string in @rename(...)", parser.cur_pos()))
                             }
                         }
                         _ => {

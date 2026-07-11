@@ -12,23 +12,6 @@ import Siko.Interner as I
 import Siko.Package.Collector as PC
 
 @derive(Clone, PartialEq, Std.Ops.Eq)
-pub struct ExternConfig {
-    pub header: Option[I.String],
-    pub name: Option[I.String],
-}
-
-@derive(Clone, PartialEq, Std.Ops.Eq)
-pub enum ExternMode {
-    C(ExternConfig)
-    Builtin // just pure @extern
-}
-
-@derive(Clone, PartialEq, Std.Ops.Eq)
-pub struct ExternInfo {
-    pub mode: ExternMode
-}
-
-@derive(Clone, PartialEq, Std.Ops.Eq)
 pub enum FunctionDefKind {
     Regular,
     Extern,
@@ -83,27 +66,15 @@ pub struct FunctionDef {
 
     pub fn extern_c_name(f: FunctionDef) -> Option[I.String] {
         for a in f.annotations {
-            if let Annotation.Extern(ann) = a {
-                if let ExternMode.C(c) = ann.mode {
-                    if let Some(name) = c.name {
-                        return Some(name);
-                    }
-                    return Some(f.name.name());
-                }
+            if let Some(name) = a.rename() {
+                return Some(name);
             }
         }
-        None
-    }
-
-    pub fn extern_c_header(f: FunctionDef) -> Option[I.String] {
-        for a in f.annotations {
-            if let Annotation.Extern(ann) = a {
-                if let ExternMode.C(c) = ann.mode {
-                    return c.header;
-                }
-            }
+        if f.is_extern() {
+            Some(f.name.name())
+        } else {
+            None
         }
-        None
     }
 
     pub fn get_kind(f: FunctionDef) -> FunctionKind {

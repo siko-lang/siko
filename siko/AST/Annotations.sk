@@ -1,18 +1,12 @@
 module Siko.AST.Annotations {
 
 import Siko.AST.Name
-import Siko.AST.Function
 import Siko.AST.Expr as E
 import Siko.Interner as I
 
 @derive(Clone, PartialEq, Eq)
 pub struct DeriveAnnotation {
     pub trait_name: Name,
-}
-
-@derive(Clone, PartialEq, Eq)
-pub struct ExternAnnotation {
-    pub mode: ExternMode,
 }
 
 @derive(Clone, PartialEq, Eq)
@@ -24,7 +18,8 @@ pub enum OpKind {
 @derive(Clone, PartialEq, Eq)
 pub enum Annotation {
     Derive(DeriveAnnotation),
-    Extern(ExternAnnotation),
+    ExternC,
+    Rename(I.String),
     Prelude,
     Generic(I.String),
     Builtin,
@@ -50,8 +45,15 @@ pub enum Annotation {
 
     pub fn is_extern(a: Annotation) -> Bool {
         match a {
-            Annotation.Extern(_) => True,
+            Annotation.ExternC => True,
             _ => False,
+        }
+    }
+
+    pub fn rename(a: Annotation) -> Option[I.String] {
+        match a {
+            Annotation.Rename(name) => Some(name),
+            _ => None,
         }
     }
 
