@@ -37,13 +37,22 @@ pub struct Driver {
         )
     }
 
+    fn has_error_diagnostic(d: Driver) -> Bool {
+        for di in d.diagnostics {
+            if di.severity.is_error() {
+                return True;
+            }
+        }
+        False
+    }
+
     pub fn run_passes(d: Driver, passes: Vec[Pass]) {
         let trace = get_config().trace;
         for pass in passes {
             let start = Instant.now();
             (pass.run)(d);
             if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
-            if !d.diagnostics.is_empty() {
+            if d.has_error_diagnostic() {
                 return;
             }
             if pass.run_sanity_check {
@@ -169,14 +178,10 @@ pub struct Driver {
     }
 
     pub fn report_diagnostics_and_exit(d: Driver) {
-        let error = False;
         for di in d.diagnostics {
             di.print();
-            if di.severity.is_error() {
-                error = True;
-            }
         }
-        if error {
+        if d.has_error_diagnostic() {
             exit_with_error();
         }
     }
