@@ -4,13 +4,18 @@ import Siko.Driver
 import Siko.FileManager
 import Siko.Diagnostics as D
 import Siko.Diagnostics.Util as D
+import Std.Effects.Console
+import Std.Effects.Network
+import Std.Effects.Spawn
 import Std.Fs.Directory as Directory
-import Std.IO.Buffered as Buffered
+import Std.Httpd.Http
+import Std.Httpd.Server
+import Std.IO.Async.Scheduler as Async
 import Std.Json
 import Std.Json.Util as JsonUtil
-import Std.Libc.FileDescriptor as FD
 import Std.Map
 import Std.StringBuilder
+import Std.Sys.Process as Sys
 
 // A diagnostic resolved into a path and 0-based line/column range
 struct FileDiagnostic {
@@ -23,77 +28,86 @@ struct FileDiagnostic {
     message: String,
 }
 
-// Serve the LSP protocol over stdin/stdout, rechecking the project on every save
+// Serve the LSP protocol over local HTTP. The VS Code client sends one
+// JSON-RPC-shaped message per POST and receives a JSON array of outbound
+// messages to apply locally.
 pub fn run_server() {
-    let reader = Buffered.Reader.new(FD.get_stdin(), 8192);
-    let published: Vec[String] = Vec.new();
-    loop {
-        let body = match read_message(reader) {
-            Some(body) => body,
-            None => break, // stdin closed, the editor is gone
-        };
-        let message = match JsonUtil.parse(body) {
-            Ok(m) => m,
-            Err(_) => continue,
-        };
-        let method = match message.get_field("method") {
-            Ok(Json.Str(method)) => method,
-            _ => continue,
-        };
-        let id = match message.get_field("id") {
-            Ok(id) => Some(id),
-            Err(_) => None,
-        };
-        match method {
-            "initialize" => send_response(id, initialize_result()),
-            "initialized" => { published = check_and_publish(published); }
-            "textDocument/didSave" => { published = check_and_publish(published); }
-            "shutdown" => send_response(id, Json.Null),
-            "exit" => break,
-            _ => {
-                // requests must be answered, unknown notifications can be dropped
-                match id {
-                    Some(_) => send_method_not_found(id, method),
-                    None => {}
+    let port = read_port();
+    let s = Async.Scheduler.new();
+    with Async.current = s,
+         TcpNetwork = AsyncTcp,
+         Spawn = AsyncSpawn,
+         Console = StdConsole {
+        spawn(|| { run(make_handler(), port).unwrap(); });
+        s.run_tasks();
+    }
+}
+
+fn read_port() -> U16 {
+    match Sys.getenv("SIKO_LSP_PORT") {
+        Some(port_str) => {
+            match port_str.parse_int(10) {
+                Ok(port) if port > 0 && port <= 65535 => port.as_u16(),
+                _ => {
+                    Std.Console.println("error: invalid SIKO_LSP_PORT: ${port_str}");
+                    Sys.exit(1.as_i32());
                 }
             }
+        }
+        None => {
+            Std.Console.println("error: SIKO_LSP_PORT must be set for lsp");
+            Sys.exit(1.as_i32());
         }
     }
 }
 
-// Read one "Content-Length: N\r\n\r\n<body>" framed message from stdin
-fn read_message(reader: Buffered.Reader[FD.FileDescriptor]) -> Option[String] {
-    let content_length = 0;
-    loop {
-        match reader.read_line() {
-            Ok(Some(line)) => {
-                if line == "" {
-                    break;
-                }
-                if line.starts_with("Content-Length: ") {
-                    match line.substring(16, line.len()).parse_int(10) {
-                        Ok(n) => { content_length = n; }
-                        Err(_) => {}
-                    }
-                }
-            }
-            _ => return None,
+fn handle_http(req: Request) -> Response {
+    if req.method() == "GET" && req.path() == "/health" {
+        return Response.new("200 OK", "text/plain", "ok");
+    }
+    if req.method() != "POST" || req.path() != "/rpc" {
+        return Response.new("404 Not Found", "text/plain", "Not Found");
+    }
+    let message = match JsonUtil.parse(req.body()) {
+        Ok(m) => m,
+        Err(e) => {
+            let body = JsonUtil.serialize(obj([("error", Json.Str(e.to_string()))]));
+            return Response.new("400 Bad Request", "application/json", body);
         }
-    }
-    if content_length <= 0 {
-        return None;
-    }
-    let buf: Vec[U8] = Vec.with_value(content_length, 0.as_u8());
-    match reader.read_full(buf.slice()) {
-        Ok(_) => Some(String.from_slice(buf.slice())),
+    };
+    let body = JsonUtil.serialize(Json.Array(handle_message(message)));
+    Response.new("200 OK", "application/json", body)
+}
+
+fn make_handler() -> fn(Request) -> Response {
+    |req| handle_http(req)
+}
+
+fn handle_message(message: Json) -> Vec[Json] {
+    let out: Vec[Json] = Vec.new();
+    let method = match message.get_field("method") {
+        Ok(Json.Str(method)) => method,
+        _ => return out,
+    };
+    let id = match message.get_field("id") {
+        Ok(id) => Some(id),
         Err(_) => None,
+    };
+    match method {
+        "initialize" => out.push(make_response(id, initialize_result())),
+        "initialized" => out.extend(check_and_publish()),
+        "textDocument/didSave" => out.extend(check_and_publish()),
+        "shutdown" => out.push(make_response(id, Json.Null)),
+        "exit" => { Async.stop(); }
+        _ => {
+            // requests must be answered, unknown notifications can be dropped
+            match id {
+                Some(_) => out.push(method_not_found(id, method)),
+                None => {}
+            }
+        }
     }
-}
-
-// Write one framed message to stdout
-fn send(message: Json) {
-    let body = JsonUtil.serialize(message);
-    print("Content-Length: ${body.len()}\r\n\r\n${body}");
+    out
 }
 
 fn obj(fields: Vec[(String, Json)]) -> Json {
@@ -104,25 +118,25 @@ fn obj(fields: Vec[(String, Json)]) -> Json {
     Json.Object(m)
 }
 
-fn send_response(id: Option[Json], result: Json) {
+fn make_response(id: Option[Json], result: Json) -> Json {
     let id = match id {
         Some(id) => id,
         None => Json.Null,
     };
-    send(obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("result", result)]));
+    obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("result", result)])
 }
 
-fn send_method_not_found(id: Option[Json], method: String) {
+fn method_not_found(id: Option[Json], method: String) -> Json {
     let id = match id {
         Some(id) => id,
         None => Json.Null,
     };
     let error = obj([("code", Json.Number(-32601)), ("message", Json.Str("method not found: ${method}"))]);
-    send(obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("error", error)]));
+    obj([("jsonrpc", Json.Str("2.0")), ("id", id), ("error", error)])
 }
 
-fn send_notification(method: String, params: Json) {
-    send(obj([("jsonrpc", Json.Str("2.0")), ("method", Json.Str(method)), ("params", params)]));
+fn notification(method: String, params: Json) -> Json {
+    obj([("jsonrpc", Json.Str("2.0")), ("method", Json.Str(method)), ("params", params)])
 }
 
 fn initialize_result() -> Json {
@@ -133,9 +147,10 @@ fn initialize_result() -> Json {
          ("serverInfo", obj([("name", Json.Str("siko"))]))])
 }
 
-// Check the whole project and publish fresh diagnostics for every affected file,
-// clearing the files that were published in the previous round
-fn check_and_publish(previously_published: Vec[String]) -> Vec[String] {
+// Check the whole project and return fresh diagnostics for every affected file.
+// The client clears its diagnostic collection before applying this batch.
+fn check_and_publish() -> Vec[Json] {
+    let messages: Vec[Json] = Vec.new();
     let diagnostics = run_check();
     let root = Directory.get_current_dir().expect("getcwd failed");
     let by_uri: Map[String, Vec[Json]] = Map.new();
@@ -154,23 +169,15 @@ fn check_and_publish(previously_published: Vec[String]) -> Vec[String] {
                 // no location: surface it in the editor as a message
                 let params = obj([("type", Json.Number(severity_code(d.severity))),
                                   ("message", Json.Str(d.message))]);
-                send_notification("window/showMessage", params);
+                messages.push(notification("window/showMessage", params));
             }
         }
     }
-    let published: Vec[String] = Vec.new();
     for (uri, items) in by_uri {
         let params = obj([("uri", Json.Str(uri)), ("diagnostics", Json.Array(items))]);
-        send_notification("textDocument/publishDiagnostics", params);
-        published.push(uri);
+        messages.push(notification("textDocument/publishDiagnostics", params));
     }
-    for uri in previously_published {
-        if !published.contains(uri) {
-            let params = obj([("uri", Json.Str(uri)), ("diagnostics", Json.empty_array())]);
-            send_notification("textDocument/publishDiagnostics", params);
-        }
-    }
-    published
+    messages
 }
 
 // Run the check passes with fresh compiler state and collect the diagnostics
