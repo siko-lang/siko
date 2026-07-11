@@ -588,7 +588,7 @@ fn format_terminator(f: Formatter, term: LLVMTerminator) {
         }
         LLVMTerminator.Switch(value, default_label, cases) => {
             f.push("switch ");
-            let switch_ty = value.ty.clone();
+            let switch_ty = value.ty;
             format_typed_value(f, value);
             f.push(", label ");
             f.push(local_name(default_label));
@@ -598,7 +598,7 @@ fn format_terminator(f: Formatter, term: LLVMTerminator) {
                 f.indent = f.indent + 1;
                 for case in cases {
                     f.emit_indent();
-                    format_type(f, switch_ty.clone());
+                    format_type(f, switch_ty);
                     f.push(" ");
                     format_value(f, case.value);
                     f.push(", label ");

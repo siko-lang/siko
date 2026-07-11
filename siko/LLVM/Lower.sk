@@ -52,11 +52,11 @@ struct FunctionLowerer {
     }
 
     fn finish_block(fl: FunctionLowerer, fallback: LLVMTerminator) {
-        let term = match fl.term.clone() {
+        let term = match fl.term {
             Some(term) => term,
             None => fallback,
         };
-        fl.blocks.push(LLVMBasicBlock(fl.label.clone(), fl.instrs.clone(), term));
+        fl.blocks.push(LLVMBasicBlock(fl.label, fl.instrs, term));
         fl.instrs = Vec.new();
         fl.term = None;
     }
@@ -67,22 +67,22 @@ struct FunctionLowerer {
 
     fn start_label(fl: FunctionLowerer, label: String) {
         if fl.has_open_block() {
-            fl.finish_block(LLVMTerminator.Br(label.clone()));
+            fl.finish_block(LLVMTerminator.Br(label));
         }
         fl.label = label;
     }
 
     fn add_local(fl: FunctionLowerer, name: VariableName, ty: LLVMType) -> LocalSlot {
-        let ptr = var_name(name.clone()) + "_slot";
-        let slot = LocalSlot(ty.clone(), ptr.clone());
+        let ptr = var_name(name) + "_slot";
+        let slot = LocalSlot(ty, ptr);
         fl.allocas.push(LLVMInstruction(Some(ptr), LLVMInstructionKind.Alloca(ty, None)));
-        fl.locals.insert(name, slot.clone());
+        fl.locals.insert(name, slot);
         slot
     }
 
     fn add_param(fl: FunctionLowerer, arg: FunctionArg) {
         let ty = fl.lowerer.lower_type(arg.type_def);
-        let slot = fl.add_local(arg.name.clone(), ty.clone());
+        let slot = fl.add_local(arg.name, ty);
         fl.emit(
             None,
             LLVMInstructionKind.Store(
@@ -112,8 +112,8 @@ struct FunctionLowerer {
     fn lower_binary_instr(fl: FunctionLowerer, op: LLVMBinaryOp, lhs: LLVMTypedValue, rhs: LLVMTypedValue) -> LLVMTypedValue {
         let result = fl.fresh("binop");
         fl.emit(
-            Some(result.clone()),
-            LLVMInstructionKind.Binary(op, lhs.ty.clone(), lhs.value, rhs.value),
+            Some(result),
+            LLVMInstructionKind.Binary(op, lhs.ty, lhs.value, rhs.value),
         );
         LLVMTypedValue(lhs.ty, LLVMValue.Local(result))
     }
@@ -121,7 +121,7 @@ struct FunctionLowerer {
     fn lower_icmp(fl: FunctionLowerer, pred: LLVMIntPredicate, lhs: LLVMTypedValue, rhs: LLVMTypedValue, result_ty: LLVMType) -> LLVMTypedValue {
         let cmp = fl.fresh("icmp");
         fl.emit(
-            Some(cmp.clone()),
+            Some(cmp),
             LLVMInstructionKind.ICmp(pred, lhs.ty, lhs.value, rhs.value),
         );
         match result_ty {
@@ -129,11 +129,11 @@ struct FunctionLowerer {
             LLVMType.Int(_) => {
                 let result = fl.fresh("bool");
                 fl.emit(
-                    Some(result.clone()),
+                    Some(result),
                     LLVMInstructionKind.Cast(
                         LLVMCastOp.ZExt,
                         LLVMTypedValue(LLVMType.Int(1), LLVMValue.Local(cmp)),
-                        result_ty.clone(),
+                        result_ty,
                     ),
                 );
                 LLVMTypedValue(result_ty, LLVMValue.Local(result))
@@ -143,7 +143,7 @@ struct FunctionLowerer {
     }
 
     fn lower_binary_op(fl: FunctionLowerer, op: BinaryOp, lhs: Expr, rhs: Expr, result_ty: LLVMType) -> LLVMTypedValue {
-        let lhs_ty = lhs.ty.clone().expect("llvm: binary lhs has no type");
+        let lhs_ty = lhs.ty.expect("llvm: binary lhs has no type");
         let unsigned = fl.lowerer.is_unsigned_int_type(lhs_ty);
         let lhs_value = fl.lower_expr(lhs);
         let rhs_value = fl.lower_expr(rhs);
@@ -214,26 +214,26 @@ struct FunctionLowerer {
         match op {
             UnaryOp.Neg => fl.lower_binary_instr(
                 LLVMBinaryOp.Sub,
-                LLVMTypedValue(value.ty.clone(), LLVMValue.Int("0")),
+                LLVMTypedValue(value.ty, LLVMValue.Int("0")),
                 value,
             ),
             UnaryOp.Not | UnaryOp.BNot => fl.lower_binary_instr(
                 LLVMBinaryOp.Xor,
-                value.clone(),
+                value,
                 LLVMTypedValue(value.ty, LLVMValue.Int("-1")),
             ),
         }
     }
 
     fn lower_call(fl: FunctionLowerer, info: FunctionCallInfo, result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
-        let fixed_param_tys = fl.lowerer.vararg_fixed_param_tys(info.qname.clone());
+        let fixed_param_tys = fl.lowerer.vararg_fixed_param_tys(info.qname);
         let callee = LLVMValue.Global(fl.function_symbol(info.qname, info.kind));
         let args = fl.lower_args(info.args);
         fl.emit_call(callee, args, result_ty, keep_result, fixed_param_tys)
     }
 
     fn lower_function_ptr_call(fl: FunctionLowerer, callee_expr: Expr, args: Vec[Expr], result_ty: LLVMType, keep_result: Bool) -> Option[LLVMTypedValue] {
-        let callee_ty = callee_expr.ty.clone().expect("llvm: function pointer callee has no type");
+        let callee_ty = callee_expr.ty.expect("llvm: function pointer callee has no type");
         match callee_ty {
             TypeDef.FnPtr(_, _) => {}
             _ => panic("llvm: function pointer call callee is not FnPtr"),
@@ -256,10 +256,10 @@ struct FunctionLowerer {
             ty => {
                 let result = if keep_result { Some(fl.fresh("call")) } else { None };
                 let kind = match fixed_param_tys {
-                    Some(param_tys) => LLVMInstructionKind.VarArgCall(ty.clone(), param_tys, callee, args, []),
-                    None => LLVMInstructionKind.Call(ty.clone(), callee, args, []),
+                    Some(param_tys) => LLVMInstructionKind.VarArgCall(ty, param_tys, callee, args, []),
+                    None => LLVMInstructionKind.Call(ty, callee, args, []),
                 };
-                fl.emit(result.clone(), kind);
+                fl.emit(result, kind);
                 match result {
                     Some(name) => Some(LLVMTypedValue(ty, LLVMValue.Local(name))),
                     None => None,
@@ -272,7 +272,7 @@ struct FunctionLowerer {
         let layout = LayoutEngine.new(fl.lowerer.program).layout_of(ty);
         let result = fl.fresh("alloc");
         fl.emit(
-            Some(result.clone()),
+            Some(result),
             LLVMInstructionKind.Call(
                 LLVMType.Ptr,
                 LLVMValue.Global("siko_malloc"),
@@ -292,11 +292,11 @@ struct FunctionLowerer {
                     LLVMType.Int(_) => {
                         let result = fl.fresh("ptrtoint");
                         fl.emit(
-                            Some(result.clone()),
+                            Some(result),
                             LLVMInstructionKind.Cast(
                                 LLVMCastOp.PtrToInt,
                                 LLVMTypedValue(LLVMType.Ptr, value.value),
-                                dest_ty.clone(),
+                                dest_ty,
                             ),
                         );
                         LLVMTypedValue(dest_ty, LLVMValue.Local(result))
@@ -309,7 +309,7 @@ struct FunctionLowerer {
                     LLVMType.Ptr => {
                         let result = fl.fresh("inttoptr");
                         fl.emit(
-                            Some(result.clone()),
+                            Some(result),
                             LLVMInstructionKind.Cast(
                                 LLVMCastOp.IntToPtr,
                                 LLVMTypedValue(LLVMType.Int(src_bits), value.value),
@@ -329,7 +329,7 @@ struct FunctionLowerer {
                                 LLVMCastOp.ZExt
                             };
                             fl.emit(
-                                Some(result.clone()),
+                                Some(result),
                                 LLVMInstructionKind.Cast(
                                     op,
                                     LLVMTypedValue(LLVMType.Int(src_bits), value.value),
@@ -352,27 +352,27 @@ struct FunctionLowerer {
     }
 
     fn lower_addr(fl: FunctionLowerer, expr: Expr) -> Address {
-        let ty_def = expr.ty.clone().expect("llvm: lvalue expression has no type");
-        let ty = fl.lowerer.lower_type(ty_def.clone());
+        let ty_def = expr.ty.expect("llvm: lvalue expression has no type");
+        let ty = fl.lowerer.lower_type(ty_def);
         match expr.kind {
             ExprKind.Var(name) => {
                 let slot = fl.local(name);
                 Address(slot.ty, ty_def, LLVMValue.Local(slot.ptr))
             }
             ExprKind.FieldAccess(receiver, field) => {
-                let receiver_ty = receiver.ty.clone().expect("llvm: field receiver has no type");
-                let owner_ty = match receiver_ty.clone() {
+                let receiver_ty = receiver.ty.expect("llvm: field receiver has no type");
+                let owner_ty = match receiver_ty {
                     TypeDef.Ptr(inner) => inner,
                     _ => receiver_ty,
                 };
-                let base_ptr = match receiver.ty.clone().expect("llvm: field receiver has no type") {
+                let base_ptr = match receiver.ty.expect("llvm: field receiver has no type") {
                     TypeDef.Ptr(_) => fl.lower_expr(receiver).value,
                     _ => fl.lower_addr(receiver).ptr,
                 };
-                let field_info = fl.lowerer.field_info(owner_ty.clone(), field.name());
+                let field_info = fl.lowerer.field_info(owner_ty, field.name());
                 let result = fl.fresh("field");
                 fl.emit(
-                    Some(result.clone()),
+                    Some(result),
                     LLVMInstructionKind.GetElementPtr(
                         fl.lowerer.lower_type(owner_ty),
                         base_ptr,
@@ -383,7 +383,7 @@ struct FunctionLowerer {
                         True,
                     ),
                 );
-                Address(fl.lowerer.lower_type(field_info.ty.clone()), field_info.ty, LLVMValue.Local(result))
+                Address(fl.lowerer.lower_type(field_info.ty), field_info.ty, LLVMValue.Local(result))
             }
             ExprKind.Deref(inner) => {
                 let ptr = fl.lower_expr(inner);
@@ -406,8 +406,8 @@ struct FunctionLowerer {
                 let slot = fl.local(name);
                 let result = fl.fresh("load");
                 fl.emit(
-                    Some(result.clone()),
-                    LLVMInstructionKind.Load(slot.ty.clone(), LLVMValue.Local(slot.ptr), None),
+                    Some(result),
+                    LLVMInstructionKind.Load(slot.ty, LLVMValue.Local(slot.ptr), None),
                 );
                 LLVMTypedValue(slot.ty, LLVMValue.Local(result))
             }
@@ -415,8 +415,8 @@ struct FunctionLowerer {
                 let addr = fl.lower_addr(expr);
                 let result = fl.fresh("load");
                 fl.emit(
-                    Some(result.clone()),
-                    LLVMInstructionKind.Load(addr.ty.clone(), addr.ptr, None),
+                    Some(result),
+                    LLVMInstructionKind.Load(addr.ty, addr.ptr, None),
                 );
                 LLVMTypedValue(addr.ty, LLVMValue.Local(result))
             }
@@ -477,7 +477,7 @@ struct FunctionLowerer {
                     match arm.kind {
                         ExprKind.Goto(label) => {
                             if index == 0 {
-                                default_label = label.clone();
+                                default_label = label;
                             }
                             cases.push(LLVMSwitchCase(LLVMValue.Int("${index}"), label));
                         }
@@ -507,7 +507,7 @@ struct FunctionLowerer {
         }
         match stmt {
             S.Statement.Let(info) => {
-                let ty_def = info.ty.or(info.rhs.ty.clone()).expect("llvm: let has no type");
+                let ty_def = info.ty.or(info.rhs.ty).expect("llvm: let has no type");
                 let slot = fl.add_local(info.name, fl.lowerer.lower_type(ty_def));
                 let value = fl.lower_expr(info.rhs);
                 fl.emit(None, LLVMInstructionKind.Store(value, LLVMValue.Local(slot.ptr), None));
@@ -544,12 +544,12 @@ struct FunctionLowerer {
             fl.lower_stmt(stmt);
         }
         fl.finish_block(LLVMTerminator.Unreachable);
-        let entry = fl.blocks[0].clone();
-        let entry_instrs = fl.allocas.clone();
+        let entry = fl.blocks[0];
+        let entry_instrs = fl.allocas;
         entry_instrs.extend(entry.instrs);
         let blocks: Vec[LLVMBasicBlock] = [LLVMBasicBlock(entry.label, entry_instrs, entry.term)];
         for i in 1..fl.blocks.len() {
-            blocks.push(fl.blocks[i].clone());
+            blocks.push(fl.blocks[i]);
         }
         blocks
     }
@@ -710,16 +710,9 @@ struct Lowerer {
         )
     }
 
-    fn extern_symbol(l: Lowerer, fdef: FunctionDef) -> Option[String] {
-        if let Some(c_name) = fdef.extern_c_name() {
-            return Some(I.resolve(c_name));
-        }
-        None
-    }
-
     fn fn_symbol(l: Lowerer, fdef: FunctionDef) -> String {
-        if let Some(c_name) = l.extern_symbol(fdef) {
-            return c_name;
+        if let Some(c_name) = fdef.extern_c_name() {
+            return I.resolve(c_name);
         }
         fn_name(fdef.qualified_name.unwrap())
     }
@@ -794,7 +787,7 @@ struct Lowerer {
     }
 
     fn lower_definition(l: Lowerer, fdef: FunctionDef) -> LLVMFunctionDef {
-        let blocks = FunctionLowerer.new(l).lower_body(fdef.clone());
+        let blocks = FunctionLowerer.new(l).lower_body(fdef);
         LLVMFunctionDef(l.lower_sig(fdef), blocks)
     }
 
@@ -825,7 +818,7 @@ fn runtime_sig(name: String, ret: LLVMType, params: Vec[LLVMType], varargs: Bool
 }
 
 fn add_runtime_decl(l: Lowerer, declarations: Vec[LLVMFunctionDecl], name: String, ret: LLVMType, params: Vec[LLVMType], varargs: Bool, attrs: Vec[String]) {
-    if !l.has_symbol(name.clone()) {
+    if !l.has_symbol(name) {
         declarations.push(LLVMFunctionDecl(runtime_sig(name, ret, params, varargs, attrs)));
     }
 }
@@ -855,11 +848,11 @@ fn string_symbol(s: String) -> String {
 }
 
 fn add_string_global(globals: Vec[LLVMGlobal], names: Vec[String], value: String) {
-    let name = string_symbol(value.clone());
-    if names.contains(name.clone()) {
+    let name = string_symbol(value);
+    if names.contains(name) {
         return;
     }
-    names.push(name.clone());
+    names.push(name);
     globals.push(LLVMGlobal(
         name,
         LLVMLinkage.Private,

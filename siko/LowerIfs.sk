@@ -29,14 +29,14 @@ struct IfLowerer {
         let then_body = l.lower_expr(then_branch);
         let else_body = match else_branch {
             Some(e) => l.lower_expr(e),
-            None => Expr(ExprKind.Block(BlockInfo(Vec.new())), loc.clone(), ty),
+            None => Expr(ExprKind.Block(BlockInfo(Vec.new())), loc, ty),
         };
         let true_pat = Pattern(
-            PatternKind.Named(NamedPatternInfo(Name.inner(l.true_qname.clone()), Vec.new(), Vec.new(), False)),
-            loc.clone(),
-            cond.ty.clone(),
+            PatternKind.Named(NamedPatternInfo(Name.inner(l.true_qname), Vec.new(), Vec.new(), False)),
+            loc,
+            cond.ty,
         );
-        let wild_pat = Pattern(PatternKind.Wildcard, loc, cond.ty.clone());
+        let wild_pat = Pattern(PatternKind.Wildcard, loc, cond.ty);
         let arms: Vec[MatchArm] = Vec.new();
         arms.push(MatchArm(true_pat, then_body));
         arms.push(MatchArm(wild_pat, else_body));
@@ -52,10 +52,10 @@ struct IfLowerer {
     }
 
     fn lower_expr(l: IfLowerer, expr: Expr) -> Expr {
-        let loc = expr.location.clone();
+        let loc = expr.location;
         let kind = match expr.kind {
             ExprKind.If(cond, then_branch, else_branch) =>
-                return Expr(l.lower_if(cond, then_branch, else_branch, loc.clone(), expr.ty.clone()), loc, expr.ty),
+                return Expr(l.lower_if(cond, then_branch, else_branch, loc, expr.ty), loc, expr.ty),
             ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let new_arms: Vec[MatchArm] = Vec.new();
@@ -114,7 +114,7 @@ struct IfLowerer {
 
 pub fn lower_ifs(program: Program) {
     let l = IfLowerer(B.get_bool_true_qn().as_mono());
-    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    let keys: Vec[QualifiedName] = program.functions.keys().collect();
     for key in keys {
         let func = program.functions.get(key).unwrap();
         if let Some(body) = func.body {

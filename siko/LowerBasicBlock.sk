@@ -60,7 +60,7 @@ struct BlockLowerer {
     // Opens the block `label`; makes any fallthrough into it explicit.
     fn emit_label(l: BlockLowerer, label: String, loc: Location) {
         if !l.terminated {
-            l.out.push(S.Statement.Expr(l.goto_expr(label, loc.clone())));
+            l.out.push(S.Statement.Expr(l.goto_expr(label, loc)));
         }
         l.out.push(S.Statement.Expr(Expr(ExprKind.Label(label), loc, Some(TypeDef.Void))));
         l.terminated = False;
@@ -83,7 +83,7 @@ struct BlockLowerer {
         for stmt in stmts {
             if let S.Statement.Expr(e) = stmt {
                 if let ExprKind.Label(label) = e.kind {
-                    l.emit_label(label, e.location.clone());
+                    l.emit_label(label, e.location);
                     continue;
                 }
             }
@@ -125,7 +125,7 @@ struct BlockLowerer {
     }
 
     fn lower_stmt_expr(l: BlockLowerer, expr: Expr) {
-        let loc = expr.location.clone();
+        let loc = expr.location;
         match expr.kind {
             ExprKind.Block(BlockInfo(stmts)) => l.lower_stmts(stmts),
             ExprKind.If(_, _, _) => panic("lower-basic-block: If reached basic block lowering; lower-ifs should have rewritten it"),
@@ -146,7 +146,7 @@ struct BlockLowerer {
                 }
                 let ll = l.loop_stack.pop().unwrap();
                 ll.break_used = True;
-                let target = ll.break_label.clone();
+                let target = ll.break_label;
                 l.loop_stack.push(ll);
                 l.emit_goto(target, loc);
             }
@@ -155,7 +155,7 @@ struct BlockLowerer {
                     panic("lower-basic-block: continue outside loop");
                 }
                 let ll = l.loop_stack.pop().unwrap();
-                let target = ll.continue_label.clone();
+                let target = ll.continue_label;
                 l.loop_stack.push(ll);
                 l.emit_goto(target, loc);
             }
@@ -200,10 +200,10 @@ struct BlockLowerer {
         let loc = stmts_location(body);
         let header = l.fresh_label("loop");
         let break_label = l.fresh_label("break");
-        l.emit_label(header, loc.clone());
-        l.loop_stack.push(LoopLabels(header.clone(), break_label.clone(), False));
+        l.emit_label(header, loc);
+        l.loop_stack.push(LoopLabels(header, break_label, False));
         l.lower_stmts(body);
-        l.emit_goto(header, loc.clone());
+        l.emit_goto(header, loc);
         let ll = l.loop_stack.pop().unwrap();
         // Only a taken break creates a block after the loop; otherwise a final
         // infinite loop must not leave a dangling fallthrough block.
@@ -230,18 +230,18 @@ struct BlockLowerer {
             scrutinee
         } else {
             let tmp = l.var_alloc.allocate_temp();
-            let ty = scrutinee.ty.clone();
-            l.out.push(S.Statement.Let(S.LetInfo(tmp.clone(), ty.clone(), scrutinee)));
-            Expr(ExprKind.Var(tmp), loc.clone(), ty)
+            let ty = scrutinee.ty;
+            l.out.push(S.Statement.Let(S.LetInfo(tmp, ty, scrutinee)));
+            Expr(ExprKind.Var(tmp), loc, ty)
         };
 
         let tag_var = l.var_alloc.allocate_temp();
         l.out.push(S.Statement.Let(S.LetInfo(
-            tag_var.clone(),
-            Some(l.int_ty.clone()),
-            Expr(ExprKind.EnumTag(scrutinee.clone()), loc.clone(), Some(l.int_ty.clone())),
+            tag_var,
+            Some(l.int_ty),
+            Expr(ExprKind.EnumTag(scrutinee), loc, Some(l.int_ty)),
         )));
-        let tag_expr = Expr(ExprKind.Var(tag_var), loc.clone(), Some(l.int_ty.clone()));
+        let tag_expr = Expr(ExprKind.Var(tag_var), loc, Some(l.int_ty));
 
         // One label per arm; a wildcard arm is the default for unlisted tags.
         let arm_labels: Vec[String] = Vec.new();
@@ -249,7 +249,7 @@ struct BlockLowerer {
         let default_label: Option[String] = None;
         for arm in arms.iter() {
             let label = l.fresh_label("arm");
-            arm_labels.push(label.clone());
+            arm_labels.push(label);
             match arm.pattern.kind {
                 PatternKind.Named(info) => {
                     let variant_qname = info.name.resolved();
@@ -274,11 +274,11 @@ struct BlockLowerer {
                     None => panic("lower-basic-block: missing switch target for enum variant ${I.resolve(variant.name.name())}"),
                 },
             };
-            goto_arms.push(l.goto_expr(target, loc.clone()));
+            goto_arms.push(l.goto_expr(target, loc));
         }
         l.out.push(S.Statement.Expr(Expr(
-            ExprKind.Switch(tag_expr.clone(), goto_arms),
-            loc.clone(),
+            ExprKind.Switch(tag_expr, goto_arms),
+            loc,
             Some(TypeDef.Void),
         )));
         l.terminated = True;
@@ -286,7 +286,7 @@ struct BlockLowerer {
         let join_label = l.fresh_label("join");
         let join_used = False;
         for (arm_index, arm) in arms.iter().enumerate() {
-            l.emit_label(arm_labels[arm_index].clone(), loc.clone());
+            l.emit_label(arm_labels[arm_index], loc);
             if let PatternKind.Named(info) = arm.pattern.kind {
                 if !info.args.is_empty() {
                     let variant_qname = info.name.resolved();
@@ -294,21 +294,21 @@ struct BlockLowerer {
                     let payload_ty = VP.payload_type(enum_qname, variant);
                     let payload_tmp = l.var_alloc.allocate_temp();
                     l.out.push(S.Statement.Let(S.LetInfo(
-                        payload_tmp.clone(),
-                        Some(payload_ty.clone()),
-                        Expr(ExprKind.ReadVariant(scrutinee.clone(), tag_expr.clone()), loc.clone(), Some(payload_ty.clone())),
+                        payload_tmp,
+                        Some(payload_ty),
+                        Expr(ExprKind.ReadVariant(scrutinee, tag_expr), loc, Some(payload_ty)),
                     )));
-                    let payload_var = Expr(ExprKind.Var(payload_tmp), loc.clone(), Some(payload_ty.clone()));
+                    let payload_var = Expr(ExprKind.Var(payload_tmp), loc, Some(payload_ty));
                     for (i, sub_pat) in info.args.iter().enumerate() {
                         match sub_pat.kind {
                             PatternKind.Binding(var) => {
-                                let item_ty = variant.items[i].ty.clone();
+                                let item_ty = variant.items[i].ty;
                                 l.out.push(S.Statement.Let(S.LetInfo(
-                                    var.clone(),
-                                    Some(item_ty.clone()),
+                                    var,
+                                    Some(item_ty),
                                     Expr(
-                                        ExprKind.FieldAccess(payload_var.clone(), Identifier.new(VP.payload_field_name(i), loc.clone())),
-                                        loc.clone(),
+                                        ExprKind.FieldAccess(payload_var, Identifier.new(VP.payload_field_name(i), loc)),
+                                        loc,
                                         Some(item_ty),
                                     ),
                                 )));
@@ -321,7 +321,7 @@ struct BlockLowerer {
             }
             l.lower_branch(arm.body);
             if !l.terminated {
-                l.emit_goto(join_label.clone(), loc.clone());
+                l.emit_goto(join_label, loc);
                 join_used = True;
             }
         }
@@ -339,7 +339,7 @@ struct BlockLowerer {
         };
         let entry = l.fresh_label("entry");
         l.terminated = True; // no fallthrough into the entry label
-        l.emit_label(entry, body.location.clone());
+        l.emit_label(entry, body.location);
         l.lower_stmts(stmts);
         if !l.terminated {
             panic("lower-basic-block: final block is unterminated");
@@ -445,9 +445,9 @@ fn stmt_contains_label(stmt: S.Statement) -> Bool {
 
 fn stmt_location(stmt: S.Statement) -> Location {
     match stmt {
-        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => e.location.clone(),
-        S.Statement.Let(info) => info.rhs.location.clone(),
-        S.Statement.Assign(lhs, _) => lhs.location.clone(),
+        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => e.location,
+        S.Statement.Let(info) => info.rhs.location,
+        S.Statement.Assign(lhs, _) => lhs.location,
         S.Statement.Loop(BlockInfo(body)) => stmts_location(body),
         _ => Location.empty(),
     }
@@ -481,7 +481,7 @@ fn validate_function(l: BlockLowerer, body: Expr) {
     for stmt in stmts.iter() {
         if let S.Statement.Expr(e) = stmt {
             if let ExprKind.Label(label) = e.kind {
-                if !labels.insert(label.clone()) {
+                if !labels.insert(label) {
                     panic("lower-basic-block: duplicate label ${label}");
                 }
             }
@@ -561,19 +561,19 @@ pub fn lower_basic_blocks(program: Program) {
     VP.ensure_payload_structs(program);
     let div_fns = program.get_divergent_functions();
     let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn().as_mono()), []));
-    let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
+    let keys: Vec[QualifiedName] = program.functions.keys().collect();
     for key in keys {
         let func = program.functions.get(key).unwrap();
         if let Some(body) = func.body {
             let lowerer = BlockLowerer(
                 program,
                 func.var_allocator,
-                div_fns.clone(),
+                div_fns,
                 func.label_allocator,
                 Vec.new(),
                 Vec.new(),
                 True,
-                int_ty.clone(),
+                int_ty,
             );
             let new_body = lowerer.lower_body(body);
             validate_function(lowerer, new_body);
