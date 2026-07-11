@@ -112,17 +112,15 @@ pub struct TestRunner {
     compiler: String,
     bless: Bool,
     valgrind: Bool,
-    llvm: Bool,
     cwd: String,
     stats: Stats,
     skipped: Int,
 
-    pub fn new(compiler: String, bless: Bool, valgrind: Bool, llvm: Bool, cwd: String) -> TestRunner {
+    pub fn new(compiler: String, bless: Bool, valgrind: Bool, cwd: String) -> TestRunner {
         TestRunner(
             compiler: compiler,
             bless: bless,
             valgrind: valgrind,
-            llvm: llvm,
             cwd: cwd,
             stats: Stats.new(),
             skipped: 0,
@@ -172,15 +170,7 @@ pub struct TestRunner {
         Ok(result.captured_stdout())
     }
 
-    fn compiler_args(r: TestRunner, args: Vec[String]) -> Vec[String] {
-        if r.llvm {
-            args.push("--llvm");
-        }
-        args
-    }
-
     fn invoke_compiler_success(r: TestRunner, args: Vec[String]) -> Result[String, Error] {
-        let args = r.compiler_args(args);
         let cmd = Command.new(r.compiler).args(args).with_capture_stdout().run();
         if !cmd.success() {
             match cmd.status().signal() {
@@ -193,7 +183,6 @@ pub struct TestRunner {
     }
 
     fn invoke_compiler_failure(r: TestRunner, args: Vec[String]) -> Result[String, Error] {
-        let args = r.compiler_args(args);
         let cmd = Command.new(r.compiler).args(args).with_capture_stdout().run();
         if cmd.success() {
             return Err(ExpectedFailureSucceeded(output: cmd.captured_stdout()));
@@ -673,29 +662,16 @@ fn main() {
             break;
         }
         let arg = args[i];
-        if arg == "--bless" {
-            bless = True;
-        } else {
-            if arg == "--valgrind" {
-                valgrind = True;
-            } else {
-                if arg == "--llvm" {
-                    llvm = True;
-                } else {
-                    if arg == "--re" {
-                        // consumed but ignored
-                    } else {
-                        if arg == "--c" {
-                            i = i + 1;
-                            if i < args.len() {
-                                compiler = args[i];
-                            }
-                        } else {
-                            filters.push(arg);
-                        }
-                    }
+        match arg {
+            "--bless" => { bless = True; }
+            "--valgrind" => { valgrind = True; }
+            "--c" => {
+                i = i + 1;
+                if i < args.len() {
+                    compiler = args[i];
                 }
             }
+            _ => filters.push(arg),
         }
         i = i + 1;
     }
@@ -709,14 +685,11 @@ fn main() {
     };
 
     println("compiler: ${compiler}");
-    if llvm {
-        println("backend: llvm");
-    }
     if bless {
         println("blessing snapshots...");
     }
 
-    let runner = TestRunner.new(compiler, bless, valgrind, llvm, cwd);
+    let runner = TestRunner.new(compiler, bless, valgrind, cwd);
 
     // nostd success cases
     let nostd_cases = discover_cases("test/success/nostd", filters, True);

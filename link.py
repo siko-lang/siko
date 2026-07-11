@@ -20,7 +20,7 @@ def parse_args(argv):
     debug = False
     san = False
     tsan = False
-    llvm = False
+    llvm = True
 
     i = 0
     while i < len(argv):

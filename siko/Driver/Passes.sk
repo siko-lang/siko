@@ -27,8 +27,6 @@ import Siko.LowerIfs
 import Siko.LowerBasicBlock
 import Siko.LowerPointers
 import Siko.LowerEnums
-import Siko.CBackend.Lower as CBackend
-import Siko.CBackend.MiniC.Format as MiniC
 import Siko.LLVM.Lower as LLVMBackend
 import Siko.LLVM.Format as LLVMFormat
 import Siko.ValueTypes as ValueTypes
@@ -184,7 +182,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
 
     let backend_passes: Vec[Pass] = if config.check_only {
         []
-    } else if config.llvm {
+    } else {
         [
             Pass(
                 name: "llvm",
@@ -216,40 +214,6 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                     }
                 },
                 dump: Some(|driver| println(driver.llvm_source)),
-            ),
-        ]
-    } else {
-        [
-            Pass(
-                name: "c",
-                label: "Emitting C...",
-                run: |driver| {
-                    let cprogram = CBackend.lower(driver.program);
-                    driver.c_source = MiniC.format(cprogram);
-                },
-                dump: Some(|driver| println(driver.c_source)),
-            ),
-            Pass(
-                name: "link",
-                label: "Linking...",
-                run: |driver| {
-                    let effective_output = if config.test && config.output == None {
-                        Some("/tmp/siko_test_runner")
-                    } else {
-                        config.output
-                    };
-                    if let Some(out) = effective_output {
-                        driver.link(out, config.optimize, config.san, config.tsan);
-                        if config.test {
-                            if config.trace { println("Running tests..."); }
-                            let result = Command.new(out).run();
-                            if !result.success() {
-                                Sys.exit(1.as_i32());
-                            }
-                        }
-                    }
-                },
-                dump: Some(|driver| println(driver.program.format())),
             ),
         ]
     };
