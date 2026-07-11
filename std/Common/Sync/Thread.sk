@@ -19,7 +19,7 @@ pub struct JoinHandle {
 
     @safe
     pub fn join(j: JoinHandle) {
-        pthread_join(j.thread.handle, get_null_ptr());
+        gc_pthread_join(j.thread.handle, get_null_ptr());
     }
 }
 
@@ -38,7 +38,10 @@ fn entrypoint(arg_ptr: *Arg) -> void* {
 // typed binding is what lets the closure set flow from spawn's argument
 // through the C runtime into entrypoint. ABI-identical to the libc
 // prototype.
-@extern("C", "", "pthread_create")
+// GC_pthread_create instead of pthread_create: Boehm on Linux only scans and
+// stops threads registered through it; the C backend got this for free via
+// the gc.h macro redirect, the LLVM backend must name the real symbol.
+@extern("C", "gc.h", "GC_pthread_create")
 fn pthread_create_typed(thread: *PThread, attr: *PthreadAttr, start_routine: fn*(*Arg) -> void*, arg: *Arg) -> I32
 
 @safe

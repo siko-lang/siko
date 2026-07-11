@@ -2,23 +2,13 @@ module Std.Libc.Pthread {
 
 import Std.Arch.Pthread
 
-@value_type
-pub struct PThread {
-    pub handle: U64,
-
-    pub fn new() -> PThread {
-        PThread(handle: 0.as_u64())
-    }
-}
-
 @extern("C")
 pub fn pthread_attr_init(attr: *PthreadAttr) -> I32
 
-@extern("C")
-pub fn pthread_create(thread: *PThread, attr: *PthreadAttr, start_routine: fn*(void*) -> void*, arg: void*) -> I32
-
-@extern("C", "", "siko_pthread_join")
-pub fn pthread_join(thread: U64, retval: *void*) -> I32
+@extern("C", "", "GC_pthread_create")
+pub fn gc_pthread_create(thread: *PThread,
+                         attr: *PthreadAttr,
+                         start_routine: fn*(void*) -> void*, arg: void*) -> I32
 
 @extern("C")
 pub fn pthread_mutex_lock(mutex: *Mutex) -> I32

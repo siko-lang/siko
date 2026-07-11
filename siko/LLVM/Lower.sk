@@ -753,7 +753,6 @@ struct Lowerer {
     }
 
     fn is_runtime_defined_symbol(l: Lowerer, symbol: String) -> Bool {
-        symbol == "siko_pthread_join" ||
         symbol == "get_saved_argc" ||
         symbol == "get_saved_arg" ||
         symbol == "get_environ" ||
@@ -827,7 +826,6 @@ fn add_runtime_declarations(l: Lowerer, declarations: Vec[LLVMFunctionDecl]) {
     add_runtime_decl(l, declarations, "GC_init", LLVMType.Void, [], False, []);
     add_runtime_decl(l, declarations, "GC_malloc", LLVMType.Ptr, [LLVMType.Int(64)], False, []);
     add_runtime_decl(l, declarations, "abort", LLVMType.Void, [], False, ["noreturn"]);
-    add_runtime_decl(l, declarations, "pthread_join", LLVMType.Int(32), [LLVMType.Ptr, LLVMType.Ptr], False, []);
 }
 
 fn hex_digit(n: Int) -> String {
@@ -1087,51 +1085,6 @@ fn build_siko_malloc() -> LLVMFunctionDef {
     LLVMFunctionDef(sig, blocks)
 }
 
-fn build_siko_pthread_join() -> LLVMFunctionDef {
-    let sig = LLVMFunctionSig(
-        "siko_pthread_join",
-        LLVMLinkage.External,
-        None,
-        LLVMType.Int(32),
-        [
-            LLVMParam(LLVMType.Int(64), Some("thread"), []),
-            LLVMParam(LLVMType.Ptr, Some("retval"), []),
-        ],
-        False,
-        [],
-    );
-    let instrs: Vec[LLVMInstruction] = [
-        LLVMInstruction(
-            Some("pthread"),
-            LLVMInstructionKind.Cast(
-                LLVMCastOp.IntToPtr,
-                LLVMTypedValue(LLVMType.Int(64), LLVMValue.Local("thread")),
-                LLVMType.Ptr,
-            ),
-        ),
-        LLVMInstruction(
-            Some("result"),
-            LLVMInstructionKind.Call(
-                LLVMType.Int(32),
-                LLVMValue.Global("pthread_join"),
-                [
-                    LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("pthread")),
-                    LLVMTypedValue(LLVMType.Ptr, LLVMValue.Local("retval")),
-                ],
-                [],
-            ),
-        ),
-    ];
-    LLVMFunctionDef(
-        sig,
-        [LLVMBasicBlock(
-            "entry",
-            instrs,
-            LLVMTerminator.Ret(Some(LLVMTypedValue(LLVMType.Int(32), LLVMValue.Local("result")))),
-        )],
-    )
-}
-
 fn build_get_saved_argc() -> LLVMFunctionDef {
     let sig = LLVMFunctionSig(
         "get_saved_argc",
@@ -1310,7 +1263,6 @@ pub fn lower(program: Program) -> LLVMModule {
     l.lower_functions(declarations, functions);
     add_runtime_declarations(l, declarations);
     functions.push(build_siko_malloc());
-    functions.push(build_siko_pthread_join());
     functions.push(build_get_saved_argc());
     functions.push(build_get_saved_arg());
     functions.push(build_get_environ());

@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 
-USAGE = "usage: ... | link.py [--llvm] -o <output> [-O] [--san] [--tsan]"
+USAGE = "usage: ... | link.py [--llvm] -o <output> [-O] [--debug] [--san] [--tsan]"
 
 TARGET_TRIPLETS = {
     "linux": "x86_64-pc-linux-gnu",
@@ -17,6 +17,7 @@ TARGET_TRIPLETS = {
 def parse_args(argv):
     output = ""
     optimize = False
+    debug = False
     san = False
     tsan = False
     llvm = False
@@ -29,6 +30,8 @@ def parse_args(argv):
             output = argv[i] if i < len(argv) else ""
         elif arg == "-O":
             optimize = True
+        elif arg == "--debug":
+            debug = True
         elif arg == "--san":
             san = True
         elif arg == "--tsan":
@@ -48,7 +51,7 @@ def parse_args(argv):
         print("error: --san and --tsan are mutually exclusive", file=sys.stderr)
         sys.exit(1)
 
-    return output, optimize, san, tsan, llvm
+    return output, optimize, debug, san, tsan, llvm
 
 
 def get_gc_args(llvm):
@@ -68,7 +71,7 @@ def get_gc_args(llvm):
     return gc_flags.split()
 
 
-def build_clang_args(output, optimize, san, tsan, llvm):
+def build_clang_args(output, optimize, debug, san, tsan, llvm):
     args = ["clang"]
 
     if llvm:
@@ -79,6 +82,11 @@ def build_clang_args(output, optimize, san, tsan, llvm):
             except KeyError:
                 print(f"error: unsupported target os: {target_os}", file=sys.stderr)
                 sys.exit(1)
+        # LLVM-emitted frames are fatter than the C backend's; deep recursion
+        # in the compiler needs more than the default 8MB main stack.
+        # 512MB, the maximum ld allows on arm64
+        if target_os == "macos":
+            args.extend(["-Wl,-stack_size,0x20000000"])
         args.extend(["-x", "ir", "-", "-o", output])
     else:
         # Enum payloads live in uint buffers accessed through casted pointers,
@@ -101,6 +109,9 @@ def build_clang_args(output, optimize, san, tsan, llvm):
     if optimize:
         args.append("-O3")
 
+    if debug:
+        args.extend(["-g", "-fno-omit-frame-pointer"])
+
     if san:
         args.extend(
             [
@@ -118,8 +129,8 @@ def build_clang_args(output, optimize, san, tsan, llvm):
 
 
 def main(argv):
-    output, optimize, san, tsan, llvm = parse_args(argv)
-    clang_args = build_clang_args(output, optimize, san, tsan, llvm)
+    output, optimize, debug, san, tsan, llvm = parse_args(argv)
+    clang_args = build_clang_args(output, optimize, debug, san, tsan, llvm)
     os.execvp(clang_args[0], clang_args)
 
 

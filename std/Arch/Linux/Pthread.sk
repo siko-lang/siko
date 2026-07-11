@@ -3,6 +3,19 @@ module Std.Arch.Pthread {
 // Linux x86-64 pthread struct sizes
 // pthread_mutex_t = 40 bytes, pthread_mutexattr_t = 4 bytes, pthread_attr_t = 56 bytes
 
+// pthread_t is unsigned long on Linux.
+@value_type
+pub struct PThread {
+    pub handle: U64,
+
+    pub fn new() -> PThread {
+        PThread(handle: 0.as_u64())
+    }
+}
+
+@extern("C", "", "GC_pthread_join")
+pub fn gc_pthread_join(thread: U64, retval: *void*) -> I32
+
 @value_type
 pub struct Mutex {
     _priv: [U8; 40],

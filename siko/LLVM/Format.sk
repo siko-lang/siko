@@ -629,6 +629,10 @@ fn format_block(f: Formatter, block: LLVMBasicBlock) {
 fn format_function(f: Formatter, func: LLVMFunctionDef) {
     f.push("define ");
     format_sig(f, func.sig, True);
+    // Boehm GC needs the last stack reference to an object to survive until
+    // the call returns; tail-call optimization can destroy it, and for IR
+    // there is no clang flag, only the function attribute.
+    f.push(" \"disable-tail-calls\"=\"true\"");
     f.push(" {\n");
     for block in func.blocks {
         format_block(f, block);
