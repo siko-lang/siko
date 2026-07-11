@@ -82,11 +82,6 @@ def build_clang_args(output, optimize, debug, san, tsan, llvm):
             except KeyError:
                 print(f"error: unsupported target os: {target_os}", file=sys.stderr)
                 sys.exit(1)
-        # LLVM-emitted frames are fatter than the C backend's; deep recursion
-        # in the compiler needs more than the default 8MB main stack.
-        # 512MB, the maximum ld allows on arm64
-        if target_os == "macos":
-            args.extend(["-Wl,-stack_size,0x20000000"])
         args.extend(["-x", "ir", "-", "-o", output])
     else:
         # Enum payloads live in uint buffers accessed through casted pointers,

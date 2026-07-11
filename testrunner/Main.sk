@@ -103,6 +103,7 @@ pub struct TestCase {
     has_package: Bool,
     snapshot: String,
     has_snapshot: Bool,
+    compiler_snapshot: Option[String],
     skipped: Bool,
     pass_tests: Vec[PassTest],
 }
@@ -217,7 +218,14 @@ pub struct TestRunner {
         let build_ms = build_start.elapsed().to_millis();
 
         match build_result {
-            Ok(_) => {}
+            Ok(output) => {
+                if let Some(snapshot) = test.compiler_snapshot {
+                    match r.compare_or_bless(snapshot, output) {
+                        Ok(_) => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
             Err(e) => return Err(e),
         }
 
@@ -552,6 +560,7 @@ fn build_test_case(path: String, nostd: Bool) -> TestCase {
         "${path}/main.sk"
     };
     let snapshot = "${path}/output.txt";
+    let compiler_snapshot = "${path}/compiler-output.txt";
     TestCase(
         path: path,
         input: input,
@@ -559,6 +568,7 @@ fn build_test_case(path: String, nostd: Bool) -> TestCase {
         has_package: has_package,
         snapshot: snapshot,
         has_snapshot: file_exists(snapshot),
+        compiler_snapshot: if file_exists(compiler_snapshot) { Some(compiler_snapshot) } else { None },
         skipped: file_exists("${path}/SKIP"),
         pass_tests: discover_pass_tests(path),
     )

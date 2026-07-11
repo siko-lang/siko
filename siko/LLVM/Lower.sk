@@ -32,12 +32,13 @@ struct FunctionLowerer {
     locals: Map[VariableName, LocalSlot],
     instrs: Vec[LLVMInstruction],
     blocks: Vec[LLVMBasicBlock],
+    allocas: Vec[LLVMInstruction],
     temp: Int,
     term: Option[LLVMTerminator],
     label: String,
 
     fn new(lowerer: Lowerer) -> FunctionLowerer {
-        FunctionLowerer(lowerer, Map.new(), Vec.new(), Vec.new(), 0, None, "entry")
+        FunctionLowerer(lowerer, Map.new(), Vec.new(), Vec.new(), Vec.new(), 0, None, "entry")
     }
 
     fn fresh(fl: FunctionLowerer, hint: String) -> String {
@@ -74,7 +75,7 @@ struct FunctionLowerer {
     fn add_local(fl: FunctionLowerer, name: VariableName, ty: LLVMType) -> LocalSlot {
         let ptr = var_name(name.clone()) + "_slot";
         let slot = LocalSlot(ty.clone(), ptr.clone());
-        fl.emit(Some(ptr), LLVMInstructionKind.Alloca(ty, None));
+        fl.allocas.push(LLVMInstruction(Some(ptr), LLVMInstructionKind.Alloca(ty, None)));
         fl.locals.insert(name, slot.clone());
         slot
     }
@@ -543,7 +544,14 @@ struct FunctionLowerer {
             fl.lower_stmt(stmt);
         }
         fl.finish_block(LLVMTerminator.Unreachable);
-        fl.blocks
+        let entry = fl.blocks[0].clone();
+        let entry_instrs = fl.allocas.clone();
+        entry_instrs.extend(entry.instrs);
+        let blocks: Vec[LLVMBasicBlock] = [LLVMBasicBlock(entry.label, entry_instrs, entry.term)];
+        for i in 1..fl.blocks.len() {
+            blocks.push(fl.blocks[i].clone());
+        }
+        blocks
     }
 }
 

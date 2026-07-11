@@ -8,13 +8,6 @@ SIKO_TARGET_OS ?= macos
 export SIKO_ROOT
 export SIKO_TARGET_OS
 
-# The LLVM backend emits fatter stack frames than the C backend, so the
-# compiler's recursion needs more than the default 8MB main stack. macOS
-# handles this at link time (see link.py); on Linux only ulimit can raise it.
-# Every recipe shell sources stack_limit.sh via BASH_ENV.
-SHELL := /bin/bash
-export BASH_ENV := $(CURDIR)/stack_limit.sh
-
 BOOTSTRAP_SOURCE_C = bootstrap/source_$(SIKO_TARGET_OS).c
 BOOTSTRAP_SOURCE_LL = bootstrap/source_$(SIKO_TARGET_OS).ll
 
