@@ -1,0 +1,142 @@
+module Siko.LLVM.Deps {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Annotations
+import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Package.Collector as PC
+import Siko.Utils.LabelAllocator
+import Siko.Utils.SCC as SCC
+import Siko.Utils.VarAllocator
+
+pub struct FunctionDeps {
+    pub sccs: Vec[Vec[QualifiedName]],
+    pub graph: Map[QualifiedName, Vec[QualifiedName]],
+}
+
+struct DepCollector {
+    deps: Set[QualifiedName],
+    program: Program,
+}
+
+trait CollectDeps[T] {
+    fn collect_deps(t: T, c: DepCollector)
+}
+
+fn is_lowered_function(program: Program, qname: QualifiedName) -> Bool {
+    match program.functions.get(qname) {
+        Some(fdef) => !fdef.is_builtin() && fdef.body.is_some(),
+        None => False,
+    }
+}
+
+fn add_dep(c: DepCollector, qname: QualifiedName) {
+    if is_lowered_function(c.program, qname) {
+        c.deps.insert(qname);
+    }
+}
+
+instance CollectDeps[Location]           = auto(Fold, =)
+instance CollectDeps[TypeDef]            = auto(Fold, =)
+instance CollectDeps[I.String]           = auto(Fold, =)
+instance CollectDeps[String]             = auto(Fold, =)
+instance CollectDeps[Int]                = auto(Fold, =)
+instance CollectDeps[U8]                 = auto(Fold, =)
+instance CollectDeps[Bool]               = auto(Fold, =)
+instance CollectDeps[QualifiedName]      = auto(Fold, =)
+instance CollectDeps[E.VariableName]     = auto(Fold, =)
+instance CollectDeps[Name]               = auto(Fold, =)
+instance CollectDeps[Identifier]         = auto(Fold, =)
+instance CollectDeps[E.WitnessInfo]      = auto(Fold, =)
+instance CollectDeps[E.FunctionKind]     = auto(Fold, =)
+instance CollectDeps[E.BinaryOp]         = auto(Fold, =)
+instance CollectDeps[E.UnaryOp]          = auto(Fold, =)
+instance CollectDeps[E.LambdaArg]        = auto(Fold, =)
+instance CollectDeps[E.ImplicitRefInfo]  = auto(Fold, =)
+instance CollectDeps[E.NamedArgument]    = auto(Fold, =)
+instance CollectDeps[E.HandlerSelection] = auto(Fold, =)
+instance CollectDeps[E.MethodCallInfo]   = auto(Fold)
+instance CollectDeps[E.CallInfo]         = auto(Fold)
+instance CollectDeps[E.WithInfo]         = auto(Fold)
+instance CollectDeps[E.MatchArm]         = auto(Fold)
+instance CollectDeps[E.MatchInfo]        = auto(Fold)
+instance CollectDeps[E.YieldInfo]        = auto(Fold)
+instance CollectDeps[E.TypeAssociatedCallInfo] = auto(Fold)
+instance CollectDeps[E.CreateClosureInfo] = auto(Fold)
+instance CollectDeps[E.ExprKind]         = auto(Fold)
+instance CollectDeps[E.Expr]             = auto(Fold)
+instance CollectDeps[S.LetInfo]          = auto(Fold)
+instance CollectDeps[S.DeclareInfo]      = auto(Fold)
+instance CollectDeps[E.BlockInfo]        = auto(Fold)
+instance CollectDeps[S.Statement]        = auto(Fold)
+instance CollectDeps[Pattern]            = auto(Fold)
+instance CollectDeps[PatternKind]        = auto(Fold)
+instance CollectDeps[NamedPatternArg]    = auto(Fold, =)
+instance CollectDeps[NamedPatternInfo]   = auto(Fold)
+instance CollectDeps[FunctionArg]        = auto(Fold)
+instance CollectDeps[FunctionDef]        = auto(Fold)
+instance CollectDeps[Annotation]         = auto(Fold, =)
+instance CollectDeps[FunctionDefKind]    = auto(Fold, =)
+instance CollectDeps[TypeArgDefs]        = auto(Fold, =)
+instance CollectDeps[VarAllocator]       = auto(Fold, =)
+instance CollectDeps[LabelAllocator]     = auto(Fold, =)
+instance CollectDeps[DefaultValueInfo]   = auto(Fold, =)
+instance CollectDeps[PC.SourcePackage]   = auto(Fold, =)
+
+instance[T: CollectDeps[T]] CollectDeps[Option[T]] {
+    fn collect_deps(opt: Option[T], c: DepCollector) {
+        if let Some(t) = opt {
+            collect_deps(t, c);
+        }
+    }
+}
+
+instance[T: CollectDeps[T]] CollectDeps[Vec[T]] {
+    fn collect_deps(vec: Vec[T], c: DepCollector) {
+        for t in vec {
+            collect_deps(t, c);
+        }
+    }
+}
+
+instance CollectDeps[E.FunctionCallInfo] {
+    fn collect_deps(info: E.FunctionCallInfo, c: DepCollector) {
+        add_dep(c, info.qname);
+        collect_deps(info.args, c);
+    }
+}
+
+instance CollectDeps[E.FunctionPtrInfo] {
+    fn collect_deps(info: E.FunctionPtrInfo, c: DepCollector) {
+        add_dep(c, info.name);
+    }
+}
+
+pub fn build(program: Program) -> FunctionDeps {
+    let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
+
+    for (qname, func) in program.functions {
+        if !is_lowered_function(program, qname) {
+            continue;
+        }
+        let collector = DepCollector(Set.new(), program);
+        collect_deps(func, collector);
+        let deps: Vec[QualifiedName] = collector.deps.into_iter().collect();
+        graph.insert(qname, deps);
+    }
+
+    FunctionDeps(SCC.compute(graph), graph)
+}
+
+}

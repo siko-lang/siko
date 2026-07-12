@@ -6,6 +6,7 @@ module Siko.LLVM.Emit {
 // with the textual backend.
 
 import Std.Map
+import Std.Sync.Thread as T
 import Siko.LLVM.AST
 import Siko.LLVM.CApi
 
@@ -465,6 +466,19 @@ pub fn emit(llvm_module: LLVMModule) -> String {
     text
 }
 
+pub fn emit_modules(llvm_modules: Vec[LLVMModule]) -> String {
+    let text = "";
+    let first = True;
+    for llvm_module in llvm_modules {
+        if !first {
+            text = text + "\n";
+        }
+        text = text + emit(llvm_module);
+        first = False;
+    }
+    text
+}
+
 pub struct ObjectModule {
     ctx: Context,
     m: Module,
@@ -485,17 +499,64 @@ pub struct ObjectModule {
     }
 }
 
-pub fn optimize(llvm_module: LLVMModule, optimize: Bool) -> ObjectModule {
+pub fn emit_object_modules(object_modules: Vec[ObjectModule], paths: Vec[String]) {
+    if object_modules.len() != paths.len() {
+        panic("llvm emit: object module/path count mismatch");
+    }
+    let handles: Vec[T.JoinHandle] = Vec.new(object_modules.len());
+    let i = 0;
+    while i < object_modules.len() {
+        let object_module = object_modules[i];
+        let path = paths[i];
+        handles.push(T.spawn(|| {
+            object_module.emit_object(path);
+            object_module.dispose();
+        }));
+        i += 1;
+    }
+    for handle in handles {
+        handle.join();
+    }
+}
+
+fn optimize_initialized(llvm_module: LLVMModule, optimize: Bool) -> ObjectModule {
     let triple = llvm_module.target_triple.clone().expect("llvm emit: module has no target triple");
     let ctx = Context.new();
     let m = build(ctx, llvm_module);
-    initialize_targets();
     let tm = Target.from_triple(triple.clone()).create_machine(triple, optimize);
     tm.apply_data_layout(m);
     if optimize {
         m.run_passes("default<O3>", tm);
     }
     ObjectModule(ctx, m, tm)
+}
+
+pub fn optimize(llvm_module: LLVMModule, optimize: Bool) -> ObjectModule {
+    initialize_targets();
+    optimize_initialized(llvm_module, optimize)
+}
+
+pub fn optimize_modules(llvm_modules: Vec[LLVMModule], do_optimize: Bool) -> Vec[ObjectModule] {
+    initialize_targets();
+    let slots: Vec[Option[ObjectModule]] = Vec.with_value(llvm_modules.len(), None);
+    let handles: Vec[T.JoinHandle] = Vec.new(llvm_modules.len());
+    let i = 0;
+    while i < llvm_modules.len() {
+        let index = i;
+        let llvm_module = llvm_modules[i];
+        handles.push(T.spawn(|| {
+            slots[index] = Some(optimize_initialized(llvm_module, do_optimize));
+        }));
+        i += 1;
+    }
+    for handle in handles {
+        handle.join();
+    }
+    let object_modules: Vec[ObjectModule] = Vec.new(slots.len());
+    for slot in slots {
+        object_modules.push(slot.expect("llvm emit: worker did not produce object module"));
+    }
+    object_modules
 }
 
 }

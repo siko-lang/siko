@@ -7,13 +7,13 @@ cd $script_dir
 # refresh bootstrap repo after make refresh
 cd ..
 
-rm ../bootstrap/source*
+rm -f ../bootstrap/source*
 cp bootstrap/source* ../bootstrap/
 cd ../bootstrap
-git add source*
+git add -A -- 'source*'
 git commit -m update
 git push
 cd -
-rm bootstrap/source*
+rm -f bootstrap/source*
 cd bootstrap/
 git pull origin master

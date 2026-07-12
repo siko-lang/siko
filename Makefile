@@ -8,7 +8,11 @@ SIKO_TARGET_OS ?= macos
 export SIKO_ROOT
 export SIKO_TARGET_OS
 
-BOOTSTRAP_SOURCE_OBJ = bootstrap/source_$(SIKO_TARGET_OS).o
+BOOTSTRAP_SOURCE_PREFIX = bootstrap/source_$(SIKO_TARGET_OS)
+BOOTSTRAP_SOURCE_OBJS = $(sort $(wildcard $(BOOTSTRAP_SOURCE_PREFIX).*.o))
+ifeq ($(BOOTSTRAP_SOURCE_OBJS),)
+BOOTSTRAP_SOURCE_OBJS = $(sort $(wildcard $(BOOTSTRAP_SOURCE_PREFIX).o))
+endif
 
 .PHONY: test
 
@@ -32,13 +36,16 @@ siko2.bin: siko.bin
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin
 
-base.bin: $(BOOTSTRAP_SOURCE_OBJ) link.py
-	./link.py -o base.bin $(BOOTSTRAP_SOURCE_OBJ)
+base.bin: $(BOOTSTRAP_SOURCE_OBJS) link.py
+	@test -n "$(BOOTSTRAP_SOURCE_OBJS)" || { echo "No bootstrap objects found for $(BOOTSTRAP_SOURCE_PREFIX)"; exit 1; }
+	./link.py -o base.bin $(BOOTSTRAP_SOURCE_OBJS)
 
 .PHONY: refresh
 refresh:
-	SIKO_TARGET_OS=linux ./siko.bin build siko -O -c -o bootstrap/source_linux.o
-	SIKO_TARGET_OS=macos ./siko.bin build siko -O -c -o bootstrap/source_macos.o
+	rm -f bootstrap/source_linux.o bootstrap/source_linux.*.o
+	SIKO_TARGET_OS=linux ./siko.bin build siko -O -c -o bootstrap/source_linux
+	rm -f bootstrap/source_macos.o bootstrap/source_macos.*.o
+	SIKO_TARGET_OS=macos ./siko.bin build siko -O -c -o bootstrap/source_macos
 
 ssg.bin: siko.bin $(SSG_SK)
 	./siko.bin build ssg -o ssg.bin

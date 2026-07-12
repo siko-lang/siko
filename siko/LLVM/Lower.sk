@@ -11,6 +11,7 @@ import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Layout
 import Siko.LLVM.AST
+import Siko.LLVM.Deps as Deps
 import Siko.LLVM.Util
 import Siko.Config
 
@@ -791,13 +792,22 @@ struct Lowerer {
         LLVMFunctionDef(l.lower_sig(fdef), blocks)
     }
 
-    fn lower_functions(l: Lowerer, declarations: Vec[LLVMFunctionDecl], functions: Vec[LLVMFunctionDef]) {
-        for fdef in l.program.functions.values() {
+    fn lower_functions(
+        l: Lowerer,
+        declarations: Vec[LLVMFunctionDecl],
+        functions: Map[QualifiedName, LLVMFunctionDef],
+        function_declarations: Map[QualifiedName, LLVMFunctionDecl],
+    ) {
+        for (qname, fdef) in l.program.functions {
             if fdef.is_builtin() {
                 continue;
             }
             match fdef.body {
-                Some(_) => functions.push(l.lower_definition(fdef)),
+                Some(_) => {
+                    let def = l.lower_definition(fdef);
+                    function_declarations.insert(qname, LLVMFunctionDecl(def.sig));
+                    functions.insert(qname, def);
+                }
                 None => {
                     let symbol = l.fn_symbol(fdef);
                     if !l.is_runtime_defined_symbol(symbol) {
@@ -855,7 +865,7 @@ fn add_string_global(globals: Vec[LLVMGlobal], names: Vec[String], value: String
     names.push(name);
     globals.push(LLVMGlobal(
         name,
-        LLVMLinkage.Private,
+        LLVMLinkage.External,
         LLVMUnnamedAddr.UnnamedAddr,
         True,
         LLVMType.Array(value.len() + 1, LLVMType.Int(8)),
@@ -995,8 +1005,8 @@ fn collect_string_globals(program: Program, globals: Vec[LLVMGlobal], names: Vec
     }
 }
 
-fn build_globals(program: Program) -> Vec[LLVMGlobal] {
-    let globals: Vec[LLVMGlobal] = [
+fn build_runtime_globals() -> Vec[LLVMGlobal] {
+    [
         LLVMGlobal(
             "_siko_argc",
             LLVMLinkage.Internal,
@@ -1037,7 +1047,11 @@ fn build_globals(program: Program) -> Vec[LLVMGlobal] {
             None,
             [],
         ),
-    ];
+    ]
+}
+
+fn build_string_globals(program: Program) -> Vec[LLVMGlobal] {
+    let globals: Vec[LLVMGlobal] = Vec.new();
     let names: Vec[String] = Vec.new();
     collect_string_globals(program, globals, names);
     globals
@@ -1046,7 +1060,7 @@ fn build_globals(program: Program) -> Vec[LLVMGlobal] {
 fn build_siko_malloc() -> LLVMFunctionDef {
     let sig = LLVMFunctionSig(
         "siko_malloc",
-        LLVMLinkage.Internal,
+        LLVMLinkage.External,
         None,
         LLVMType.Ptr,
         [LLVMParam(LLVMType.Int(64), Some("size"), [])],
@@ -1257,27 +1271,207 @@ fn build_main() -> LLVMFunctionDef {
     )
 }
 
-pub fn lower(program: Program) -> LLVMModule {
-    let l = Lowerer.new(program);
-    let declarations: Vec[LLVMFunctionDecl] = Vec.new();
-    let functions: Vec[LLVMFunctionDef] = Vec.new();
-    l.lower_functions(declarations, functions);
-    add_runtime_declarations(l, declarations);
-    functions.push(build_siko_malloc());
-    functions.push(build_get_saved_argc());
-    functions.push(build_get_saved_arg());
-    functions.push(build_get_environ());
-    functions.push(build_set_program_result());
-    functions.push(build_main());
+fn make_module(
+    name: String,
+    types: Vec[LLVMTypeDef],
+    globals: Vec[LLVMGlobal],
+    declarations: Vec[LLVMFunctionDecl],
+    functions: Vec[LLVMFunctionDef],
+) -> LLVMModule {
     LLVMModule(
-        Some("siko"),
+        Some(name),
         Some(get_config().target_info.target_triplet),
         None,
-        l.lower_structs(),
-        build_globals(l.program),
+        types,
+        globals,
         declarations,
         functions,
     )
+}
+
+fn declarations_from_defs(functions: Vec[LLVMFunctionDef]) -> Vec[LLVMFunctionDecl] {
+    let declarations: Vec[LLVMFunctionDecl] = Vec.new(functions.len());
+    for func in functions {
+        declarations.push(LLVMFunctionDecl(func.sig));
+    }
+    declarations
+}
+
+fn declarations_from_map(function_declarations: Map[QualifiedName, LLVMFunctionDecl]) -> Vec[LLVMFunctionDecl] {
+    let declarations: Vec[LLVMFunctionDecl] = Vec.new(function_declarations.len());
+    for (_, decl) in function_declarations {
+        declarations.push(decl);
+    }
+    declarations
+}
+
+fn global_declaration(global: LLVMGlobal) -> LLVMGlobal {
+    LLVMGlobal(
+        global.name,
+        LLVMLinkage.External,
+        global.unnamed_addr,
+        global.constant,
+        global.ty,
+        None,
+        global.align,
+        global.attrs,
+    )
+}
+
+fn global_declarations(globals: Vec[LLVMGlobal]) -> Vec[LLVMGlobal] {
+    let declarations: Vec[LLVMGlobal] = Vec.new(globals.len());
+    for global in globals {
+        declarations.push(global_declaration(global));
+    }
+    declarations
+}
+
+fn runtime_functions() -> Vec[LLVMFunctionDef] {
+    [
+        build_siko_malloc(),
+        build_get_saved_argc(),
+        build_get_saved_arg(),
+        build_get_environ(),
+        build_set_program_result(),
+        build_main(),
+    ]
+}
+
+fn user_module_declarations(
+    common_declarations: Vec[LLVMFunctionDecl],
+    dep_graph: Map[QualifiedName, Vec[QualifiedName]],
+    function_declarations: Map[QualifiedName, LLVMFunctionDecl],
+    module_qnames: Vec[QualifiedName],
+) -> Vec[LLVMFunctionDecl] {
+    let declarations: Vec[LLVMFunctionDecl] = Vec.new(common_declarations.len() + module_qnames.len());
+    let seen: Vec[QualifiedName] = Vec.new(module_qnames.len());
+    declarations.extend(common_declarations);
+    for qname in module_qnames {
+        for dep in dep_graph.get(qname).unwrap_or([]) {
+            if !module_qnames.contains(dep) && !seen.contains(dep) {
+                seen.push(dep);
+                declarations.push(function_declarations.get(dep).expect("llvm deps: missing function declaration"));
+            }
+        }
+    }
+    declarations
+}
+
+fn add_user_module(
+    modules: Vec[LLVMModule],
+    module_index: Int,
+    types: Vec[LLVMTypeDef],
+    string_globals: Vec[LLVMGlobal],
+    common_declarations: Vec[LLVMFunctionDecl],
+    dep_graph: Map[QualifiedName, Vec[QualifiedName]],
+    function_declarations: Map[QualifiedName, LLVMFunctionDecl],
+    module_qnames: Vec[QualifiedName],
+    functions: Vec[LLVMFunctionDef],
+) {
+    modules.push(make_module(
+        "siko.${module_index}",
+        types,
+        global_declarations(string_globals),
+        user_module_declarations(common_declarations, dep_graph, function_declarations, module_qnames),
+        functions,
+    ));
+}
+
+fn lower_user_modules(
+    types: Vec[LLVMTypeDef],
+    string_globals: Vec[LLVMGlobal],
+    common_declarations: Vec[LLVMFunctionDecl],
+    function_declarations: Map[QualifiedName, LLVMFunctionDecl],
+    function_defs: Map[QualifiedName, LLVMFunctionDef],
+    deps: Deps.FunctionDeps,
+) -> Vec[LLVMModule] {
+    let codegen_units = get_config().codegen_units.max(1);
+    let chunk_size = (function_defs.len() / codegen_units).max(1);
+    let modules: Vec[LLVMModule] = Vec.new(codegen_units);
+    let module_index = 0;
+    let module_qnames: Vec[QualifiedName] = Vec.new(chunk_size);
+    let module_functions: Vec[LLVMFunctionDef] = Vec.new(chunk_size);
+    for scc in deps.sccs {
+        if !module_functions.is_empty() && module_functions.len() + scc.len() > chunk_size {
+            add_user_module(
+                modules,
+                module_index,
+                types,
+                string_globals,
+                common_declarations,
+                deps.graph,
+                function_declarations,
+                module_qnames,
+                module_functions,
+            );
+            module_index += 1;
+            module_qnames = Vec.new(chunk_size);
+            module_functions = Vec.new(chunk_size);
+        }
+        for qname in scc {
+            module_qnames.push(qname);
+            module_functions.push(function_defs.get(qname).expect("llvm deps: missing function definition"));
+        }
+    }
+    if !module_functions.is_empty() {
+        add_user_module(
+            modules,
+            module_index,
+            types,
+            string_globals,
+            common_declarations,
+            deps.graph,
+            function_declarations,
+            module_qnames,
+            module_functions,
+        );
+    }
+    modules
+}
+
+pub fn lower(program: Program) -> Vec[LLVMModule] {
+    let l = Lowerer.new(program);
+    let declarations: Vec[LLVMFunctionDecl] = Vec.new();
+    let function_defs: Map[QualifiedName, LLVMFunctionDef] = Map.new();
+    let function_declarations: Map[QualifiedName, LLVMFunctionDecl] = Map.new();
+    l.lower_functions(declarations, function_defs, function_declarations);
+    add_runtime_declarations(l, declarations);
+    let types = l.lower_structs();
+    let string_globals = build_string_globals(l.program);
+    let runtime_defs = runtime_functions();
+    let user_declarations = declarations_from_map(function_declarations);
+    let runtime_declarations: Vec[LLVMFunctionDecl] = Vec.new(declarations.len() + user_declarations.len());
+    runtime_declarations.extend(declarations);
+    runtime_declarations.extend(user_declarations);
+
+    let common_user_declarations: Vec[LLVMFunctionDecl] = Vec.new(declarations.len() + runtime_defs.len());
+    common_user_declarations.extend(declarations);
+    common_user_declarations.extend(declarations_from_defs(runtime_defs));
+
+    let modules: Vec[LLVMModule] = Vec.new(get_config().codegen_units.max(1) + 2);
+    modules.push(make_module(
+        "siko.runtime",
+        types,
+        build_runtime_globals(),
+        runtime_declarations,
+        runtime_defs,
+    ));
+    modules.push(make_module(
+        "siko.strings",
+        types,
+        string_globals,
+        Vec.new(),
+        Vec.new(),
+    ));
+    modules.extend(lower_user_modules(
+        types,
+        string_globals,
+        common_user_declarations,
+        function_declarations,
+        function_defs,
+        Deps.build(l.program),
+    ));
+    modules
 }
 
 }

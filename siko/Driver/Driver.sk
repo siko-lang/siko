@@ -24,10 +24,9 @@ pub struct Driver {
     pub all_modules: Vec[Module],
     pub pkg_reachability: Map[String, Set[String]],
     pub llvm_source: String,
-    // The lowered module, kept for object emission in the link pass when the
-    // LLVM API backend is selected.
-    pub llvm_module: Option[LLVMModule],
-    pub object_module: Option[Emit.ObjectModule],
+    // The lowered modules, kept for object emission in the link pass.
+    pub llvm_modules: Vec[LLVMModule],
+    pub object_modules: Vec[Emit.ObjectModule],
     pub diagnostics: Vec[Diagnostic],
 
     pub fn new() -> Driver {
@@ -37,8 +36,8 @@ pub struct Driver {
             all_modules: Vec.new(),
             pkg_reachability: Map.new(),
             llvm_source: "",
-            llvm_module: None,
-            object_module: None,
+            llvm_modules: Vec.new(),
+            object_modules: Vec.new(),
             diagnostics: Vec.new(),
         )
     }
@@ -118,8 +117,8 @@ pub struct Driver {
         args
     }
 
-    pub fn link_object(d: Driver, object_path: String, output: String) {
-        let clang = Command.new("clang").with_path().arg(object_path);
+    pub fn link_objects(d: Driver, object_paths: Vec[String], output: String) {
+        let clang = Command.new("clang").with_path().args(object_paths);
         for arg in common_link_args(output) {
             clang = clang.arg(arg);
         }
@@ -131,16 +130,23 @@ pub struct Driver {
     }
 
     pub fn dump_llvm(d: Driver) {
-        match d.llvm_module {
-            Some(llvm_module) => println(Emit.emit(llvm_module)),
-            None => panic("No llvm module in driver"),
+        if d.llvm_modules.is_empty() {
+            panic("No llvm modules in driver");
         }
+        println(Emit.emit_modules(d.llvm_modules));
     }
 
     pub fn dump_object_module(d: Driver) {
-        match d.object_module {
-            Some(object_module) => println(object_module.ir()),
-            None => panic("No optimized llvm module in driver"),
+        if d.object_modules.is_empty() {
+            panic("No optimized llvm modules in driver");
+        }
+        let first = True;
+        for object_module in d.object_modules {
+            if !first {
+                println("");
+            }
+            println(object_module.ir());
+            first = False;
         }
     }
 

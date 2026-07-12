@@ -46,6 +46,16 @@ pub struct Pass {
     pub run_sanity_check: Bool = False,
 }
 
+fn object_paths(prefix: String, count: Int) -> Vec[String] {
+    let paths: Vec[String] = Vec.new();
+    let i = 0;
+    while i < count {
+        paths.push("${prefix}.${i + 1}.o");
+        i += 1;
+    }
+    paths
+}
+
 pub fn build_passes(driver: Driver) -> Vec[Pass] {
     let config = get_config();
     let core_passes: Vec[Pass] = [
@@ -189,9 +199,8 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 name: "llvm",
                 label: "Emitting LLVM...",
                 run: |driver| {
-                    let llvm_module = LLVMBackend.lower(driver.program);
                     // Kept as AST so the dump callback can print pre-optimization IR.
-                    driver.llvm_module = Some(llvm_module);
+                    driver.llvm_modules = LLVMBackend.lower(driver.program);
                 },
                 dump: Some(|driver| driver.dump_llvm()),
             ),
@@ -199,12 +208,10 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 name: "llvm-opt",
                 label: "LLVM optimizations...",
                 run: |driver| {
-                    match driver.llvm_module {
-                        Some(llvm_module) => {
-                            driver.object_module = Some(LLVMEmit.optimize(llvm_module, config.optimize));
-                        }
-                        None => panic("No llvm module found during optimization"),
+                    if driver.llvm_modules.is_empty() {
+                        panic("No llvm modules found during optimization");
                     }
+                    driver.object_modules = LLVMEmit.optimize_modules(driver.llvm_modules, config.optimize);
                 },
                 dump: Some(|driver| driver.dump_object_module()),
             ),
@@ -218,22 +225,18 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                         config.output
                     };
                     if let Some(out) = effective_output {
-                        match driver.object_module {
-                            Some(object_module) => {
-                                if config.obj {
-                                    object_module.emit_object(out);
-                                    object_module.dispose();
-                                    driver.object_module = None;
-                                    return;
-                                }
-                                let object_path = "${out}.o";
-                                object_module.emit_object(object_path);
-                                object_module.dispose();
-                                driver.object_module = None;
-                                driver.link_object(object_path, out);
-                                Fs.remove_file(object_path).unwrap();
-                            }
-                            None => panic("No optimized llvm module found during linking"),
+                        if driver.object_modules.is_empty() {
+                            panic("No optimized llvm modules found during linking");
+                        }
+                        let paths = object_paths(out, driver.object_modules.len());
+                        LLVMEmit.emit_object_modules(driver.object_modules, paths);
+                        driver.object_modules = Vec.new();
+                        if config.obj {
+                            return;
+                        }
+                        driver.link_objects(paths.clone(), out);
+                        for path in paths {
+                            Fs.remove_file(path).unwrap();
                         }
                         if config.test {
                             if config.trace { println("Running tests..."); }
