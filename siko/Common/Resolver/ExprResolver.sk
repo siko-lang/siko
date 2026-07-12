@@ -13,6 +13,7 @@ import Siko.AST.Type
 import Siko.AST.Name
 import Siko.AST.Pattern
 import Siko.AST.Statement as S
+import Siko.AST.Function
 import Siko.Utils.VarAllocator
 import Siko.Interner as I
 import Siko.Location
@@ -72,7 +73,7 @@ pub struct ExprResolver {
                     // scope. Fall through to the module resolver before giving up.
                     let item = expr_resolver.type_resolver.module_resolver().resolve(ident)?;
                     match item.kind {
-                        ModuleItemKind.Function(_, _) => ExprKind.FunctionPtr(FunctionPtrInfo(item.qualified_name, WitnessInfo.new())),
+                        ModuleItemKind.Function(_, _, _) => ExprKind.FunctionPtr(FunctionPtrInfo(item.qualified_name, WitnessInfo.new())),
                         ModuleItemKind.Implicit(_) => ExprKind.ImplicitRef(ImplicitRefInfo(item.qualified_name)),
                         _ => return Err(ResolveError.NameNotFound(ident)),
                     }
@@ -146,7 +147,7 @@ pub struct ExprResolver {
                                 .module_resolver()
                                 .resolve(name.unresolved())?;
                             match item.kind {
-                                ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
+                                ModuleItemKind.Function(_, kind, _) => ExprKind.FunctionCall(
                                     FunctionCallInfo(
                                         item.qualified_name,
                                         kind,
@@ -206,7 +207,7 @@ pub struct ExprResolver {
                                     is_co,
                                 )
                             ),
-                            ModuleItemKind.Function(_, kind) => ExprKind.FunctionCall(
+                            ModuleItemKind.Function(_, kind, _) => ExprKind.FunctionCall(
                                 FunctionCallInfo(
                                     item.qualified_name,
                                     kind,
@@ -452,7 +453,7 @@ pub struct ExprResolver {
                         ));
                     }
                 }
-                ModuleItemKind.Function(_, _) => {
+                ModuleItemKind.Function(_, _, _) => {
                     let handler_ident = match selection {
                         HandlerSelection.Unresolved(_, h) => h,
                         HandlerSelection.UnresolvedType(_, TypeDef.Named(NamedInfo(name, _))) => name.unresolved(),
@@ -516,7 +517,7 @@ pub struct ExprResolver {
             Err(_) => return Err(ResolveError.NameNotFound(ident)),
         };
         match fn_item.kind {
-            ModuleItemKind.Function(_, _) => {},
+            ModuleItemKind.Function(_, _, FunctionDefKind.TraitMethod) => {},
             _ => return Err(ResolveError.NameNotFound(ident)),
         }
         Ok(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(

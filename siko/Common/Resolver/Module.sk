@@ -67,6 +67,7 @@ fn push_method_items(
     type_full: Identifier,
     type_short: Identifier,
     mdef: FunctionDef,
+    def_kind: FunctionDefKind,
 ) {
     let qualified_name = QualifiedName.new_method(parent_qn.name(), mdef.name.name());
     let named_items = [
@@ -80,7 +81,7 @@ fn push_method_items(
             aliasable: aliasable,
             name: name,
             qualified_name: qualified_name,
-            kind: ModuleItemKind.Function(mdef.name, mdef.get_kind()),
+            kind: ModuleItemKind.Function(mdef.name, mdef.get_kind(), def_kind),
             import_def: None,
         ));
     }
@@ -101,7 +102,8 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                     kind: kind,
                 );
             for mdef in def.methods {
-                push_method_items(items, mdef.public, QualifiedName.new_struct(module_name.name(), def.name.name()), struct_name, def.name, mdef);
+                let def_kind = mdef.kind.clone();
+                push_method_items(items, mdef.public, QualifiedName.new_struct(module_name.name(), def.name.name()), struct_name, def.name, mdef, def_kind);
             }
             items
         }
@@ -141,13 +143,14 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                 kind: enum_kind,
             ));
             for mdef in def.methods {
-                push_method_items(items, mdef.public, QualifiedName.new_enum(module_name.name(), def.name.name()), enum_name, def.name, mdef);
+                let def_kind = mdef.kind.clone();
+                push_method_items(items, mdef.public, QualifiedName.new_enum(module_name.name(), def.name.name()), enum_name, def.name, mdef, def_kind);
             }
             items
         }
         M.ModuleItem.Function(def) => {
             let function_name = module_name.merge(def.name);
-            let kind = ModuleItemKind.Function(def.name, def.get_kind());
+            let kind = ModuleItemKind.Function(def.name, def.get_kind(), def.kind);
             two_name_items(
                 public: def.public,
                 full_name: function_name,
@@ -174,7 +177,7 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                     kind: kind,
                 );
             for mdef in def.methods {
-                push_method_items(items, def.public, QualifiedName.new_trait(module_name.name(), def.name.name()), trait_name, def.name, mdef);
+                push_method_items(items, def.public, QualifiedName.new_trait(module_name.name(), def.name.name()), trait_name, def.name, mdef, FunctionDefKind.TraitMethod);
             }
             items
         }
@@ -215,7 +218,7 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                 }
             }
             for mdef in def.methods {
-                push_method_items(items, def.public, QualifiedName.new_effect(module_name.name(), def.name.name()), effect_name, def.name, mdef);
+                push_method_items(items, def.public, QualifiedName.new_effect(module_name.name(), def.name.name()), effect_name, def.name, mdef, FunctionDefKind.EffectMethod);
             }
             items
         }
@@ -282,8 +285,6 @@ fn get_type_arg_count(d: Option[TypeArgDefs]) -> Int {
 }
 
 }
-
-
 
 
 
