@@ -1,0 +1,33 @@
+module Siko.Compiler.Errors {
+
+import Siko.Monomorphizer.Error
+import Siko.Report
+import Siko.ValueTypes
+
+pub fn report_mono_errors(errors: Vec[MonoError]) {
+    for e in errors { report_mono_error(e); }
+}
+
+pub fn report_mono_error(error: MonoError) {
+    match error {
+        MonoError.UnresolvedEffectHandler(method, location) =>
+            report("unresolved effect handler for `${method}`", Some(location)),
+        MonoError.UnsetImplicit(name, location) =>
+            report("implicit `${name}` is not set in this context", Some(location)),
+        MonoError.UnboundEffectAssociatedType(name, location) =>
+            report("effect associated type `${name}` is not bound in this handler", Some(location)),
+    }
+}
+
+pub fn report_value_type_errors(errors: Vec[ValueTypeError]) {
+    for e in errors { report_value_type_error(e); }
+}
+
+pub fn report_value_type_error(e: ValueTypeError) {
+    match e {
+        ValueTypeError.ExplicitValueTypeInCycle(location) =>
+            report("@value_type type is in a recursive value-layout cycle", Some(location)),
+    }
+}
+
+}

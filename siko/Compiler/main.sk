@@ -5,20 +5,16 @@ import Siko.Constants.Builtins as B
 import Siko.FileManager
 import Siko.Config
 import Siko.Driver
+import Siko.Compiler.Passes as Compiler
 import Siko.Errors
-import Siko.LSP as LSP
 import Siko.CLI as CLI
 
 pub fn name_cache_entry() {
     let name_cache = B.build_cache();
     with B.name_cache = name_cache {
-        if get_config().lsp {
-            LSP.run_server();
-        } else {
-            let driver = Driver.new();
-            driver.compile(get_config().pass);
-            driver.report_diagnostics_and_exit();
-        }
+        let driver = Driver.new();
+        Compiler.compile(driver, get_config().pass);
+        driver.report_diagnostics_and_exit();
     }
 }
 

@@ -5,14 +5,12 @@ import Siko.Instances.InstanceChecker
 import Siko.Interner as I
 import Siko.LowerDefer
 import Siko.MatchValidation
-import Siko.Monomorphizer.Error
 import Siko.Parser.Parser
 import Siko.Report
 import Siko.Resolver.Error
 import Siko.PurityCheck.Checker
 import Siko.SafetyChecker
 import Siko.Typechecker.Error
-import Siko.ValueTypes
 import Std.Sys.Process as Sys
 
 pub fn exit_with_error() -> ! {
@@ -123,21 +121,6 @@ pub fn report_match_validation_error(e: MatchValidationError) {
     }
 }
 
-pub fn report_mono_errors(errors: Vec[MonoError]) {
-    for e in errors { report_mono_error(e); }
-}
-
-pub fn report_mono_error(error: MonoError) {
-    match error {
-        MonoError.UnresolvedEffectHandler(method, location) =>
-            report("unresolved effect handler for `${method}`", Some(location)),
-        MonoError.UnsetImplicit(name, location) =>
-            report("implicit `${name}` is not set in this context", Some(location)),
-        MonoError.UnboundEffectAssociatedType(name, location) =>
-            report("effect associated type `${name}` is not bound in this handler", Some(location)),
-    }
-}
-
 pub fn report_type_errors(errors: Vec[TypeError]) {
     for e in errors { report_type_error(e); }
 }
@@ -224,17 +207,6 @@ pub fn report_purity_error(e: PurityError) {
             }
             report(message, None);
         }
-    }
-}
-
-pub fn report_value_type_errors(errors: Vec[ValueTypeError]) {
-    for e in errors { report_value_type_error(e); }
-}
-
-pub fn report_value_type_error(e: ValueTypeError) {
-    match e {
-        ValueTypeError.ExplicitValueTypeInCycle(location) =>
-            report("@value_type type is in a recursive value-layout cycle", Some(location)),
     }
 }
 

@@ -1,4 +1,6 @@
-SIKO_SK := $(shell find siko std -name '*.sk')
+SIKO_COMMON_SK := $(shell find siko/Common std -name '*.sk')
+SIKO_COMPILER_SK := $(shell find siko/Compiler -name '*.sk') $(SIKO_COMMON_SK)
+SIKO_LSP_SK := $(shell find siko/LSP -name '*.sk') $(SIKO_COMMON_SK)
 HTTPD_SK := $(shell find httpd -name '*.sk')
 TESTRUNNER_SK := $(shell find testrunner -name '*.sk')
 SSG_SK := $(shell find ssg -name '*.sk')
@@ -23,18 +25,21 @@ test: siko.bin runner.bin
 test-valgrind: runner.bin
 	./runner.bin --valgrind
 
-siko.bin: base.bin $(SIKO_SK)
-	./base.bin build siko -O -o siko.bin --trace
+siko.bin: base.bin $(SIKO_COMPILER_SK)
+	./base.bin build siko/Compiler -O -o siko.bin --trace
+
+siko-lsp.bin: siko.bin $(SIKO_LSP_SK)
+	./siko.bin build siko/LSP -O -o siko-lsp.bin --trace
 
 .PHONY: check
-check: base.bin $(SIKO_SK)
-	./base.bin check siko
+check: base.bin $(SIKO_COMPILER_SK)
+	./base.bin check siko/Compiler
 
 siko2.bin: siko.bin
-	./siko.bin build siko -O -o siko2.bin --trace
+	./siko.bin build siko/Compiler -O -o siko2.bin --trace
 
 siko3.bin: siko2.bin
-	./siko2.bin build siko -O -o siko3.bin
+	./siko2.bin build siko/Compiler -O -o siko3.bin --trace
 
 base.bin: $(BOOTSTRAP_SOURCE_OBJS) link.py
 	@test -n "$(BOOTSTRAP_SOURCE_OBJS)" || { echo "No bootstrap objects found for $(BOOTSTRAP_SOURCE_PREFIX)"; exit 1; }
@@ -43,9 +48,9 @@ base.bin: $(BOOTSTRAP_SOURCE_OBJS) link.py
 .PHONY: refresh
 refresh:
 	rm -f bootstrap/source_linux.o bootstrap/source_linux.*.o
-	SIKO_TARGET_OS=linux ./siko.bin build siko -O -c -o bootstrap/source_linux
+	SIKO_TARGET_OS=linux ./siko.bin build siko/Compiler -O -c -o bootstrap/source_linux
 	rm -f bootstrap/source_macos.o bootstrap/source_macos.*.o
-	SIKO_TARGET_OS=macos ./siko.bin build siko -O -c -o bootstrap/source_macos
+	SIKO_TARGET_OS=macos ./siko.bin build siko/Compiler -O -c -o bootstrap/source_macos
 
 ssg.bin: siko.bin $(SSG_SK)
 	./siko.bin build ssg -o ssg.bin

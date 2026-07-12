@@ -1,0 +1,161 @@
+module Siko.Driver.Passes {
+
+import Siko.Driver
+import Siko.Driver.Util
+import Siko.Parser.Parser
+import Siko.Parser.Module
+import Siko.Resolver
+import Siko.LowerDefer
+import Siko.Normalizer
+import Siko.BoundExpansion
+import Siko.Instances.InstanceChecker
+import Siko.Instances.InstanceResolver
+import Siko.Typechecker.Checker
+import Siko.Typechecker.Statistics
+import Siko.MatchValidation as MV
+import Siko.PurityCheck.Checker as PC
+import Siko.SafetyChecker as SC
+import Siko.Errors
+import Siko.Package.Collector as PC
+import Siko.Test as T
+import Siko.Config
+
+pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
+    let config = get_config();
+    let core_passes: Vec[Pass] = [
+        Pass(
+            name: "parse",
+            label: "Parsing...",
+            run: |driver| {
+                let packages = collect_files(config.paths, config.no_std, config.std_path);
+                driver.pkg_reachability = PC.build_package_reachability(packages);
+                let (all_modules, parse_errors) = parse_files(packages);
+                if !parse_errors.is_empty() {
+                    report_parse_errors(parse_errors);
+                }
+                driver.all_modules = all_modules;
+            },
+            dump: None,
+        ),
+        Pass(
+            name: "resolve",
+            label: "Resolving...",
+            run: |driver| {
+                let resolver = Resolver.new();
+                match resolver.resolve(driver.all_modules, driver.pkg_reachability) {
+                    Err(e) => {
+                        report_resolve_error(e);
+                    }
+                    Ok(program) => {
+                        driver.program = program;
+                        if config.test {
+                            T.build_test_main(driver.program);
+                        }
+                    }
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "lower-defer",
+            label: "Lowering defers...",
+            run: |driver| {
+                let defer_errors = lower_defers(driver.program);
+                if !defer_errors.is_empty() {
+                    report_defer_errors(defer_errors);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "normalize",
+            label: "Normalizing...",
+            run: |driver| { Siko.Normalizer.normalize(driver.program); },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "canonicalize",
+            label: "Canonicalizing...",
+            run: |driver| {
+                match check_canonical_instances(driver.program) {
+                    Err(e) => {
+                        report_instance_error(e);
+                    }
+                    Ok(_) => {}
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "instance-resolver",
+            label: "Building instance resolver...",
+            run: |driver| { driver.program.instance_resolver = InstanceResolver.build(driver.program); },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "bound-expansion",
+            label: "Bound expansion...",
+            run: |driver| { expand_program(driver.program); },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "typecheck",
+            label: "Typechecking...",
+            run: |driver| {
+                let tc_stats = Statistics.new(config.debug_typecheck_stats);
+                let typecheck_result = with stats = tc_stats {
+                    typecheck_program(driver.program)
+                };
+                tc_stats.dump();
+                if let Err(type_errors) = typecheck_result {
+                    report_type_errors(type_errors);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "match-validation",
+            label: "Validating match expressions...",
+            run: |driver| {
+                let mv_errors = MV.validate_program(driver.program);
+                if !mv_errors.is_empty() {
+                    report_match_validation_errors(mv_errors);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+    ];
+
+    let safety_passes: Vec[Pass] = if config.check_safety {
+        [
+            Pass(
+                name: "safety-check",
+                label: "Checking safety annotations...",
+                run: |driver| {
+                    let safety_errors = SC.check_safety(driver.program);
+                    if !safety_errors.is_empty() {
+                        report_safety_errors(safety_errors);
+                    }
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "purity-check",
+                label: "Checking purity annotations...",
+                run: |driver| {
+                    let purity_errors = PC.check_purity(driver.program);
+                    if !purity_errors.is_empty() {
+                        report_purity_errors(purity_errors);
+                    }
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+        ]
+    } else {
+        []
+    };
+
+    core_passes + safety_passes
+}
+
+}

@@ -1,6 +1,7 @@
 module Siko.LSP {
 
 import Siko.Driver
+import Siko.Driver.Passes as Passes
 import Siko.FileManager
 import Siko.Diagnostics as D
 import Siko.Diagnostics.Util as D
@@ -185,7 +186,9 @@ fn run_check() -> Vec[FileDiagnostic] {
     let fm = FileManager.new();
     with Siko.FileManager.filemanager = fm {
         let driver = Driver.new();
-        driver.compile(None);
+        with Siko.Driver.current = driver {
+            driver.compile(None, Passes.build_check_passes(driver));
+        }
         resolve_diagnostics(driver)
     }
 }

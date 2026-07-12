@@ -1,4 +1,4 @@
-// Minimal hand-written LSP client for the siko compiler's `lsp` command.
+// Minimal hand-written LSP client for the standalone siko-lsp server.
 // No dependencies: only the vscode host API and node builtins.
 const vscode = require('vscode');
 const cp = require('child_process');

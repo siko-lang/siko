@@ -1,0 +1,299 @@
+module Siko.Compiler.Passes {
+
+import Std.Fs.File as Fs
+import Std.Sys.Command
+import Std.Sys.Process as Sys
+import Siko.ClosureLowering.Lower as ClosureLowering
+import Siko.Compiler.Errors
+import Siko.Config
+import Siko.CoroutineLowering
+import Siko.Driver
+import Siko.Driver.Passes as CheckPasses
+import Siko.Errors
+import Siko.ImplicitPropagation.Function as IP
+import Siko.LambdaLift.Pass as LL
+import Siko.LLVM.Emit as LLVMEmit
+import Siko.LLVM.Lower as LLVMBackend
+import Siko.LowerBasicBlock
+import Siko.LowerBuiltins
+import Siko.LowerEnums
+import Siko.LowerIfs
+import Siko.LowerMatch
+import Siko.LowerPointers
+import Siko.LowerTuples
+import Siko.Monomorphizer
+import Siko.ValueTypes as ValueTypes
+
+fn object_paths(prefix: String, count: Int) -> Vec[String] {
+    let paths: Vec[String] = Vec.new();
+    let i = 0;
+    while i < count {
+        paths.push("${prefix}.${i + 1}.o");
+        i += 1;
+    }
+    paths
+}
+
+fn gc_lib_args() -> Vec[String] {
+    let pkg_args: Vec[String] = ["--libs", "bdw-gc"];
+    let pkg_result = Command.new("pkg-config").with_path().with_capture_stdout().args(pkg_args).run();
+    let gc_flags_raw = if pkg_result.success() { pkg_result.captured_stdout() } else { "-lgc" };
+    gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect()
+}
+
+// Locates llvm-config and returns the linker flags for libLLVM, used by
+// programs that call the LLVM-C API (such as the compiler itself). Returns
+// no flags when llvm-config is not available; programs that do not use the
+// LLVM-C API still link fine without it.
+fn llvm_lib_args() -> Vec[String] {
+    let candidates: Vec[String] = Vec.new();
+    if let Some(path) = Sys.getenv("LLVM_CONFIG") {
+        candidates.push(path);
+    }
+    candidates.push("llvm-config");
+    candidates.push("/opt/homebrew/opt/llvm/bin/llvm-config");
+    for candidate in candidates {
+        let result = Command.new(candidate).with_path().with_capture_stdout().arg("--libdir").run();
+        if result.success() {
+            let libdir = result.captured_stdout().replace("\n", "");
+            return ["-L${libdir}", "-lLLVM", "-Wl,-rpath,${libdir}"];
+        }
+    }
+    Vec.new()
+}
+
+fn common_link_args(output: String) -> Vec[String] {
+    let args: Vec[String] = Vec.new();
+    args.push("-o");
+    args.push(output);
+    for flag in gc_lib_args() {
+        args.push(flag);
+    }
+    for flag in llvm_lib_args() {
+        args.push(flag);
+    }
+    for arg in get_config().link_args {
+        args.push(arg);
+    }
+    args
+}
+
+fn link_objects(object_paths: Vec[String], output: String) {
+    let clang = Command.new("clang").with_path().args(object_paths);
+    for arg in common_link_args(output) {
+        clang = clang.arg(arg);
+    }
+    let result = clang.run();
+    if !result.success() {
+        println("clang failed");
+        exit_with_error();
+    }
+}
+
+fn dump_llvm(llvm_modules: Vec[LLVMEmit.LLVMModule]) {
+    if llvm_modules.is_empty() {
+        panic("No llvm modules in driver");
+    }
+    println(LLVMEmit.emit_modules(llvm_modules));
+}
+
+fn dump_object_module(object_modules: Vec[LLVMEmit.ObjectModule]) {
+    if object_modules.is_empty() {
+        panic("No optimized llvm modules in driver");
+    }
+    let first = True;
+    for object_module in object_modules {
+        if !first {
+            println("");
+        }
+        println(object_module.ir());
+        first = False;
+    }
+}
+
+struct BackendState {
+    llvm_modules: Vec[LLVMEmit.LLVMModule],
+    object_modules: Vec[LLVMEmit.ObjectModule],
+
+    fn new() -> BackendState {
+        BackendState(Vec.new(), Vec.new())
+    }
+}
+
+pub fn build_full_passes(driver: Driver) -> Vec[Pass] {
+    let config = get_config();
+    let backend = BackendState.new();
+
+    let lowering_passes: Vec[Pass] = if config.check_only {
+        []
+    } else {
+        [
+            Pass(
+                name: "lambda-lift",
+                label: "Lambda lifting...",
+                run: |driver| { LL.lift_lambdas(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-match",
+                label: "Lowering match expressions...",
+                run: |driver| { lower_matches(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "mono",
+                label: "Monomorphizing...",
+                run: |driver| {
+                    match monomorphize(driver.program) {
+                        Err(errors) => { report_mono_errors(errors); }
+                        Ok(new_program) => { driver.program = new_program; }
+                    }
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "propagate-implicits",
+                label: "Propagating implicit arguments...",
+                run: |driver| { IP.propagate_implicits(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-closures",
+                label: "Lowering closures...",
+                run: |driver| {
+                    ClosureLowering.lower_closures(driver.program);
+                },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-coroutines",
+                label: "Lowering coroutines...",
+                run: |driver| { lower_coroutines(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-tuples",
+                label: "Lowering tuples...",
+                run: |driver| { lower_tuples(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-builtins",
+                label: "Lowering builtins...",
+                run: |driver| { lower_builtins(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "value-types",
+                label: "Computing value types...",
+                run: |driver| {
+                    if let Err(errors) = ValueTypes.calculate_value_types(driver.program) {
+                        report_value_type_errors(errors);
+                    }
+                },
+                dump: Some(|driver| {
+                    ValueTypes.dump_stats(driver.program);
+                }),
+            ),
+            Pass(
+                name: "lower-ifs",
+                label: "Lowering ifs...",
+                run: |driver| { lower_ifs(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-basic-block",
+                label: "Lowering basic blocks...",
+                run: |driver| { lower_basic_blocks(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-pointers",
+                label: "Lowering pointers...",
+                run: |driver| { lower_pointers(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-enums",
+                label: "Lowering enums...",
+                run: |driver| { lower_enums(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+        ]
+    };
+
+    let backend_passes: Vec[Pass] = if config.check_only {
+        []
+    } else {
+        [
+            Pass(
+                name: "llvm",
+                label: "Emitting LLVM...",
+                run: |driver| {
+                    backend.llvm_modules = LLVMBackend.lower(driver.program);
+                },
+                dump: Some(|driver| dump_llvm(backend.llvm_modules)),
+            ),
+            Pass(
+                name: "llvm-opt",
+                label: "LLVM optimizations...",
+                run: |driver| {
+                    if backend.llvm_modules.is_empty() {
+                        panic("No llvm modules found during optimization");
+                    }
+                    backend.object_modules = LLVMEmit.optimize_modules(backend.llvm_modules, config.optimize);
+                },
+                dump: Some(|driver| dump_object_module(backend.object_modules)),
+            ),
+            Pass(
+                name: "link",
+                label: "Linking...",
+                run: |driver| {
+                    let effective_output = if config.test && config.output == None {
+                        Some("/tmp/siko_test_runner")
+                    } else {
+                        config.output
+                    };
+                    if let Some(out) = effective_output {
+                        if backend.object_modules.is_empty() {
+                            panic("No optimized llvm modules found during linking");
+                        }
+                        let paths = object_paths(out, backend.object_modules.len());
+                        LLVMEmit.emit_object_modules(backend.object_modules, paths);
+                        backend.object_modules = Vec.new();
+                        if config.obj {
+                            return;
+                        }
+                        link_objects(paths, out);
+                        for path in paths {
+                            Fs.remove_file(path).unwrap();
+                        }
+                        if config.test {
+                            if config.trace { println("Running tests..."); }
+                            let result = Command.new(out).run();
+                            if !result.success() {
+                                Sys.exit(1.as_i32());
+                            }
+                        }
+                    }
+                },
+                dump: Some(|driver| dump_llvm(backend.llvm_modules)),
+            ),
+        ]
+    };
+
+    CheckPasses.build_check_passes(driver) + lowering_passes + backend_passes
+}
+
+pub fn compile(driver: Driver, pass: Option[String]) {
+    with Siko.Driver.current = driver {
+        driver.compile(pass, build_full_passes(driver));
+    }
+}
+
+}

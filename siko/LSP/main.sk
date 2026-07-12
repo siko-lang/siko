@@ -1,0 +1,88 @@
+module Main {
+
+import Siko.Interner as I
+import Siko.Constants.Builtins as B
+import Siko.FileManager
+import Siko.Config
+import Siko.Errors
+import Siko.LSP
+import Std.Fs.Directory as Directory
+import Std.Sys.Process as Sys
+
+fn read_target_info() -> TargetInfo {
+    match Sys.getenv("SIKO_TARGET_OS") {
+        Some("linux") => TargetInfo("Linux", "x86_64-pc-linux-gnu"),
+        Some("macos") => TargetInfo("Darwin", "arm64-apple-macosx26.0.0"),
+        Some(target_os) => {
+            println("error: unsupported target os: ${target_os}");
+            exit_with_error();
+        }
+        None => {
+            println("error: unsupported target os: <unset>");
+            exit_with_error();
+        }
+    }
+}
+
+fn build_config() -> Config {
+    let target_info = read_target_info();
+    let paths = Vec.new();
+    match Directory.get_current_dir() {
+        Ok(cwd) => paths.push(cwd),
+        Err(e) => {
+            println("error: could not get current directory");
+            exit_with_error();
+        }
+    }
+    let std_path = match Sys.getenv("SIKO_ROOT") {
+        Some(root) => Some(root + "/std"),
+        None => None,
+    };
+    Config(
+        check_only: True,
+        pass: None,
+        debug_typecheck: False,
+        debug_typecheck_stats: False,
+        debug_mono: False,
+        debug_mono_stats: False,
+        debug_co: False,
+        debug_closure: False,
+        debug_closure_datatypes: False,
+        debug_closure_profiles: False,
+        debug_closure_mono: False,
+        debug_closure_stats: False,
+        trace: False,
+        paths: paths,
+        check_safety: True,
+        dump_package_purity: False,
+        output: None,
+        optimize: False,
+        no_std: False,
+        std_path: std_path,
+        target_info: target_info,
+        test: False,
+        lsp: True,
+        obj: False,
+        link_args: Vec.new(),
+        codegen_units: 10)
+}
+
+pub fn name_cache_entry() {
+    let name_cache = B.build_cache();
+    with B.name_cache = name_cache {
+        Siko.LSP.run_server();
+    }
+}
+
+fn main() {
+    let fm = FileManager.new();
+    let config = Config.new();
+    with I.Compiler.compile = name_cache_entry,
+         Siko.FileManager.filemanager = fm,
+         Siko.Config.current = config {
+        set_config(build_config());
+        I.run();
+    }
+}
+
+}

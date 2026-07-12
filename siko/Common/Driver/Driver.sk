@@ -1,0 +1,97 @@
+module Siko.Driver {
+
+import Siko.Parser.Module
+import Siko.AST.Module
+import Siko.Errors
+import Siko.Diagnostics
+import Std.Sys.Process as Sys
+import Siko.Config
+import Siko.HIR.Program
+import Siko.SanityCheck as SanityCheck
+import Std.Time
+import Std.Map
+import Std.Set
+
+pub implicit current: Driver
+
+pub struct Pass {
+    pub name: String,
+    pub label: String,
+    pub run: fn(Driver) -> (),
+    pub dump: Option[fn(Driver) -> ()],
+    pub run_sanity_check: Bool = False,
+}
+
+pub struct Driver {
+    pass: Option[String],
+    pub program: Program,
+    pub all_modules: Vec[Module],
+    pub pkg_reachability: Map[String, Set[String]],
+    pub diagnostics: Vec[Diagnostic],
+
+    pub fn new() -> Driver {
+        Driver(
+            pass: None,
+            program: Program.new(),
+            all_modules: Vec.new(),
+            pkg_reachability: Map.new(),
+            diagnostics: Vec.new(),
+        )
+    }
+
+    fn has_error_diagnostic(d: Driver) -> Bool {
+        for di in d.diagnostics {
+            if di.severity.is_error() {
+                return True;
+            }
+        }
+        False
+    }
+
+    pub fn run_passes(d: Driver, passes: Vec[Pass]) {
+        let trace = get_config().trace;
+        for pass in passes {
+            let start = Instant.now();
+            (pass.run)(d);
+            if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
+            if d.has_error_diagnostic() {
+                return;
+            }
+            if pass.run_sanity_check {
+                SanityCheck.check_program(d.program);
+            }
+            if d.pass == Some(pass.name) {
+                match pass.dump {
+                    Some(dump_fn) => (dump_fn)(d),
+                    None => println(d.program.format()),
+                }
+                Sys.exit(0.as_i32());
+            }
+        }
+    }
+
+    pub fn compile(d: Driver, pass: Option[String], passes: Vec[Pass]) {
+        with current = d {
+            d.pass = pass;
+            d.run_passes(passes);
+        }
+    }
+
+    pub fn report_diagnostics_and_exit(d: Driver) {
+        for di in d.diagnostics {
+            di.print();
+        }
+        if d.has_error_diagnostic() {
+            exit_with_error();
+        }
+    }
+
+    pub fn get_diagnostics(d: Driver) -> Vec[Diagnostic] {
+        d.diagnostics
+    }
+}
+
+pub fn add_diagnostic(d: Diagnostic) {
+    current.diagnostics.push(d);
+}
+}
