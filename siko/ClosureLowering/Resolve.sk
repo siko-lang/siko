@@ -116,6 +116,7 @@ pub struct Resolver {
         }
         stats.resolver_walk_data_build();
         stats.resolver_walk_data_start();
+        defer stats.resolver_walk_data_end();
         let func = r.program.functions.get(fn_name).unwrap();
         let profile = r.profiles.get(fn_name).expect("closure lowering: function has no profile");
         let ctx = FlowCtx(
@@ -155,7 +156,6 @@ pub struct Resolver {
             r.build_profile_to_local(ctx.uf, fn_name, func, profile),
         );
         r.walks.insert(fn_name, wd);
-        stats.resolver_walk_data_end();
         wd
     }
 
@@ -286,6 +286,7 @@ fn profile_boundary_vars(profile: FunctionProfile) -> Vec[TypeVar] {
 fn process_instance(r: Resolver, iid: Int) {
     stats.resolver_process_instance();
     stats.resolver_process_instance_start();
+    defer stats.resolver_process_instance_end();
     let wd = r.walk_data(r.instances[iid].fn_name);
     r.instances[iid].children = Set.new();
 
@@ -465,11 +466,11 @@ fn process_instance(r: Resolver, iid: Int) {
             }
         }
     }
-    stats.resolver_process_instance_end();
 }
 
 pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) -> Resolver {
     stats.resolve_start();
+    defer stats.resolve_end();
     let r = Resolver(
         program: program,
         profiles: profiles,
@@ -525,7 +526,6 @@ pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) 
     }
 
     stats.resolver_reachable_instances(reachable_instances(r).len());
-    stats.resolve_end();
     r
 }
 

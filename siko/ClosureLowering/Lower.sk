@@ -171,9 +171,9 @@ struct Lowerer {
 
     fn instantiate_data(l: Lowerer, qname: QualifiedName, tuple: Vec[Vec[Int]]) -> QualifiedName {
         stats.rewrite_instantiate_data_start();
+        defer stats.rewrite_instantiate_data_end();
         let key = DataKey(qname, tuple);
         if let Some(n) = l.data_names.get(key) {
-            stats.rewrite_instantiate_data_end();
             return n;
         }
         let idx = l.data_counters.get(qname).unwrap_or(0);
@@ -223,7 +223,6 @@ struct Lowerer {
         } else {
             panic("closure lowering: unknown datatype ${I.resolve(qname.name())}");
         }
-        stats.rewrite_instantiate_data_end();
         new_qn
     }
 
@@ -263,8 +262,8 @@ pub struct RwCtx {
 
     fn var_set(c: RwCtx, v: TypeVar) -> Vec[Int] {
         stats.rewrite_var_set_start();
+        defer stats.rewrite_var_set_end();
         let result = c.l.r.sorted_ids(c.l.r.node_set(c.iid, c.wd, FlowNode(c.fn_name, v)));
-        stats.rewrite_var_set_end();
         result
     }
 
@@ -357,18 +356,19 @@ instance[T: Rw[T]] Rw[Vec[T]] {
 instance Rw[TypeDef] {
     fn rw(ty: TypeDef, c: RwCtx) -> TypeDef {
         stats.rewrite_type_start();
+        defer stats.rewrite_type_end();
         stats.rewrite_type_request();
         if let Some(cached) = c.ty_cache.get(ty) {
-            stats.rewrite_type_end();
             return cached;
         }
         stats.rewrite_type_cache_miss();
-        stats.rewrite_type_miss_start();
-        let var_sets = c.type_var_sets(ty);
-        let result = c.l.subst_type(ty, var_sets);
-        stats.rewrite_type_miss_end();
+        let result = {
+            stats.rewrite_type_miss_start();
+            defer stats.rewrite_type_miss_end();
+            let var_sets = c.type_var_sets(ty);
+            c.l.subst_type(ty, var_sets)
+        };
         c.ty_cache.insert(ty, result);
-        stats.rewrite_type_end();
         result
     }
 }
@@ -439,6 +439,7 @@ instance Rw[Pattern] {
 
 fn retarget_data_name(c: RwCtx, name: Name, orig_ty: Option[TypeDef]) -> Name {
     stats.rewrite_retarget_data_name_start();
+    defer stats.rewrite_retarget_data_name_end();
     let resolved = name.resolved();
     let (owner, is_variant) = match c.l.r.program.variant_enum_map.get(resolved) {
         Some(enum_qn) => (enum_qn, True),
@@ -465,7 +466,6 @@ fn retarget_data_name(c: RwCtx, name: Name, orig_ty: Option[TypeDef]) -> Name {
             Name.inner(dq)
         }
     };
-    stats.rewrite_retarget_data_name_end();
     result
 }
 
@@ -479,6 +479,7 @@ instance Rw[E.Expr] {
             E.ExprKind.CreateClosure(info) => {
                 stats.lowered_create_closure();
                 stats.rewrite_create_closure_start();
+                defer stats.rewrite_create_closure_end();
                 let v = ty_vars(orig_ty.unwrap())[0];
                 let set = c.var_set(v);
                 let eid = c.l.intern_enum(set);
@@ -496,12 +497,12 @@ instance Rw[E.Expr] {
                     kind: E.FunctionKind.VariantCtor,
                     args: args,
                 )), loc, new_ty);
-                stats.rewrite_create_closure_end();
                 result
             }
             E.ExprKind.DynamicCall(callee, args) => {
                 stats.lowered_dynamic_call();
                 stats.rewrite_dynamic_call_start();
+                defer stats.rewrite_dynamic_call_end();
                 let callee_v = ty_vars(callee.ty.unwrap())[0];
                 let callee_set = c.var_set(callee_v);
                 if callee_set.is_empty() {
@@ -527,7 +528,6 @@ instance Rw[E.Expr] {
                     kind: E.FunctionKind.UserDefined,
                     args: call_args,
                 )), loc, new_ty);
-                stats.rewrite_dynamic_call_end();
                 result
             }
             E.ExprKind.FunctionPtr(info) => {
@@ -573,6 +573,7 @@ fn profile_boundary_vars(profile: FunctionProfile) -> Vec[TypeVar] {
 fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
     stats.retargeted_static_call();
     stats.rewrite_retarget_static_call_start();
+    defer stats.rewrite_retarget_static_call_end();
     let profile = c.l.r.profiles.get(info.qname).expect("closure lowering: callee profile not found");
     let subst: Map[TypeVar, TypeVar] = Map.new();
     for (i, arg) in info.args.iter().enumerate() {
@@ -601,13 +602,13 @@ fn retarget_call(c: RwCtx, info: E.FunctionCallInfo, orig_ty: Option[TypeDef]) -
     }).collect();
     let iid2 = c.l.r.find_instance(info.qname, inputs).expect("closure lowering: call target instance not found");
     let result = c.l.instance_names.get(iid2).expect("closure lowering: call target instance not named");
-    stats.rewrite_retarget_static_call_end();
     result
 }
 
 fn retarget_fn_ptr(c: RwCtx, info: E.FunctionPtrInfo, orig_ty: Option[TypeDef]) -> QualifiedName {
     stats.retargeted_function_ptr();
     stats.rewrite_retarget_fn_ptr_start();
+    defer stats.rewrite_retarget_fn_ptr_end();
     let profile = c.l.r.profiles.get(info.name).expect("closure lowering: fn ptr target profile not found");
     let subst: Map[TypeVar, TypeVar] = Map.new();
     fill_var_subst(subst, profile_boundary_vars(profile), signature_opt_ty_vars(orig_ty));
@@ -619,7 +620,6 @@ fn retarget_fn_ptr(c: RwCtx, info: E.FunctionPtrInfo, orig_ty: Option[TypeDef]) 
     }).collect();
     let iid2 = c.l.r.find_instance(info.name, inputs).expect("closure lowering: fn ptr target instance not found");
     let result = c.l.instance_names.get(iid2).expect("closure lowering: fn ptr target instance not named");
-    stats.rewrite_retarget_fn_ptr_end();
     result
 }
 
@@ -644,6 +644,7 @@ fn index_of(set: Vec[Int], cid: Int) -> Int {
 fn generate_enum(l: Lowerer, enum_id: Int) -> EnumDef {
     stats.generated_closure_enum();
     stats.generate_enum_start();
+    defer stats.generate_enum_end();
     let enum_qn = QualifiedName.new_closure_enum(enum_id).as_mono();
     let payloads = l.payload_types(enum_id);
     let variants: Vec[VariantDef] = Vec.new();
@@ -668,13 +669,13 @@ fn generate_enum(l: Lowerer, enum_id: Int) -> EnumDef {
         I.intern(""),
         False,
     );
-    stats.generate_enum_end();
     edef
 }
 
 fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
     stats.generated_handler();
     stats.generate_handler_start();
+    defer stats.generate_handler_end();
     let rec = l.handlers[hid];
     let handler_qn = QualifiedName.new_closure_handler(hid).as_mono();
     let enum_qn = QualifiedName.new_closure_enum(rec.key.enum_id).as_mono();
@@ -791,12 +792,12 @@ fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
         default_value_names: Vec.new(),
         source_package: None,
     );
-    stats.generate_handler_end();
     f
 }
 
 fn rewrite_program(r: Resolver, program: Program) {
     stats.rewrite_start();
+    defer stats.rewrite_end();
     let repr_loc = any_location(program);
     let l = Lowerer(
         r: r,
@@ -827,12 +828,15 @@ fn rewrite_program(r: Resolver, program: Program) {
     let new_functions: Map[QualifiedName, FunctionDef] = Map.new();
     for iid in reachable.iter() {
         stats.rewrite_function_start();
+        defer stats.rewrite_function_end();
         stats.rewritten_function();
         let inst = r.instances[iid];
         let func = r.program.functions.get(inst.fn_name).unwrap();
-        stats.rewrite_function_walk_data_start();
-        let wd = r.walk_data(inst.fn_name);
-        stats.rewrite_function_walk_data_end();
+        let wd = {
+            stats.rewrite_function_walk_data_start();
+            defer stats.rewrite_function_walk_data_end();
+            r.walk_data(inst.fn_name)
+        };
         let ctx = RwCtx(
             l: l,
             iid: iid,
@@ -841,14 +845,15 @@ fn rewrite_program(r: Resolver, program: Program) {
             ty_cache: Map.new(),
             expr_count: 0,
         );
-        stats.rewrite_function_rw_start();
-        let new_func = rw(func.clone(), ctx);
-        stats.rewrite_function_rw_end();
+        let new_func = {
+            stats.rewrite_function_rw_start();
+            defer stats.rewrite_function_rw_end();
+            rw(func.clone(), ctx)
+        };
         stats.rewrite_function_exprs(ctx.expr_count);
         let new_name = l.instance_names.get(iid).unwrap();
         new_func.qualified_name = Some(new_name);
         new_functions.insert(new_name, new_func);
-        stats.rewrite_function_end();
     }
 
     let hid = 0;
@@ -870,7 +875,6 @@ fn rewrite_program(r: Resolver, program: Program) {
     program.structs = l.out_structs;
     program.enums = l.out_enums;
     program.variant_enum_map = l.out_variant_map;
-    stats.rewrite_end();
 }
 
 fn any_location(program: Program) -> Location {

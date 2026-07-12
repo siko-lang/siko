@@ -155,6 +155,7 @@ pub fn datatype_arities(program: Program) -> Map[QualifiedName, Int] {
 
 pub fn generalize_functions(program: Program) {
     stats.generalize_functions_start();
+    defer stats.generalize_functions_end();
     let ctx = Generalizer(TypeVarAllocator.new(), datatype_arities(program));
 
     let keys: Vec[QualifiedName] = program.functions.keys().cloned().collect();
@@ -164,7 +165,6 @@ pub fn generalize_functions(program: Program) {
         ctx.alloc = TypeVarAllocator.new();
         program.functions.insert(key, generalize(func, ctx));
     }
-    stats.generalize_functions_end();
 }
 
 }

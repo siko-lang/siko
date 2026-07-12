@@ -116,6 +116,7 @@ pub fn fn_mono_key(
     implicit_ctx: ImplicitCtx,
 ) -> QualifiedName {
     mono.statistics.fn_mono_key_start();
+    defer mono.statistics.fn_mono_key_end();
     let cache_key = FnMonoKeyCacheKey(
         base.clone(),
         type_args.clone(),
@@ -126,7 +127,6 @@ pub fn fn_mono_key(
     );
     match mono.fnmonokey_cache.get(cache_key.clone()) {
         Some(result) => {
-            mono.statistics.fn_mono_key_end();
             return result;
         }
         None => {}
@@ -149,7 +149,6 @@ pub fn fn_mono_key(
         ctx,
     );
     mono.fnmonokey_cache.insert(cache_key, result.clone());
-    mono.statistics.fn_mono_key_end();
     result
 }
 
@@ -211,10 +210,10 @@ pub struct Monomorphizer {
 
     pub fn data_mono_key(mono: Monomorphizer, base: QualifiedName, type_args: Vec[TypeDef], eat_ctx: EffectAssociatedTypeCtx) -> QualifiedName {
         mono.statistics.data_mono_key_start();
+        defer mono.statistics.data_mono_key_end();
         let cache_key = MonoKeyCacheKey(base.clone(), type_args.clone(), eat_ctx.clone());
         match mono.datamonokey_cache.get(cache_key.clone()) {
             Some(result) => {
-                mono.statistics.data_mono_key_end();
                 return result;
             }
             None => {}
@@ -246,7 +245,6 @@ pub struct Monomorphizer {
         let ctx = MonoContext([], Map.new(), eat_ctx, []);
         let result = base.as_mono(type_args.clone(), ctx);
         mono.datamonokey_cache.insert(cache_key, result.clone());
-        mono.statistics.data_mono_key_end();
         result
     }
 

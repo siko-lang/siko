@@ -29,6 +29,7 @@ fn unresolved_user_defined_call(name: QualifiedName, args: Vec[Expr], is_co: Boo
 
 pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, witness_info: WitnessInfo, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_user_defined_fn_start();
+    defer mono.statistics.process_user_defined_fn_end();
     let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
 
     let func = mono.source.functions.get(name).expect("function not found in mono");
@@ -90,7 +91,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             named_args: Vec.new(),
             is_coroutine_create: is_co,
         );
-        mono.statistics.process_user_defined_fn_end();
         return result;
     }
 
@@ -122,7 +122,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let (c, ta) = match dispatch_trait_call(name, witness_list[0], arg_types, Some(concrete_result_ty), mono) {
             Some(result) => result,
             None => {
-                mono.statistics.process_user_defined_fn_end();
                 return unresolved_user_defined_call(name, spec_args, is_co);
             }
         };
@@ -130,7 +129,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             match mono.resolve_witnesses(witness_list) {
                 Some(witnesses) => witnesses,
                 None => {
-                    mono.statistics.process_user_defined_fn_end();
                     return unresolved_user_defined_call(name, spec_args, is_co);
                 }
             }
@@ -148,7 +146,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             let children = match mono.resolve_witness(witness_list[0]) {
                 Some(w) => w.children,
                 None => {
-                    mono.statistics.process_user_defined_fn_end();
                     return unresolved_user_defined_call(name, spec_args, is_co);
                 }
             };
@@ -169,7 +166,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                         match mono.resolve_witness(witness_list[next_forward]) {
                             Some(w) => result.push(w),
                             None => {
-                                mono.statistics.process_user_defined_fn_end();
                                 return unresolved_user_defined_call(name, spec_args, is_co);
                             }
                         }
@@ -220,7 +216,6 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let wl: Vec[ResolvedWitness] = match mono.resolve_witnesses(witness_list) {
             Some(witnesses) => witnesses,
             None => {
-                mono.statistics.process_user_defined_fn_end();
                 return unresolved_user_defined_call(name, spec_args, is_co);
             }
         };
@@ -263,12 +258,12 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     );
-    mono.statistics.process_user_defined_fn_end();
     result
 }
 
 pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_struct_ctor_start();
+    defer mono.statistics.process_struct_ctor_end();
     assert(!mono.current_expr_ty.unwrap().is_mono(False), "process_struct_ctor current expr ty is not mono");
     let raw_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
         TypeDef.Named(NamedInfo(_, targs)) => targs,
@@ -291,12 +286,12 @@ pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorph
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     );
-    mono.statistics.process_struct_ctor_end();
     result
 }
 
 pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_variant_ctor_start();
+    defer mono.statistics.process_variant_ctor_end();
     let raw_type_args = match mono.current_expr_ty.apply(mono.sub).unwrap() {
         TypeDef.Named(NamedInfo(_, targs)) => targs,
         t => panic("VariantCtor expr has non-Named type:"),
@@ -318,12 +313,12 @@ pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorp
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     );
-    mono.statistics.process_variant_ctor_end();
     result
 }
 
 pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKind, mono: Monomorphizer, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_extern_fn_start();
+    defer mono.statistics.process_extern_fn_end();
     let concrete_result_ty = mono.current_expr_ty.apply(mono.sub).unwrap();
     let spec_args: Vec[Expr] = args.specialize(mono);
     let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
@@ -365,12 +360,12 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     );
-    mono.statistics.process_extern_fn_end();
     result
 }
 
 pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
     mono.statistics.process_type_associated_call_start();
+    defer mono.statistics.process_type_associated_call_end();
     let spec_args: Vec[Expr] = info.args.specialize(mono);
     let arg_types: Vec[TypeDef] = info.args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
     let concrete_result_ty = mono.current_expr_ty.apply(mono.sub);
@@ -403,7 +398,6 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     let resolved_witness = match mono.resolve_witness(witness) {
         Some(w) => w,
         None => {
-            mono.statistics.process_type_associated_call_end();
             return FunctionCallInfo(
                 qname: info.fn_name,
                 kind: FunctionKind.UserDefined,
@@ -469,7 +463,6 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
             match mono.resolve_witness(w) {
                 Some(resolved) => witnesses.push(resolved),
                 None => {
-                    mono.statistics.process_type_associated_call_end();
                     return FunctionCallInfo(
                         qname: info.fn_name,
                         kind: FunctionKind.UserDefined,
@@ -508,12 +501,12 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         kind: FunctionKind.UserDefined,
         args: spec_args,
     );
-    mono.statistics.process_type_associated_call_end();
     result
 }
 
 pub fn process_builtin_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_builtin_fn_start();
+    defer mono.statistics.process_builtin_fn_end();
     let concrete_result_ty = mono.current_expr_ty.apply(mono.sub).unwrap();
     let spec_args: Vec[Expr] = args.specialize(mono);
     let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
@@ -545,7 +538,6 @@ pub fn process_builtin_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphi
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     );
-    mono.statistics.process_builtin_fn_end();
     result
 }
 

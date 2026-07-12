@@ -124,6 +124,7 @@ fn captures_for_lambda(
 
 fn publish_profile(ctx: FlowCtx, qname: QualifiedName) -> FunctionProfile {
     stats.profile_publish_start();
+    defer stats.profile_publish_end();
     let func = ctx.program.functions.get(qname).unwrap();
     let alloc = TypeVarAllocator.new();
     let var_map: Map[Int, TypeVar] = Map.new();
@@ -162,7 +163,6 @@ fn publish_profile(ctx: FlowCtx, qname: QualifiedName) -> FunctionProfile {
     let profile = FunctionProfile(arg_types, result_type, yield_type, Vec.new(), contains, applies);
     stats.profile_published();
     stats.profile_size(qname, profile);
-    stats.profile_publish_end();
     profile
 }
 
@@ -189,6 +189,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
     for scc in sccs {
         stats.profile_scc(scc.len());
         stats.profile_scc_start();
+        defer stats.profile_scc_end();
         let members: Set[QualifiedName] = Set.new();
         for q in scc.iter() {
             members.insert(q);
@@ -202,6 +203,7 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
         for q in scc.iter() {
             stats.profile_flow_function();
             stats.profile_flow_start();
+            defer stats.profile_flow_end();
             let func = ctx.program.functions.get(q).unwrap();
             ctx.current_fn = q;
             let body = match func.body {
@@ -209,7 +211,6 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
                 None => {
                     stats.profile_bodyless_function();
                     bodyless_signature_edges(ctx, func);
-                    stats.profile_flow_end();
                     continue;
                 }
             };
@@ -229,7 +230,6 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
 
             flow(body, ctx);
             ctx.unify(ctx.nodes(signature_opt_ty_vars(body.ty)), ctx.nodes(ctx.result_vars));
-            stats.profile_flow_end();
         }
 
         if get_config().debug_closure {
@@ -239,7 +239,6 @@ pub fn infer_profiles(program: Program) -> Map[QualifiedName, FunctionProfile] {
         for q in scc.iter() {
             ctx.profiles.insert(q, publish_profile(ctx, q));
         }
-        stats.profile_scc_end();
     }
 
     ctx.profiles

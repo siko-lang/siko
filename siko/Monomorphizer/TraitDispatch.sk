@@ -17,6 +17,7 @@ pub fn dispatch_trait_call(
     mono: Monomorphizer,
 ) -> Option[(QualifiedName, Vec[TypeDef])] {
     mono.statistics.dispatch_trait_call_start();
+    defer mono.statistics.dispatch_trait_call_end();
     let (
         generic_params,
         param_types,
@@ -66,7 +67,6 @@ pub fn dispatch_trait_call(
     let resolved_witness = match mono.resolve_witness(witness) {
         Some(w) => w,
         None => {
-            mono.statistics.dispatch_trait_call_end();
             return None;
         }
     };
@@ -129,7 +129,6 @@ pub fn dispatch_trait_call(
             }
         }
     };
-    mono.statistics.dispatch_trait_call_end();
     Some(result)
 }
 
