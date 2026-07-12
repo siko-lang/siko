@@ -289,20 +289,40 @@ pub struct Monomorphizer {
     // a FunctionBound forwards to the caller-provided witness at that index (which
     // is already resolved), an Instance keeps its module/qname and resolves each
     // child. The ResolvedWitness type guarantees no FunctionBound survives.
-    pub fn resolve_witness(mono: Monomorphizer, witness: BoundWitness) -> ResolvedWitness {
+    pub fn resolve_witness(mono: Monomorphizer, witness: BoundWitness) -> Option[ResolvedWitness] {
         match witness {
             BoundWitness.FunctionBound(idx) =>
-                mono.current_fn_witnesses
-                .get_opt(idx)
-                .expect("bound index not found: idx=${idx} in ${mono.current_module}"),
-            BoundWitness.Instance(module_name, qname, children) =>
-                ResolvedWitness(module_name, qname, children.iter().map(|c| mono.resolve_witness(c)).collect()),
+                Some(mono.current_fn_witnesses
+                    .get_opt(idx)
+                    .expect("bound index not found: idx=${idx} in ${mono.current_module}")),
+            BoundWitness.Instance(module_name, qname, children) => {
+                let resolved_children = match mono.resolve_witnesses(children) {
+                    Some(children) => children,
+                    None => return None,
+                };
+                Some(ResolvedWitness(module_name, qname, resolved_children))
+            }
             BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => {
-                let info = mono.current_effect_associated_type_ctx.get(assoc_qname)
-                    .expect("resolve_witness: EAT ${assoc_qname.name()} not in effect-associated-type ctx");
-                info.witnesses[index].clone()
+                match mono.current_effect_associated_type_ctx.get(assoc_qname) {
+                    Some(info) => Some(info.witnesses[index].clone()),
+                    None => {
+                        mono.errors.push(MonoError.UnboundEffectAssociatedType(assoc_qname.name(), mono.current_location.unwrap()));
+                        None
+                    }
+                }
             }
         }
+    }
+
+    pub fn resolve_witnesses(mono: Monomorphizer, witnesses: Vec[BoundWitness]) -> Option[Vec[ResolvedWitness]] {
+        let result: Vec[ResolvedWitness] = Vec.new();
+        for witness in witnesses {
+            match mono.resolve_witness(witness) {
+                Some(resolved) => result.push(resolved),
+                None => return None,
+            }
+        }
+        Some(result)
     }
 
     pub fn expr_ty(mono: Monomorphizer, expr: Expr) -> TypeDef {

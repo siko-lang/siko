@@ -15,7 +15,7 @@ pub fn dispatch_trait_call(
     arg_types: Vec[TypeDef],
     result_type: Option[TypeDef],
     mono: Monomorphizer,
-) -> (QualifiedName, Vec[TypeDef]) {
+) -> Option[(QualifiedName, Vec[TypeDef])] {
     mono.statistics.dispatch_trait_call_start();
     let (
         generic_params,
@@ -63,9 +63,16 @@ pub fn dispatch_trait_call(
     // of searching the module's instance tables. For a generic instance this also
     // recovers its type-var bindings from the concrete query args, and binds the
     // self-bound's associated-type constraints into callee_inst.
+    let resolved_witness = match mono.resolve_witness(witness) {
+        Some(w) => w,
+        None => {
+            mono.statistics.dispatch_trait_call_end();
+            return None;
+        }
+    };
     let resolution = extract_from_known_instance(
         mono.source,
-        mono.resolve_witness(witness),
+        resolved_witness,
         query_args,
         self_bound_constraints,
         callee_inst,
@@ -123,7 +130,7 @@ pub fn dispatch_trait_call(
         }
     };
     mono.statistics.dispatch_trait_call_end();
-    result
+    Some(result)
 }
 
 }

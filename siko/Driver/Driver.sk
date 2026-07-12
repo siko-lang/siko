@@ -27,6 +27,7 @@ pub struct Driver {
     // The lowered module, kept for object emission in the link pass when the
     // LLVM API backend is selected.
     pub llvm_module: Option[LLVMModule],
+    pub object_module: Option[Emit.ObjectModule],
     pub diagnostics: Vec[Diagnostic],
 
     pub fn new() -> Driver {
@@ -37,6 +38,7 @@ pub struct Driver {
             pkg_reachability: Map.new(),
             llvm_source: "",
             llvm_module: None,
+            object_module: None,
             diagnostics: Vec.new(),
         )
     }
@@ -132,6 +134,13 @@ pub struct Driver {
         match d.llvm_module {
             Some(llvm_module) => println(Emit.emit(llvm_module)),
             None => panic("No llvm module in driver"),
+        }
+    }
+
+    pub fn dump_object_module(d: Driver) {
+        match d.object_module {
+            Some(object_module) => println(object_module.ir()),
+            None => panic("No optimized llvm module in driver"),
         }
     }
 

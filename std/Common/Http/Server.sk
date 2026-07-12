@@ -1,0 +1,131 @@
+module Std.Http.Server {
+
+import Std.Effects.Network
+import Std.Effects.Console
+import Std.Effects.Spawn
+import Std.IO.Closer
+import Std.IO.Error
+import Std.Http
+
+pub struct Request {
+    method: String,
+    request_uri: String,
+    path: String,
+    query: String,
+    proto: String,
+    headers: Vec[Header],
+    body: String,
+
+    pub fn parse(raw: String) -> Option[Request] {
+        let parts: Vec[String] = raw.split("\r\n\r\n").collect();
+        let body = if parts.len() > 1 { parts[1] } else { "" };
+        let lines: Vec[String] = parts[0].split("\r\n").collect();
+        if lines.is_empty() {
+            return None;
+        }
+        let request_parts: Vec[String] = lines[0].split(" ").collect();
+        if request_parts.len() < 3 {
+            return None;
+        }
+        if !request_parts[2].starts_with("HTTP/") {
+            return None;
+        }
+        let (path, query) = match request_parts[1].find("?") {
+            Some(i) => (request_parts[1].substring(0, i), request_parts[1].substring(i + 1, request_parts[1].len())),
+            None => (request_parts[1], ""),
+        };
+        Some(Request(
+            method: request_parts[0],
+            request_uri: request_parts[1],
+            path: path,
+            query: query,
+            proto: request_parts[2],
+            headers: parse_headers(lines, 1),
+            body: body,
+        ))
+    }
+
+    pub fn method(r: Request) -> String {
+        r.method
+    }
+
+    pub fn request_uri(r: Request) -> String {
+        r.request_uri
+    }
+
+    pub fn path(r: Request) -> String {
+        r.path
+    }
+
+    pub fn query(r: Request) -> String {
+        r.query
+    }
+
+    pub fn body(r: Request) -> String {
+        r.body
+    }
+
+    pub fn proto(r: Request) -> String {
+        r.proto
+    }
+
+    pub fn version(r: Request) -> String {
+        r.proto()
+    }
+
+    pub fn header(r: Request, name: String) -> Option[String] {
+        header_value(r.headers, name)
+    }
+}
+
+fn send_response(socket: TcpNetwork.Socket, version: String, response: Response, is_head: Bool) {
+    let out = "${version} ${response.status()}\r\nDate: Thu, 01 Jan 1970 00:00:00 GMT\r\n";
+    for h in response.headers() {
+        out = out + "${h.name()}: ${h.value()}\r\n";
+    }
+    out = out + "Content-Length: ${response.body().len()}\r\nConnection: close\r\n\r\n";
+    if !is_head {
+        out = out + response.body();
+    }
+    write_string(socket, out).unwrap();
+}
+
+pub fn serve(socket: TcpNetwork.Socket, handler: fn(Request) -> Response) {
+    defer socket.close();
+    let raw = read_message(socket).unwrap();
+    let req = match Request.parse(raw) {
+        Some(r) => r,
+        None => {
+            send_response(socket, "HTTP/1.0", Response.new(
+                "400 Bad Request", "text/plain", "Bad Request"),
+                is_head: False);
+            return;
+        }
+    };
+    let version = req.proto();
+    let is_head = req.method() == "HEAD";
+    let response = handler(req);
+    send_response(socket, version, response, is_head);
+}
+
+pub fn listen_and_serve(handler: fn(Request) -> Response, port: U16) -> Result[(), Error] {
+    let listener = TcpNetwork.listen(port)?;
+    println("Listening on http://localhost:${port}");
+    loop {
+        let socket = match TcpNetwork.accept(listener) {
+            Ok(s) => s,
+            Err(e) => {
+                println("accept error: ${e}");
+                continue;
+            }
+        };
+        spawn(|| serve(socket, handler));
+    }
+    Ok(())
+}
+
+pub fn run(handler: fn(Request) -> Response, port: U16) -> Result[(), Error] {
+    listen_and_serve(handler, port)
+}
+
+}

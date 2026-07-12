@@ -1,0 +1,224 @@
+module Std.Http.Client {
+
+import Std.Effects.Network
+import Std.IO.Closer
+import Std.IO.Error as IO
+import Std.Http
+
+pub enum ClientError {
+    InvalidUrl(String),
+    UnsupportedScheme(String),
+    InvalidPort(String),
+    InvalidResponse,
+    Io(IO.Error),
+}
+
+instance Into[IO.Error, ClientError] {
+    fn into(value: IO.Error) -> ClientError {
+        ClientError.Io(value)
+    }
+}
+
+instance ToString[ClientError] {
+    fn to_string(e: ClientError) -> String {
+        match e {
+            ClientError.InvalidUrl(url) => "invalid url: ${url}",
+            ClientError.UnsupportedScheme(scheme) => "unsupported scheme: ${scheme}",
+            ClientError.InvalidPort(port) => "invalid port: ${port}",
+            ClientError.InvalidResponse => "invalid response",
+            ClientError.Io(err) => err.to_string(),
+        }
+    }
+}
+
+pub struct Url {
+    scheme: String,
+    host: String,
+    port: U16,
+    path: String,
+    query: String,
+
+    pub fn parse(raw: String) -> Result[Url, ClientError] {
+        let scheme_end = match raw.find("://") {
+            Some(i) => i,
+            None => return Err(ClientError.InvalidUrl(raw)),
+        };
+        let scheme = raw.substring(0, scheme_end);
+        if scheme != "http" {
+            return Err(ClientError.UnsupportedScheme(scheme));
+        }
+        let rest = raw.substring(scheme_end + 3, raw.len());
+        let target_start = rest.len();
+        match rest.find("/") {
+            Some(i) => { target_start = i; }
+            None => {}
+        }
+        match rest.find("?") {
+            Some(i) => {
+                if i < target_start {
+                    target_start = i;
+                }
+            }
+            None => {}
+        }
+        let authority = rest.substring(0, target_start);
+        if authority == "" {
+            return Err(ClientError.InvalidUrl(raw));
+        }
+        let target = if target_start < rest.len() {
+            rest.substring(target_start, rest.len())
+        } else {
+            "/"
+        };
+        let target = if target.starts_with("?") {
+            "/" + target
+        } else {
+            target
+        };
+        let (host, port) = parse_authority(authority)?;
+        let (path, query) = match target.find("?") {
+            Some(i) => (target.substring(0, i), target.substring(i + 1, target.len())),
+            None => (target, ""),
+        };
+        Ok(Url(scheme: scheme, host: host, port: port, path: path, query: query))
+    }
+
+    pub fn scheme(u: Url) -> String {
+        u.scheme
+    }
+
+    pub fn host(u: Url) -> String {
+        u.host
+    }
+
+    pub fn port(u: Url) -> U16 {
+        u.port
+    }
+
+    pub fn path(u: Url) -> String {
+        u.path
+    }
+
+    pub fn query(u: Url) -> String {
+        u.query
+    }
+
+    pub fn request_uri(u: Url) -> String {
+        if u.query == "" {
+            u.path
+        } else {
+            "${u.path}?${u.query}"
+        }
+    }
+
+    pub fn host_header(u: Url) -> String {
+        if u.port == 80.as_u16() {
+            u.host
+        } else {
+            "${u.host}:${u.port}"
+        }
+    }
+}
+
+fn parse_authority(authority: String) -> Result[(String, U16), ClientError] {
+    match authority.rfind(':') {
+        Some(i) => {
+            let host = authority.substring(0, i);
+            let port_text = authority.substring(i + 1, authority.len());
+            if host == "" || port_text == "" {
+                return Err(ClientError.InvalidUrl(authority));
+            }
+            let port = match port_text.parse_int(10) {
+                Ok(p) if p > 0 && p <= 65535 => p.as_u16(),
+                _ => return Err(ClientError.InvalidPort(port_text)),
+            };
+            Ok((host, port))
+        }
+        None => Ok((authority, 80.as_u16())),
+    }
+}
+
+pub struct Request {
+    method: String,
+    url: Url,
+    proto: String,
+    headers: Vec[Header],
+    body: String,
+
+    pub fn new(method: String, url: Url, body: String) -> Request {
+        Request(method: method, url: url, proto: "HTTP/1.1", headers: Vec.new(), body: body)
+    }
+
+    pub fn with_header(r: Request, name: String, value: String) -> Request {
+        r.headers.push(Header.new(name, value));
+        r
+    }
+
+    pub fn proto(r: Request, proto: String) -> Request {
+        Request(method: r.method, url: r.url, proto: proto, headers: r.headers, body: r.body)
+    }
+
+    pub fn method(r: Request) -> String {
+        r.method
+    }
+
+    pub fn url(r: Request) -> Url {
+        r.url
+    }
+
+    pub fn body(r: Request) -> String {
+        r.body
+    }
+
+    pub fn header(r: Request, name: String) -> Option[String] {
+        header_value(r.headers, name)
+    }
+}
+
+pub fn new_request(method: String, raw_url: String, body: String) -> Result[Request, ClientError] {
+    Ok(Request.new(method, Url.parse(raw_url)?, body))
+}
+
+pub struct Client {
+    pub fn new() -> Client {
+        Client()
+    }
+
+    pub fn do(c: Client, req: Request) -> Result[Response, ClientError] {
+        let socket = TcpNetwork.connect(req.url.host(), req.url.port())?;
+        defer socket.close();
+        write_string(socket, format_request(req))?;
+        let raw = read_message(socket)?;
+        match Response.try_parse(raw) {
+            Some(response) => Ok(response),
+            None => Err(ClientError.InvalidResponse),
+        }
+    }
+}
+
+pub fn default_client() -> Client {
+    Client.new()
+}
+
+pub fn get(url: String) -> Result[Response, ClientError] {
+    Client.new().do(new_request("GET", url, "")?)
+}
+
+pub fn post(url: String, content_type: String, body: String) -> Result[Response, ClientError] {
+    Client.new().do(new_request("POST", url, body)?.with_header("Content-Type", content_type))
+}
+
+fn format_request(req: Request) -> String {
+    let out = "${req.method} ${req.url.request_uri()} ${req.proto}\r\n";
+    if req.header("Host") == None {
+        out = out + "Host: ${req.url.host_header()}\r\n";
+    }
+    for h in req.headers {
+        if h.name() != "Host" && h.name() != "Content-Length" && h.name() != "Connection" {
+            out = out + "${h.name()}: ${h.value()}\r\n";
+        }
+    }
+    out + "Content-Length: ${req.body.len()}\r\nConnection: close\r\n\r\n" + req.body
+}
+
+}

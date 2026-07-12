@@ -1,7 +1,7 @@
 module Main {
 
-import Std.Httpd.Server
-import Std.Httpd.FileServer
+import Std.Http.Server
+import Std.Http.FileServer
 import Std.Effects.Network
 import Std.Effects.Filesystem
 import Std.Effects.Console
@@ -33,7 +33,7 @@ fn main() {
              Spawn = AsyncSpawn,
              FileSystem = RealFs,
              Console = StdConsole {
-            spawn(|| { run(make_handler(root), port); });
+            spawn(|| { listen_and_serve(file_server(root), port); });
             s.run_tasks();
         }
     } else {
@@ -42,7 +42,7 @@ fn main() {
              Spawn = ThreadSpawn,
              FileSystem = RealFs,
              Console = StdConsole {
-            run(make_handler(root), port);
+            listen_and_serve(file_server(root), port);
         }
     }
 }

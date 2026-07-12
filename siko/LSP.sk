@@ -8,8 +8,8 @@ import Std.Effects.Console
 import Std.Effects.Network
 import Std.Effects.Spawn
 import Std.Fs.Directory as Directory
-import Std.Httpd.Http
-import Std.Httpd.Server
+import Std.Http
+import Std.Http.Server
 import Std.IO.Async.Scheduler as Async
 import Std.Json
 import Std.Json.Util as JsonUtil
@@ -38,7 +38,7 @@ pub fn run_server() {
          TcpNetwork = AsyncTcp,
          Spawn = AsyncSpawn,
          Console = StdConsole {
-        spawn(|| { run(make_handler(), port).unwrap(); });
+        spawn(|| { listen_and_serve(make_handler(), port).unwrap(); });
         s.run_tasks();
     }
 }

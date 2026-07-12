@@ -1,12 +1,12 @@
-module Std.Httpd.FileServerTest {
+module Std.Http.FileServerTest {
 
 import Std.Effects.Network
 import Std.Effects.Filesystem
 import Std.Effects.Console
-import Std.Httpd.Http
-import Std.Httpd.Server
-import Std.Httpd.FileServer
-import Std.Httpd.TestUtil
+import Std.Http
+import Std.Http.Server
+import Std.Http.FileServer
+import Std.Http.TestUtil
 import Std.Mock.Network
 import Std.Mock.Fs
 import Std.Mock.Console
@@ -38,7 +38,7 @@ fn request(files: MockFiles, log: ConsoleLog, root: String, line: String) -> Res
     with mock_gateway = gateway, mock_files = files, mock_console = log, TcpNetwork = MockNet, FileSystem = MockFs, Console = MockConsole {
         let listener = TcpNetwork.listen(8080.as_u16()).unwrap();
         let socket = TcpNetwork.accept(listener).unwrap();
-        serve(socket, make_handler(root));
+        serve(socket, file_server(root));
     }
 
     Response.parse(drain(peer))

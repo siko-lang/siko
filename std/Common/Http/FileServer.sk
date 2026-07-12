@@ -1,8 +1,9 @@
-module Std.Httpd.FileServer {
+module Std.Http.FileServer {
 
 import Std.Effects.Filesystem
 import Std.Effects.Console
-import Std.Httpd.Http
+import Std.Http
+import Std.Http.Server
 
 fn content_type(path: String) -> String {
     if path.ends_with(".html") {
@@ -20,7 +21,7 @@ fn content_type(path: String) -> String {
     }
 }
 
-pub fn make_handler(root: String) -> fn(Request) -> Response {
+pub fn file_server(root: String) -> fn(Request) -> Response {
     |req| {
         if req.method() == "OPTIONS" {
             return Response.new("200 OK", "text/plain", "")
@@ -45,6 +46,10 @@ pub fn make_handler(root: String) -> fn(Request) -> Response {
             Err(_) => Response.new("404 Not Found", "text/html; charset=utf-8", "<h1>404 Not Found</h1>"),
         }
     }
+}
+
+pub fn make_handler(root: String) -> fn(Request) -> Response {
+    file_server(root)
 }
 
 }

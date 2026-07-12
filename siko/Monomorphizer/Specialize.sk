@@ -113,9 +113,13 @@ instance Specialize[FunctionPtrInfo] {
             let primary_args = bound_args(bound, inst_map, Substitution.new());
             // The witness already names the instance; bind its associated types
             // into inst_map without re-resolving.
+            let resolved_witness = match mono.resolve_witness(witness) {
+                Some(w) => w,
+                None => continue,
+            };
             extract_from_known_instance(
                 mono.source,
-                mono.resolve_witness(witness),
+                resolved_witness,
                 primary_args,
                 bound.constraints,
                 inst_map,
@@ -126,9 +130,10 @@ instance Specialize[FunctionPtrInfo] {
         let callee_type_args: Vec[TypeDef] = generic_params.iter()
             .map(|p| inst_map.lookup_named(p).unwrap().clone())
             .collect();
-        let callee_witnesses: Vec[ResolvedWitness] = witness_list.iter()
-            .map(|w| mono.resolve_witness(w))
-            .collect();
+        let callee_witnesses: Vec[ResolvedWitness] = match mono.resolve_witnesses(witness_list) {
+            Some(witnesses) => witnesses,
+            None => return FunctionPtrInfo(info.name, WitnessInfo.new()),
+        };
 
         let is_extern = func.is_extern();
         let is_c_callback = func.is_c_callback();
@@ -165,10 +170,10 @@ instance Specialize[CreateClosureInfo] {
             .iter()
             .map(|p| mono.sub.lookup_named(p).unwrap().clone())
             .collect();
-        let callee_witnesses: Vec[ResolvedWitness] = info.witnesses.witnesses
-            .iter()
-            .map(|w| mono.resolve_witness(w))
-            .collect();
+        let callee_witnesses: Vec[ResolvedWitness] = match mono.resolve_witnesses(info.witnesses.witnesses) {
+            Some(witnesses) => witnesses,
+            None => return CreateClosureInfo(info.name, info.params.clone(), WitnessInfo.new()),
+        };
         let mono_callee = fn_mono_key(
             mono,
             info.name,
@@ -220,8 +225,10 @@ instance Specialize[WithInfo] {
                     // a FunctionBound witness indexes the with-site's witness list,
                     // not the call site's. The handler itself is monomorphized later,
                     // at the effect call site, in the call-site dynamic context.
-                    let handler_witnesses: Vec[ResolvedWitness] = witness_info.witnesses.iter().map(|w| mono.resolve_witness(w)).collect();
-                    mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), handler_witnesses));
+                    match mono.resolve_witnesses(witness_info.witnesses) {
+                        Some(handler_witnesses) => mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), handler_witnesses)),
+                        None => {},
+                    }
                 }
                 HandlerSelection.Implicit(implicit_qn, var) => {
                     mono.current_implicit_ctx.insert(implicit_qn.clone());
@@ -235,8 +242,10 @@ instance Specialize[WithInfo] {
                     // (keyed by source qname) still hit. specialize_type specializes it on
                     // read. Resolve the EAT's bound witnesses here, at the `with` site, so
                     // an EffectAssociatedTypeBound can later fetch them from this ctx.
-                    let resolved: Vec[ResolvedWitness] = witness_info.witnesses.iter().map(|w| mono.resolve_witness(w)).collect();
-                    mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(handler_type, resolved));
+                    match mono.resolve_witnesses(witness_info.witnesses) {
+                        Some(resolved) => mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(handler_type, resolved)),
+                        None => {},
+                    }
                 }
                 HandlerSelection.Unresolved(_, _) |
                 HandlerSelection.UnresolvedType(_, _) => panic("mono: unresolved HandlerSelection")

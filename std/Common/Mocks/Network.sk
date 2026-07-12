@@ -56,15 +56,39 @@ instance Closer[MockSocket] {
     }
 }
 
-// The backdoor that bridges the concrete test side and the pure-EAT server side: it
-// holds the connections the server is about to accept. The test opens connections on
-// it (keeping the client handles); `listen` reads it from the `mock_gateway` implicit
-// and `accept` hands the queued server sockets out in order.
+pub struct MockConnection {
+    host: String,
+    port: U16,
+    peer: MockPeer,
+
+    pub fn host(c: MockConnection) -> String {
+        c.host
+    }
+
+    pub fn port(c: MockConnection) -> U16 {
+        c.port
+    }
+
+    pub fn peer(c: MockConnection) -> MockPeer {
+        c.peer
+    }
+}
+
+struct ConnectHandler {
+    config: Config,
+    handler: fn(String, U16, MockPeer) -> (),
+}
+
+// The backdoor that bridges concrete test code and pure-EAT network code:
+// - inbound connections are queued for TcpNetwork.accept
+// - outbound TcpNetwork.connect calls create a socket pair and run a queued handler
 pub struct Gateway {
     pending: VecDeque[MockSocket],
+    connect_handlers: VecDeque[ConnectHandler],
+    connected: VecDeque[MockConnection],
 
     pub fn new() -> Gateway {
-        Gateway(VecDeque.new())
+        Gateway(VecDeque.new(), VecDeque.new(), VecDeque.new())
     }
 
     // Open a connection: queue the server-side socket for the next accept, and return
@@ -75,8 +99,31 @@ pub struct Gateway {
         peer
     }
 
+    // Register the remote side for the next TcpNetwork.connect call. The handler
+    // gets the remote peer immediately when connect happens, before the client code
+    // starts using its socket.
+    pub fn on_connect(g: Gateway, config: Config, handler: fn(String, U16, MockPeer) -> ()) {
+        g.connect_handlers.push_back(ConnectHandler(config, handler));
+    }
+
+    pub fn connected(g: Gateway) -> Option[MockConnection] {
+        g.connected.pop_front()
+    }
+
     fn take(g: Gateway) -> Option[MockSocket] {
         g.pending.pop_front()
+    }
+
+    fn connect_client(g: Gateway, host: String, port: U16) -> Option[MockSocket] {
+        match g.connect_handlers.pop_front() {
+            Some(h) => {
+                let (socket, peer) = connect(h.config);
+                (h.handler)(host, port, peer);
+                g.connected.push_back(MockConnection(host, port, peer));
+                Some(socket)
+            }
+            None => None,
+        }
     }
 }
 
@@ -106,6 +153,13 @@ pub instance MockNet TcpNetwork {
         match listener.gateway.take() {
             Some(s) => Ok(s),
             None => panic("MockNet.accept: no pending connections"),
+        }
+    }
+
+    fn connect(host: String, port: U16) -> Result[MockSocket, Error] {
+        match mock_gateway.connect_client(host, port) {
+            Some(s) => Ok(s),
+            None => panic("MockNet.connect: no connect handler"),
         }
     }
 }

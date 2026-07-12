@@ -465,9 +465,27 @@ pub fn emit(llvm_module: LLVMModule) -> String {
     text
 }
 
-// Compiles the module to an object file at the given path. With optimize the
-// standard default<O3> pipeline runs before codegen.
-pub fn emit_object(llvm_module: LLVMModule, path: String, optimize: Bool) {
+pub struct ObjectModule {
+    ctx: Context,
+    m: Module,
+    tm: TargetMachine,
+
+    pub fn ir(o: ObjectModule) -> String {
+        o.m.print_to_string()
+    }
+
+    pub fn emit_object(o: ObjectModule, path: String) {
+        o.tm.emit_object(o.m, path);
+    }
+
+    pub fn dispose(o: ObjectModule) {
+        o.tm.dispose();
+        o.m.dispose();
+        o.ctx.dispose();
+    }
+}
+
+pub fn optimize(llvm_module: LLVMModule, optimize: Bool) -> ObjectModule {
     let triple = llvm_module.target_triple.clone().expect("llvm emit: module has no target triple");
     let ctx = Context.new();
     let m = build(ctx, llvm_module);
@@ -477,10 +495,7 @@ pub fn emit_object(llvm_module: LLVMModule, path: String, optimize: Bool) {
     if optimize {
         m.run_passes("default<O3>", tm);
     }
-    tm.emit_object(m, path);
-    tm.dispose();
-    m.dispose();
-    ctx.dispose();
+    ObjectModule(ctx, m, tm)
 }
 
 }

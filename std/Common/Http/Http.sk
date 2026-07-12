@@ -1,0 +1,188 @@
+module Std.Http {
+
+import Std.Effects.Network
+import Std.IO.Buffered as Buffered
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Error
+
+pub struct Header {
+    name: String,
+    value: String,
+
+    pub fn new(name: String, value: String) -> Header {
+        Header(name: name, value: value)
+    }
+
+    pub fn name(h: Header) -> String {
+        h.name
+    }
+
+    pub fn value(h: Header) -> String {
+        h.value
+    }
+}
+
+pub fn parse_headers(lines: Vec[String], start: Int) -> Vec[Header] {
+    let headers: Vec[Header] = Vec.new();
+    for i in start..lines.len() {
+        let line = lines[i];
+        match line.find(": ") {
+            Some(j) => headers.push(Header.new(
+                line.substring(0, j),
+                line.substring(j + 2, line.len()),
+            )),
+            None => {},
+        }
+    }
+    headers
+}
+
+pub fn header_value(headers: Vec[Header], name: String) -> Option[String] {
+    for h in headers {
+        if h.name() == name {
+            return Some(h.value());
+        }
+    }
+    None
+}
+
+pub fn content_length(headers: Vec[Header]) -> Int {
+    match header_value(headers, "Content-Length") {
+        Some(value) => {
+            match value.parse_int(10) {
+                Ok(n) => n,
+                Err(_) => 0,
+            }
+        }
+        None => 0,
+    }
+}
+
+pub fn read_message(source: TcpNetwork.Socket) -> Result[String, Error] {
+    let reader = Buffered.Reader.new(source, chunk_size: 4096);
+    let lines: Vec[String] = Vec.new();
+    loop {
+        match reader.read_line()? {
+            Some(line) => {
+                if line == "" {
+                    break;
+                }
+                lines.push(line);
+            }
+            None => break,
+        }
+    }
+    let headers = join(lines, "\r\n");
+    let body_len = content_length(parse_headers(lines, 1));
+    if body_len > 0 {
+        let buf: Vec[U8] = Vec.with_value(body_len, 0.as_u8());
+        reader.read_full(buf.slice())?;
+        Ok(headers + "\r\n\r\n" + String.from_slice(buf.slice()))
+    } else {
+        Ok(headers)
+    }
+}
+
+pub fn write_string(sink: TcpNetwork.Socket, value: String) -> Result[(), Error] {
+    let bytes = value.as_slice();
+    let written = 0;
+    while written < bytes.len() {
+        let n = sink.write(bytes.sub(written, bytes.len()))?;
+        if n == 0 {
+            panic("http write_string: write returned 0");
+        }
+        written = written + n;
+    }
+    Ok(())
+}
+
+pub struct Response {
+    proto: String,
+    status: String,
+    headers: Vec[Header],
+    body: String,
+
+    pub fn new(status: String, ct: String, body: String) -> Response {
+        Response(
+            proto: "",
+            status: status,
+            headers: [Header.new("Content-Type", ct)],
+            body: body,
+        )
+    }
+
+    pub fn from_parts(proto: String, status: String, headers: Vec[Header], body: String) -> Response {
+        Response(proto: proto, status: status, headers: headers, body: body)
+    }
+
+    pub fn redirect(location: String) -> Response {
+        Response(
+            proto: "",
+            status: "302 Found",
+            headers: [Header.new("Location", location)],
+            body: "",
+        )
+    }
+
+    pub fn with_header(r: Response, name: String, value: String) -> Response {
+        r.headers.push(Header.new(name, value));
+        r
+    }
+
+    pub fn try_parse(raw: String) -> Option[Response] {
+        let parts: Vec[String] = raw.split("\r\n\r\n").collect();
+        let body = if parts.len() > 1 { parts[1] } else { "" };
+        let header_lines: Vec[String] = parts[0].split("\r\n").collect();
+        if header_lines.is_empty() || header_lines[0] == "" {
+            return None;
+        }
+        let first = header_lines[0];
+        if !first.starts_with("HTTP/") {
+            return None;
+        }
+        let (proto, status) = match first.find(" ") {
+            Some(i) => (first.substring(0, i), first.substring(i + 1, first.len())),
+            None => return None,
+        };
+        Some(Response.from_parts(
+            proto,
+            status,
+            parse_headers(header_lines, 1),
+            body,
+        ))
+    }
+
+    pub fn parse(raw: String) -> Response {
+        match Response.try_parse(raw) {
+            Some(r) => r,
+            None => Response.from_parts("", raw, Vec.new(), ""),
+        }
+    }
+
+    pub fn proto(r: Response) -> String {
+        r.proto
+    }
+
+    pub fn version(r: Response) -> String {
+        r.proto()
+    }
+
+    pub fn status(r: Response) -> String {
+        r.status
+    }
+
+    pub fn headers(r: Response) -> Vec[Header] {
+        r.headers
+    }
+
+    pub fn body(r: Response) -> String {
+        r.body
+    }
+
+    pub fn header(r: Response, name: String) -> Option[String] {
+        header_value(r.headers, name)
+    }
+}
+
+}

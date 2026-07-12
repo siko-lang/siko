@@ -16,6 +16,17 @@ import Siko.Instances.FunctionInstanceResolver
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
+fn unresolved_user_defined_call(name: QualifiedName, args: Vec[Expr], is_co: Bool) -> FunctionCallInfo {
+    FunctionCallInfo(
+        qname: name,
+        kind: FunctionKind.UserDefined,
+        args: args,
+        witnesses: WitnessInfo.new(),
+        named_args: Vec.new(),
+        is_coroutine_create: is_co,
+    )
+}
+
 pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, witness_info: WitnessInfo, is_co: Bool) -> FunctionCallInfo {
     mono.statistics.process_user_defined_fn_start();
     let concrete_result_ty: TypeDef = mono.current_expr_ty.apply(mono.sub).expect("process_user_defined_fn: current_expr_ty is None for ${name.name()}");
@@ -108,13 +119,21 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
     let (final_callee, callee_type_args, callee_witnesses) = if is_trait_method {
         let witness_list = witness_info.witnesses;
         assert(!witness_list.is_empty(), "process_user_defined_fn: TraitMethod ${name.name()} has empty witness list");
-        let (c, ta) =
-            dispatch_trait_call(name, witness_list[0], arg_types, Some(concrete_result_ty), mono);
+        let (c, ta) = match dispatch_trait_call(name, witness_list[0], arg_types, Some(concrete_result_ty), mono) {
+            Some(result) => result,
+            None => {
+                mono.statistics.process_user_defined_fn_end();
+                return unresolved_user_defined_call(name, spec_args, is_co);
+            }
+        };
         let wl: Vec[ResolvedWitness] = if c == name {
-            witness_list
-                .iter()
-                .map(|w| mono.resolve_witness(w))
-                .collect()
+            match mono.resolve_witnesses(witness_list) {
+                Some(witnesses) => witnesses,
+                None => {
+                    mono.statistics.process_user_defined_fn_end();
+                    return unresolved_user_defined_call(name, spec_args, is_co);
+                }
+            }
         } else {
             // Dispatched to a concrete instance method. Each of its bounds carries
             // an origin:
@@ -126,7 +145,13 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             // Bound expansion appends super-bounds, interleaving the two kinds, so
             // we demux by origin. children come pre-expanded (instance bounds are
             // expanded too) and line up with the InstanceContext bounds in order.
-            let children = mono.resolve_witness(witness_list[0]).children;
+            let children = match mono.resolve_witness(witness_list[0]) {
+                Some(w) => w.children,
+                None => {
+                    mono.statistics.process_user_defined_fn_end();
+                    return unresolved_user_defined_call(name, spec_args, is_co);
+                }
+            };
             let method_bounds = {
                 let f = mono.source.functions.get(c).expect("process_user_defined_fn: instance method ${c.name()} not found in program");
                 f.type_arg_defs.map(|tad| tad.bounds.clone()).unwrap_or_else(|| Vec.new())
@@ -141,7 +166,13 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                         child_idx = child_idx + 1;
                     },
                     BoundOrigin.MethodOwn => {
-                        result.push(mono.resolve_witness(witness_list[next_forward]));
+                        match mono.resolve_witness(witness_list[next_forward]) {
+                            Some(w) => result.push(w),
+                            None => {
+                                mono.statistics.process_user_defined_fn_end();
+                                return unresolved_user_defined_call(name, spec_args, is_co);
+                            }
+                        }
                         next_forward = next_forward + 1;
                     },
                 }
@@ -169,9 +200,13 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             let primary_args = bound_args(bound, inst_map, Substitution.new());
             // The witness already names the instance; bind its associated types
             // into inst_map without re-resolving.
+            let resolved_witness = match mono.resolve_witness(witness) {
+                Some(w) => w,
+                None => continue,
+            };
             extract_from_known_instance(
                 mono.source,
-                mono.resolve_witness(witness),
+                resolved_witness,
                 primary_args,
                 bound.constraints,
                 inst_map,
@@ -182,10 +217,13 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             .iter()
             .map(|p| inst_map.lookup_named(p).expect("process_user_defined_fn: type var ${p} not resolved in inst_map for ${name.name()}").clone())
             .collect();
-        let wl: Vec[ResolvedWitness] = witness_list
-            .iter()
-            .map(|w| mono.resolve_witness(w))
-            .collect();
+        let wl: Vec[ResolvedWitness] = match mono.resolve_witnesses(witness_list) {
+            Some(witnesses) => witnesses,
+            None => {
+                mono.statistics.process_user_defined_fn_end();
+                return unresolved_user_defined_call(name, spec_args, is_co);
+            }
+        };
         (name.clone(), ct, wl)
     };
 
@@ -362,9 +400,20 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     let witness = info.witnesses.witnesses[0];
     // The witness already names the concrete instance; resolve it by qname and bind
     // the self-bound's associated-type constraints into callee_inst.
+    let resolved_witness = match mono.resolve_witness(witness) {
+        Some(w) => w,
+        None => {
+            mono.statistics.process_type_associated_call_end();
+            return FunctionCallInfo(
+                qname: info.fn_name,
+                kind: FunctionKind.UserDefined,
+                args: spec_args,
+            );
+        }
+    };
     let resolution = extract_from_known_instance(
         mono.source,
-        mono.resolve_witness(witness),
+        resolved_witness,
         query_args,
         self_bound.constraints.clone(),
         callee_inst,
@@ -415,7 +464,21 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
     let remaining_witnesses: Vec[ResolvedWitness] = {
         let i = info.witnesses.witnesses.iter();
         i.next();
-        i.map(|w| mono.resolve_witness(w)).collect()
+        let witnesses = Vec.new();
+        for w in i {
+            match mono.resolve_witness(w) {
+                Some(resolved) => witnesses.push(resolved),
+                None => {
+                    mono.statistics.process_type_associated_call_end();
+                    return FunctionCallInfo(
+                        qname: info.fn_name,
+                        kind: FunctionKind.UserDefined,
+                        args: spec_args,
+                    );
+                }
+            }
+        }
+        witnesses
     };
 
     let final_callee_def = mono
