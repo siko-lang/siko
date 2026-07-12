@@ -23,26 +23,31 @@ enum BackendTypeKind {
     Aggregate,
 }
 
+@value_type
 struct BackendType {
     handle: LLVM.TypeRef,
     kind: BackendTypeKind,
 }
 
+@value_type
 struct TypedValue {
     ty: BackendType,
     value: LLVM.Value,
 }
 
+@value_type
 struct LocalSlot {
     ty: BackendType,
     ptr: LLVM.Value,
 }
 
+@value_type
 struct Address {
     ty: BackendType,
     ptr: LLVM.Value,
 }
 
+@value_type
 struct FieldInfo {
     index: Int,
     ty: TypeDef,
@@ -52,8 +57,10 @@ struct Lowerer {
     program: Program,
     builtin_int_bits: Map[QualifiedName, Int],
     variable_names: Map[VariableName, String],
-    function_names: Map[QualifiedName, String],
+    mangled_names: Map[QualifiedName, String],
+    string_symbols: Map[String, String],
     siko_malloc_symbol: String,
+    layout_engine: LayoutEngine,
 
     fn new(program: Program) -> Lowerer {
         let builtin_int_bits: Map[QualifiedName, Int] = Map.new();
@@ -71,7 +78,9 @@ struct Lowerer {
             builtin_int_bits,
             Map.new(),
             Map.new(),
+            Map.new(),
             "siko_malloc",
+            LayoutEngine.new(program),
         )
     }
 
@@ -84,13 +93,29 @@ struct Lowerer {
         mangled
     }
 
-    fn fn_name(l: Lowerer, qualified_name: QualifiedName) -> String {
-        if let Some(cached) = l.function_names.get(qualified_name) {
+    fn mangled_name(l: Lowerer, qualified_name: QualifiedName) -> String {
+        if let Some(cached) = l.mangled_names.get(qualified_name) {
             return cached;
         }
         let mangled = mangle(qualified_name.hashed());
-        l.function_names.insert(qualified_name, mangled);
+        l.mangled_names.insert(qualified_name, mangled);
         mangled
+    }
+
+    fn string_symbol(l: Lowerer, value: String) -> String {
+        if let Some(cached) = l.string_symbols.get(value) {
+            return cached;
+        }
+        let symbol = "__siko_str_${value.len()}_";
+        let bytes = value.as_slice();
+        let i = 0;
+        while i < value.len() {
+            let v = bytes[i].as_int();
+            symbol = symbol + hex_digit(v / 16) + hex_digit(v % 16);
+            i += 1;
+        }
+        l.string_symbols.insert(value, symbol);
+        symbol
     }
 
     fn named_qname(l: Lowerer, ty: TypeDef) -> QualifiedName {
@@ -151,7 +176,7 @@ struct Lowerer {
         if let Some(c_name) = fdef.extern_c_name() {
             return I.resolve(c_name);
         }
-        l.fn_name(fdef.qualified_name.unwrap())
+        l.mangled_name(fdef.qualified_name.unwrap())
     }
 
     fn call_symbol(l: Lowerer, qname: QualifiedName, kind: FunctionKind) -> String {
@@ -161,7 +186,7 @@ struct Lowerer {
             _ => {
                 match l.program.functions.get(qname) {
                     Some(fdef) => l.fn_symbol(fdef),
-                    None => l.fn_name(qname),
+                    None => l.mangled_name(qname),
                 }
             }
         }
@@ -170,7 +195,7 @@ struct Lowerer {
     fn fn_pointer_symbol(l: Lowerer, qname: QualifiedName) -> String {
         match l.program.functions.get(qname) {
             Some(fdef) => l.fn_symbol(fdef),
-            None => l.fn_name(qname),
+            None => l.mangled_name(qname),
         }
     }
 
@@ -216,7 +241,7 @@ struct ModuleLowerer {
         for sdef in ml.lowerer.program.structs.values() {
             let qname = sdef.qualified_name.unwrap();
             if ml.should_emit_struct(qname, sdef.is_builtin()) {
-                let name = mangle(qname.hashed());
+                let name = ml.lowerer.mangled_name(qname);
                 ml.types.insert(name, ml.ctx.named_struct(name));
             }
         }
@@ -242,7 +267,7 @@ struct ModuleLowerer {
                     fields.push(ml.lower_type(field.ty).handle);
                 }
             }
-            ml.types.get(mangle(qname.hashed())).unwrap().set_body(fields, sdef.is_packed());
+            ml.types.get(ml.lowerer.mangled_name(qname)).unwrap().set_body(fields, sdef.is_packed());
         }
     }
 
@@ -260,7 +285,7 @@ struct ModuleLowerer {
                     BackendType(ml.ctx.int_type(bits), BackendTypeKind.Int(bits))
                 } else {
                     BackendType(
-                        ml.types.get(mangle(resolved.hashed())).unwrap(),
+                        ml.types.get(ml.lowerer.mangled_name(resolved)).unwrap(),
                         BackendTypeKind.Aggregate,
                     )
                 }
@@ -497,7 +522,11 @@ struct FunctionLowerer {
         fixed_param_tys: Option[Vec[BackendType]],
     ) -> Option[TypedValue] {
         let varargs = fixed_param_tys.is_some();
-        let param_types: Vec[LLVM.TypeRef] = Vec.new();
+        let param_count = match fixed_param_tys {
+            Some(types) => types.len(),
+            None => args.len(),
+        };
+        let param_types: Vec[LLVM.TypeRef] = Vec.new(param_count);
         match fixed_param_tys {
             Some(types) => {
                 for ty in types {
@@ -538,7 +567,7 @@ struct FunctionLowerer {
     }
 
     fn lower_alloc(fl: FunctionLowerer, ty: TypeDef) -> TypedValue {
-        let layout = LayoutEngine.new(fl.ml.lowerer.program).layout_of(ty);
+        let layout = fl.ml.lowerer.layout_engine.layout_of(ty);
         let result_ty = BackendType(fl.ml.ctx.ptr_type(), BackendTypeKind.Ptr);
         let size_ty = BackendType(fl.ml.ctx.int_type(64), BackendTypeKind.Int(64));
         fl.emit_call(
@@ -618,7 +647,7 @@ struct FunctionLowerer {
         let ty = fl.ml.lower_type(expr.ty.unwrap());
         match expr.kind {
             ExprKind.IntLiteral(v) => TypedValue(ty, ty.handle.const_int_text(v)),
-            ExprKind.StringLiteral(s) => TypedValue(ty, fl.ml.global(string_symbol(s))),
+            ExprKind.StringLiteral(s) => TypedValue(ty, fl.ml.global(fl.ml.lowerer.string_symbol(s))),
             ExprKind.CharLiteral(v) => TypedValue(ty, ty.handle.const_int(v.as_int().as_u64(), False)),
             ExprKind.BinaryOp(op, lhs, rhs) => fl.lower_binary_op(op, lhs, rhs, ty),
             ExprKind.UnaryOp(op, operand) => fl.lower_unary_op(op, operand),
@@ -633,7 +662,7 @@ struct FunctionLowerer {
             ExprKind.AddrOf(inner) => TypedValue(BackendType(fl.ml.ctx.ptr_type(), BackendTypeKind.Ptr), fl.lower_addr(inner).ptr),
             ExprKind.Transmute(inner) => fl.lower_transmute(inner, ty),
             ExprKind.SizeOf(size_ty) => {
-                let layout = LayoutEngine.new(fl.ml.lowerer.program).layout_of(size_ty);
+                let layout = fl.ml.lowerer.layout_engine.layout_of(size_ty);
                 TypedValue(ty, ty.handle.const_int(layout.size.as_u64(), False))
             }
             ExprKind.Alloc(alloc_ty) => fl.lower_alloc(alloc_ty),
@@ -743,18 +772,6 @@ struct FunctionLowerer {
 
 fn hex_digit(n: Int) -> String {
     String.from_byte("0123456789ABCDEF".as_slice()[n])
-}
-
-fn string_symbol(s: String) -> String {
-    let out = "__siko_str_${s.len()}_";
-    let bytes = s.as_slice();
-    let i = 0;
-    while i < s.len() {
-        let v = bytes[i].as_int();
-        out = out + hex_digit(v / 16) + hex_digit(v % 16);
-        i += 1;
-    }
-    out
 }
 
 fn add_string(strings: Vec[String], value: String) {
@@ -895,7 +912,7 @@ fn add_string_global(ml: ModuleLowerer, value: String, definition: Bool) {
     };
     add_global(
         ml,
-        string_symbol(value),
+        ml.lowerer.string_symbol(value),
         ty,
         LLVM.Linkage.External,
         LLVM.UnnamedAddr.GlobalUnnamedAddr,
