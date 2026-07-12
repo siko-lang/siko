@@ -4,6 +4,7 @@ import Siko.AST.Identifier
 import Siko.AST.Module as M
 import Siko.AST.QualifiedName
 import Siko.AST.Expr
+import Siko.AST.Function
 import Siko.Interner as I
 
 pub struct ModuleItem {
@@ -19,7 +20,7 @@ pub enum ModuleItemKind {
     Struct(struct_name: Identifier, type_arg_count: Int, field_count: Int),
     Enum(enum_name: Identifier, type_arg_count: Int),
     Variant(enum_name: Identifier, variant_name: Identifier, item_count: Int),
-    Function(name: Identifier, kind: FunctionKind),
+    Function(name: Identifier, kind: FunctionKind, def_kind: FunctionDefKind),
     Trait(trait_name: Identifier, type_arg_count: Int, associated_types: Vec[I.String]),
     Instance(instance_name: Identifier),
     Effect(effect_name: Identifier, associated_types: Vec[I.String]),
@@ -60,7 +61,7 @@ pub enum ModuleItemKind {
 
     pub fn is_function(kind: ModuleItemKind) -> Bool {
         match kind {
-            ModuleItemKind.Function(_, _) => True,
+            ModuleItemKind.Function(_, _, _) => True,
             _ => False,
         }
     }
@@ -100,7 +101,7 @@ instance ToString[ModuleItemKind] {
             ModuleItemKind.Struct(_, _, _) => "struct",
             ModuleItemKind.Enum(_, _) => "enum",
             ModuleItemKind.Variant(_, _, _) => "variant",
-            ModuleItemKind.Function(_, _) => "function",
+            ModuleItemKind.Function(_, _, _) => "function",
             ModuleItemKind.Trait(_, _, _) => "trait",
             ModuleItemKind.Instance(_) => "instance",
             ModuleItemKind.Effect(_, _) => "effect",
