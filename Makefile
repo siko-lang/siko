@@ -20,7 +20,7 @@ test-valgrind: runner.bin
 	./runner.bin --valgrind
 
 siko.bin: base.bin $(SIKO_SK)
-	./base.bin build siko -O -o siko.bin
+	./base.bin build siko -O -o siko.bin --trace
 
 .PHONY: check
 check: base.bin $(SIKO_SK)
