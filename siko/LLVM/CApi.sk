@@ -197,6 +197,14 @@ fn llvm_dispose_builder(b: void*) -> void
 fn llvm_position_builder_at_end(b: void*, bb: void*) -> void
 
 @extern("C")
+@rename("LLVMPositionBuilderBefore")
+fn llvm_position_builder_before(b: void*, instr: void*) -> void
+
+@extern("C")
+@rename("LLVMGetFirstInstruction")
+fn llvm_get_first_instruction(bb: void*) -> void*
+
+@extern("C")
 @rename("LLVMBuildAlloca")
 fn llvm_build_alloca(b: void*, ty: void*, name: *I8) -> void*
 
@@ -566,6 +574,11 @@ fn bool_flag(b: Bool) -> I32 {
     if b { 1.as_i32() } else { 0.as_i32() }
 }
 
+@unsafe
+fn empty_name() -> *I8 {
+    transmute("".as_ptr())
+}
+
 // ─── Wrapper objects ─────────────────────────────────────────────────────────
 
 @value_type
@@ -696,6 +709,16 @@ pub struct Value {
 @value_type
 pub struct BasicBlock {
     handle: void*,
+
+    @safe
+    pub fn first_instruction(bb: BasicBlock) -> Option[Value] {
+        let instruction = llvm_get_first_instruction(bb.handle);
+        if is_null_voidptr(instruction) {
+            None
+        } else {
+            Some(Value(instruction))
+        }
+    }
 }
 
 @value_type
@@ -857,7 +880,7 @@ pub struct Module {
     // e.g. "default<O3>". Panics if the pipeline fails.
     @safe
     pub fn run_passes(m: Module, passes: String, tm: TargetMachine) {
-        let c_passes = CString.from_string(passes.clone());
+        let c_passes = CString.from_string(passes);
         let options = llvm_create_pass_builder_options();
         let err = llvm_run_passes(m.handle, c_passes.as_ptr(), tm.handle, options);
         llvm_dispose_pass_builder_options(options);
@@ -895,7 +918,7 @@ pub struct Target {
 
     @safe
     pub fn from_triple(triple: String) -> Target {
-        let c_triple = CString.from_string(triple.clone());
+        let c_triple = CString.from_string(triple);
         let target = get_null_voidptr();
         let msg = get_null_ptr();
         let failed = llvm_get_target_from_triple(c_triple.as_ptr(), &target, &msg);
@@ -934,7 +957,7 @@ pub struct TargetMachine {
 
     @safe
     pub fn emit_object(tm: TargetMachine, m: Module, path: String) {
-        let c_path = CString.from_string(path.clone());
+        let c_path = CString.from_string(path);
         let msg = get_null_ptr();
         // 1 = LLVMObjectFile.
         let failed = llvm_target_machine_emit_to_file(tm.handle, m.handle, c_path.as_ptr(), 1.as_i32(), &msg);
@@ -961,6 +984,11 @@ pub struct Builder {
     }
 
     @safe
+    pub fn position_before(b: Builder, instruction: Value) {
+        llvm_position_builder_before(b.handle, instruction.handle);
+    }
+
+    @safe
     pub fn dispose(b: Builder) {
         llvm_dispose_builder(b.handle);
     }
@@ -972,9 +1000,8 @@ pub struct Builder {
     }
 
     @safe
-    pub fn build_load(b: Builder, ty: TypeRef, ptr: Value, name: String) -> Value {
-        let c_name = CString.from_string(name);
-        Value(llvm_build_load2(b.handle, ty.handle, ptr.handle, c_name.as_ptr()))
+    pub fn build_load(b: Builder, ty: TypeRef, ptr: Value) -> Value {
+        Value(llvm_build_load2(b.handle, ty.handle, ptr.handle, empty_name()))
     }
 
     @safe
@@ -983,81 +1010,73 @@ pub struct Builder {
     }
 
     @safe
-    pub fn build_binary(b: Builder, op: BinaryOp, lhs: Value, rhs: Value, name: String) -> Value {
-        let c_name = CString.from_string(name);
+    pub fn build_binary(b: Builder, op: BinaryOp, lhs: Value, rhs: Value) -> Value {
         let handle = match op {
-            BinaryOp.Add => llvm_build_add(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.Sub => llvm_build_sub(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.Mul => llvm_build_mul(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.UDiv => llvm_build_udiv(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.SDiv => llvm_build_sdiv(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.URem => llvm_build_urem(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.SRem => llvm_build_srem(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.And => llvm_build_and(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.Or => llvm_build_or(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.Xor => llvm_build_xor(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.Shl => llvm_build_shl(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.LShr => llvm_build_lshr(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
-            BinaryOp.AShr => llvm_build_ashr(b.handle, lhs.handle, rhs.handle, c_name.as_ptr()),
+            BinaryOp.Add => llvm_build_add(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.Sub => llvm_build_sub(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.Mul => llvm_build_mul(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.UDiv => llvm_build_udiv(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.SDiv => llvm_build_sdiv(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.URem => llvm_build_urem(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.SRem => llvm_build_srem(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.And => llvm_build_and(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.Or => llvm_build_or(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.Xor => llvm_build_xor(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.Shl => llvm_build_shl(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.LShr => llvm_build_lshr(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.AShr => llvm_build_ashr(b.handle, lhs.handle, rhs.handle, empty_name()),
         };
         Value(handle)
     }
 
     @safe
-    pub fn build_icmp(b: Builder, pred: IntPredicate, lhs: Value, rhs: Value, name: String) -> Value {
-        let c_name = CString.from_string(name);
-        Value(llvm_build_icmp(b.handle, pred.code(), lhs.handle, rhs.handle, c_name.as_ptr()))
+    pub fn build_icmp(b: Builder, pred: IntPredicate, lhs: Value, rhs: Value) -> Value {
+        Value(llvm_build_icmp(b.handle, pred.code(), lhs.handle, rhs.handle, empty_name()))
     }
 
     @safe
-    pub fn build_gep(b: Builder, ty: TypeRef, ptr: Value, indices: Vec[Value], inbounds: Bool, name: String) -> Value {
-        let c_name = CString.from_string(name);
+    pub fn build_gep(b: Builder, ty: TypeRef, ptr: Value, indices: Vec[Value], inbounds: Bool) -> Value {
         let handles = value_handles(indices);
         let handle = if inbounds {
-            llvm_build_in_bounds_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr())
+            llvm_build_in_bounds_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), empty_name())
         } else {
-            llvm_build_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr())
+            llvm_build_gep2(b.handle, ty.handle, ptr.handle, handle_ptr(handles), handles.len().as_u32(), empty_name())
         };
         Value(handle)
     }
 
     @safe
-    pub fn build_extract_value(b: Builder, agg: Value, index: Int, name: String) -> Value {
-        let c_name = CString.from_string(name);
-        Value(llvm_build_extract_value(b.handle, agg.handle, index.as_u32(), c_name.as_ptr()))
+    pub fn build_extract_value(b: Builder, agg: Value, index: Int) -> Value {
+        Value(llvm_build_extract_value(b.handle, agg.handle, index.as_u32(), empty_name()))
     }
 
     @safe
-    pub fn build_insert_value(b: Builder, agg: Value, value: Value, index: Int, name: String) -> Value {
-        let c_name = CString.from_string(name);
-        Value(llvm_build_insert_value(b.handle, agg.handle, value.handle, index.as_u32(), c_name.as_ptr()))
+    pub fn build_insert_value(b: Builder, agg: Value, value: Value, index: Int) -> Value {
+        Value(llvm_build_insert_value(b.handle, agg.handle, value.handle, index.as_u32(), empty_name()))
     }
 
     @safe
-    pub fn build_cast(b: Builder, op: CastOp, value: Value, ty: TypeRef, name: String) -> Value {
-        let c_name = CString.from_string(name);
+    pub fn build_cast(b: Builder, op: CastOp, value: Value, ty: TypeRef) -> Value {
         let handle = match op {
-            CastOp.Trunc => llvm_build_trunc(b.handle, value.handle, ty.handle, c_name.as_ptr()),
-            CastOp.ZExt => llvm_build_zext(b.handle, value.handle, ty.handle, c_name.as_ptr()),
-            CastOp.SExt => llvm_build_sext(b.handle, value.handle, ty.handle, c_name.as_ptr()),
-            CastOp.BitCast => llvm_build_bit_cast(b.handle, value.handle, ty.handle, c_name.as_ptr()),
-            CastOp.PtrToInt => llvm_build_ptr_to_int(b.handle, value.handle, ty.handle, c_name.as_ptr()),
-            CastOp.IntToPtr => llvm_build_int_to_ptr(b.handle, value.handle, ty.handle, c_name.as_ptr()),
+            CastOp.Trunc => llvm_build_trunc(b.handle, value.handle, ty.handle, empty_name()),
+            CastOp.ZExt => llvm_build_zext(b.handle, value.handle, ty.handle, empty_name()),
+            CastOp.SExt => llvm_build_sext(b.handle, value.handle, ty.handle, empty_name()),
+            CastOp.BitCast => llvm_build_bit_cast(b.handle, value.handle, ty.handle, empty_name()),
+            CastOp.PtrToInt => llvm_build_ptr_to_int(b.handle, value.handle, ty.handle, empty_name()),
+            CastOp.IntToPtr => llvm_build_int_to_ptr(b.handle, value.handle, ty.handle, empty_name()),
         };
         Value(handle)
     }
 
     @safe
-    pub fn build_call(b: Builder, fn_ty: TypeRef, callee: Value, args: Vec[Value], name: String) -> Value {
-        let c_name = CString.from_string(name);
+    pub fn build_call(b: Builder, fn_ty: TypeRef, callee: Value, args: Vec[Value]) -> Value {
         let handles = value_handles(args);
-        Value(llvm_build_call2(b.handle, fn_ty.handle, callee.handle, handle_ptr(handles), handles.len().as_u32(), c_name.as_ptr()))
+        Value(llvm_build_call2(b.handle, fn_ty.handle, callee.handle, handle_ptr(handles), handles.len().as_u32(), empty_name()))
     }
 
     @safe
-    pub fn build_phi(b: Builder, ty: TypeRef, name: String) -> Value {
-        let c_name = CString.from_string(name);
-        Value(llvm_build_phi(b.handle, ty.handle, c_name.as_ptr()))
+    pub fn build_phi(b: Builder, ty: TypeRef) -> Value {
+        Value(llvm_build_phi(b.handle, ty.handle, empty_name()))
     }
 
     @safe
@@ -1091,57 +1110,5 @@ pub struct Builder {
     }
 }
 
-
-// Handles are plain pointers into LLVM-owned memory; cloning copies the
-// handle, not the underlying object.
-
-instance Clone[TypeRef] {
-    @safe
-    fn clone(a: TypeRef) -> TypeRef {
-        TypeRef(a.handle)
-    }
-}
-
-instance Clone[Value] {
-    @safe
-    fn clone(a: Value) -> Value {
-        Value(a.handle)
-    }
-}
-
-instance Clone[BasicBlock] {
-    @safe
-    fn clone(a: BasicBlock) -> BasicBlock {
-        BasicBlock(a.handle)
-    }
-}
-
-instance Clone[Attribute] {
-    @safe
-    fn clone(a: Attribute) -> Attribute {
-        Attribute(a.handle)
-    }
-}
-
-instance Clone[Context] {
-    @safe
-    fn clone(a: Context) -> Context {
-        Context(a.handle)
-    }
-}
-
-instance Clone[Module] {
-    @safe
-    fn clone(a: Module) -> Module {
-        Module(a.handle)
-    }
-}
-
-instance Clone[Builder] {
-    @safe
-    fn clone(a: Builder) -> Builder {
-        Builder(a.handle)
-    }
-}
 
 }

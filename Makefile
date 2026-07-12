@@ -31,7 +31,7 @@ check: base.bin $(SIKO_SK)
 	./base.bin check siko
 
 siko2.bin: siko.bin
-	./siko.bin build siko -O -o siko2.bin
+	./siko.bin build siko -O -o siko2.bin --trace
 
 siko3.bin: siko2.bin
 	./siko2.bin build siko -O -o siko3.bin

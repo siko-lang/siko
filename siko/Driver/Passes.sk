@@ -199,7 +199,6 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                 name: "llvm",
                 label: "Emitting LLVM...",
                 run: |driver| {
-                    // Kept as AST so the dump callback can print pre-optimization IR.
                     driver.llvm_modules = LLVMBackend.lower(driver.program);
                 },
                 dump: Some(|driver| driver.dump_llvm()),
@@ -234,7 +233,7 @@ pub fn build_passes(driver: Driver) -> Vec[Pass] {
                         if config.obj {
                             return;
                         }
-                        driver.link_objects(paths.clone(), out);
+                        driver.link_objects(paths, out);
                         for path in paths {
                             Fs.remove_file(path).unwrap();
                         }
