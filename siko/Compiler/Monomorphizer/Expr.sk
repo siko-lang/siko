@@ -34,7 +34,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
 
     let func = mono.source.functions.get(name).expect("function not found in mono");
     if func.kind == FunctionDefKind.EffectMethod {
-        let handler_info = match mono.current_effect_ctx.get(name) {
+        let handler_info = match mono.current_mono_ctx.get_effect(name) {
             Some(hi) => hi.clone(),
             None => {
                 mono.errors.push(MonoError.UnresolvedEffectHandler(name.name(), mono.current_location.unwrap()));
@@ -69,18 +69,14 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             handler_name,
             handler_type_args,
             handler_witnesses,
-            mono.current_effect_ctx,
-            mono.current_effect_associated_type_ctx,
-            mono.current_implicit_ctx,
+            mono.current_mono_ctx,
         );
         if !mono.fn_done.contains(mono_handler) {
             mono.fn_queue.push_back(FnWork(
                 handler_name,
                 handler_type_args,
                 handler_witnesses,
-                mono.current_effect_ctx.clone(),
-                mono.current_effect_associated_type_ctx.clone(),
-                mono.current_implicit_ctx.clone(),
+                mono.current_mono_ctx,
             ));
         }
         let result = FunctionCallInfo(
@@ -227,27 +223,26 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         .functions
         .get(final_callee)
         .unwrap();
-    let is_final_extern_or_callback = final_callee_def.is_extern() || final_callee_def.is_c_callback();
-    let callee_effect_ctx = if is_final_extern_or_callback { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
-    let callee_implicit_ctx = if is_final_extern_or_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
-    let callee_effect_associated_type_ctx = if final_callee_def.is_extern() { EffectAssociatedTypeCtx.new() } else { mono.current_effect_associated_type_ctx.clone() };
+    let callee_mono_ctx = if final_callee_def.is_extern() {
+        MonoContext.new()
+    } else if final_callee_def.is_c_callback() {
+        mono.current_mono_ctx.without_effects_and_implicits()
+    } else {
+        mono.current_mono_ctx
+    };
     let mono_callee = fn_mono_key(
         mono,
         final_callee,
         callee_type_args,
         callee_witnesses,
-        callee_effect_ctx,
-        callee_effect_associated_type_ctx,
-        callee_implicit_ctx,
+        callee_mono_ctx,
     );
     if !mono.fn_done.contains(mono_callee) {
         mono.fn_queue.push_back(FnWork(
             final_callee,
             callee_type_args,
             callee_witnesses,
-            callee_effect_ctx,
-            callee_effect_associated_type_ctx,
-            callee_implicit_ctx,
+            callee_mono_ctx,
         ));
     }
     let result = FunctionCallInfo(
@@ -274,9 +269,9 @@ pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorph
     for ty in callee_type_args {
         assert(!ty.is_mono(False), "data_mono_key arg in process_struct_ctor is not mono");
     }
-    let mono_callee = mono.data_mono_key(name, callee_type_args, mono.current_effect_associated_type_ctx);
+    let mono_callee = mono.data_mono_key(name, callee_type_args, mono.current_mono_ctx);
     if !mono.struct_done.contains(mono_callee) {
-        mono.struct_queue.push_back(DataWork(name.clone(), callee_type_args, mono.current_effect_associated_type_ctx.clone()));
+        mono.struct_queue.push_back(DataWork(name.clone(), callee_type_args, mono.current_mono_ctx));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,
@@ -299,9 +294,9 @@ pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorp
     let callee_type_args = eat_specialize_args(raw_type_args, mono);
     let spec_args: Vec[Expr] = args.specialize(mono);
     let (enum_qname, _, _) = mono.source.find_variant(name);
-    let mono_enum = mono.data_mono_key(enum_qname, callee_type_args, mono.current_effect_associated_type_ctx);
+    let mono_enum = mono.data_mono_key(enum_qname, callee_type_args, mono.current_mono_ctx);
     if !mono.enum_done.contains(mono_enum) {
-        mono.enum_queue.push_back(DataWork(enum_qname.clone(), callee_type_args, mono.current_effect_associated_type_ctx.clone()));
+        mono.enum_queue.push_back(DataWork(enum_qname.clone(), callee_type_args, mono.current_mono_ctx));
     }
     let v = mono.source.variant(name);
     let mono_variant = get_mono_variant_qn(mono_enum, v.qualified_name.unwrap());
@@ -330,26 +325,20 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
         arg_types.push(concrete_result_ty);
     }
     let ct = Monomorphizer.extract_type_args(param_types, arg_types, generic_params);
-    let effect_ctx = EffectCtx.new();
-    let eat_ctx = EffectAssociatedTypeCtx.new();
-    let implicit_ctx = ImplicitCtx.new();
+    let empty_mono_ctx = MonoContext.new();
     let mono_callee = fn_mono_key(
         mono,
         name.clone(),
         ct,
         [],
-        effect_ctx.clone(),
-        eat_ctx.clone(),
-        implicit_ctx.clone(),
+        empty_mono_ctx,
         );
     if !mono.fn_done.contains(mono_callee) {
         mono.fn_queue.push_back(FnWork(
             name.clone(),
             ct,
             [],
-            effect_ctx,
-            eat_ctx,
-            implicit_ctx
+            empty_mono_ctx
         ));
     }
     let result = FunctionCallInfo(
@@ -479,22 +468,23 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         .functions
         .get(final_callee)
         .unwrap();
-    let is_final_extern_or_callback = final_callee_def.is_extern() || final_callee_def.is_c_callback();
-    let callee_effect_ctx = if is_final_extern_or_callback { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
-    let callee_implicit_ctx = if is_final_extern_or_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
-    let callee_effect_associated_type_ctx = if final_callee_def.is_extern() { EffectAssociatedTypeCtx.new() } else { mono.current_effect_associated_type_ctx.clone() };
+    let callee_mono_ctx = if final_callee_def.is_extern() {
+        MonoContext.new()
+    } else if final_callee_def.is_c_callback() {
+        mono.current_mono_ctx.without_effects_and_implicits()
+    } else {
+        mono.current_mono_ctx
+    };
 
     let mono_callee = fn_mono_key(
         mono,
         final_callee,
         callee_type_args,
         remaining_witnesses,
-        callee_effect_ctx.clone(),
-        callee_effect_associated_type_ctx.clone(),
-        callee_implicit_ctx.clone(),
+        callee_mono_ctx,
     );
     if !mono.fn_done.contains(mono_callee) {
-        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, remaining_witnesses, callee_effect_ctx, callee_effect_associated_type_ctx, callee_implicit_ctx));
+        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, remaining_witnesses, callee_mono_ctx));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,
@@ -523,12 +513,10 @@ pub fn process_builtin_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphi
         name,
         ct,
         [],
-        EffectCtx.new(),
-        EffectAssociatedTypeCtx.new(),
-        ImplicitCtx.new(),
+        MonoContext.new(),
     );
     if !mono.fn_done.contains(mono_callee) {
-        mono.fn_queue.push_back(FnWork(name.clone(), ct, [], EffectCtx.new(), EffectAssociatedTypeCtx.new(), ImplicitCtx.new()));
+        mono.fn_queue.push_back(FnWork(name.clone(), ct, [], MonoContext.new()));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,

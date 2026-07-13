@@ -144,18 +144,47 @@ pub struct TypeHandlerInfo {
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct MonoContext {
-    pub witnesses: Vec[ResolvedWitness],
     pub effect_ctx: Map[QualifiedName, HandlerInfo],
     pub effect_associated_type_ctx: Map[QualifiedName, TypeHandlerInfo],
     pub implicit_ctx: Vec[QualifiedName],
-    // Closure-content duplication index (lower-closures): functions and
-    // datatypes reached with different concrete closure sets are duplicated,
-    // and the copy's index is part of its mono identity — the same way
-    // witnesses and effect contexts already are. 0 = the sole/first copy.
-    pub closure_instance: Int = 0,
 
     pub fn new() -> MonoContext {
-        MonoContext(Vec.new(), Map.new(), Map.new(), Vec.new(), 0)
+        MonoContext(Map.new(), Map.new(), Vec.new())
+    }
+
+    pub fn get_effect(ctx: MonoContext, key: QualifiedName) -> Option[HandlerInfo] {
+        ctx.effect_ctx.get(key)
+    }
+
+    pub fn insert_effect(ctx: MonoContext, key: QualifiedName, value: HandlerInfo) {
+        ctx.effect_ctx.insert(key, value);
+    }
+
+    pub fn get_effect_associated_type(ctx: MonoContext, key: QualifiedName) -> Option[TypeHandlerInfo] {
+        ctx.effect_associated_type_ctx.get(key)
+    }
+
+    pub fn insert_effect_associated_type(ctx: MonoContext, key: QualifiedName, value: TypeHandlerInfo) {
+        ctx.effect_associated_type_ctx.insert(key, value);
+    }
+
+    pub fn insert_implicit(ctx: MonoContext, value: QualifiedName) {
+        if !ctx.implicit_ctx.contains(value) {
+            ctx.implicit_ctx.push(value);
+            ctx.implicit_ctx.sort();
+        }
+    }
+
+    pub fn contains_implicit(ctx: MonoContext, value: QualifiedName) -> Bool {
+        ctx.implicit_ctx.contains(value)
+    }
+
+    pub fn without_effects_and_implicits(ctx: MonoContext) -> MonoContext {
+        MonoContext(Map.new(), ctx.effect_associated_type_ctx, Vec.new())
+    }
+
+    pub fn without_implicits(ctx: MonoContext) -> MonoContext {
+        MonoContext(ctx.effect_ctx, ctx.effect_associated_type_ctx, Vec.new())
     }
 }
 
@@ -163,7 +192,12 @@ pub struct MonoContext {
 pub struct MonoName {
     pub name: BaseNameInfo,
     pub args: Vec[TypeDef],
+    pub witnesses: Vec[ResolvedWitness],
     pub ctx: MonoContext,
+    // Closure-content duplication index (lower-closures): functions and
+    // datatypes reached with different concrete closure sets are duplicated,
+    // and the copy's index is part of its mono identity. 0 = the sole/first copy.
+    pub closure_instance: Int,
     hashed: String,
     // Cached result of QualifiedName.name(): computing it involves recursively
     // formatting args/witnesses/effect ctx and interning the result, which is
@@ -180,6 +214,7 @@ pub enum QualifiedName {
     pub fn as_mono(
             name: QualifiedName,
             args: Vec[TypeDef] = Vec.new(),
+            witnesses: Vec[ResolvedWitness] = Vec.new(),
             mono_ctx: MonoContext = MonoContext.new()) -> QualifiedName {
         let base = match name {
             Base(bn) => bn,
@@ -188,7 +223,7 @@ pub enum QualifiedName {
                 panic("as_mono: cannot mono a Mono")
             }
         };
-        let qn = Mono(MonoName(base, args, mono_ctx, "", I.intern("")));
+        let qn = Mono(MonoName(base, args, witnesses, mono_ctx, 0, "", I.intern("")));
         qn.rehash();
         qn
     }
@@ -367,10 +402,10 @@ pub enum QualifiedName {
                     let parts: Vec[String] = m.args.iter().map(|a| format_type(a)).collect();
                     "[" + join(parts, ", ") + "]"
                 };
-                let witness_str = if m.ctx.witnesses.is_empty() {
+                let witness_str = if m.witnesses.is_empty() {
                     ""
                 } else {
-                    let parts: Vec[String] = m.ctx.witnesses.iter().map(|w| w.format()).collect();
+                    let parts: Vec[String] = m.witnesses.iter().map(|w| w.format()).collect();
                     "(" + join(parts, ", ") + ")"
                 };
                 let effect_str = if m.ctx.effect_ctx.is_empty() {
@@ -409,10 +444,10 @@ pub enum QualifiedName {
                     let parts: Vec[String] = m.ctx.implicit_ctx.iter().map(|q| I.resolve(q.name())).collect();
                     "{" + join(parts, ",") + "}"
                 };
-                let instance_str = if m.ctx.closure_instance == 0 {
+                let instance_str = if m.closure_instance == 0 {
                     ""
                 } else {
-                    "#" + m.ctx.closure_instance.to_string()
+                    "#" + m.closure_instance.to_string()
                 };
                 (args_str, witness_str + effect_str + effect_associated_type_str + implicit_str + instance_str)
             }
@@ -428,14 +463,10 @@ pub enum QualifiedName {
         }
         let new_qn = match qn {
             Base(bn) => {
-                let ctx = MonoContext.new();
-                ctx.closure_instance = index;
-                Mono(MonoName(bn, Vec.new(), ctx, "", I.intern("")))
+                Mono(MonoName(bn, Vec.new(), Vec.new(), MonoContext.new(), index, "", I.intern("")))
             }
             Mono(m) => {
-                let ctx = m.ctx.clone();
-                ctx.closure_instance = index;
-                Mono(MonoName(m.name, m.args.clone(), ctx, "", I.intern("")))
+                Mono(MonoName(m.name, m.args.clone(), m.witnesses.clone(), m.ctx.clone(), index, "", I.intern("")))
             }
         };
         new_qn.rehash();

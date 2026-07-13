@@ -73,7 +73,7 @@ instance Specialize[YieldInfo] = auto(Map)
 
 instance Specialize[ImplicitRefInfo] {
     fn specialize(info: ImplicitRefInfo, mono: Monomorphizer) -> ImplicitRefInfo {
-        if !mono.current_implicit_ctx.contains(info.name) {
+        if !mono.current_mono_ctx.contains_implicit(info.name) {
             mono.errors.push(MonoError.UnsetImplicit(info.name.name(), mono.current_location.unwrap()));
         }
         mono.used_implicits.insert(info.name.clone());
@@ -135,27 +135,25 @@ instance Specialize[FunctionPtrInfo] {
             None => return FunctionPtrInfo(info.name, WitnessInfo.new()),
         };
 
-        let is_extern = func.is_extern();
-        let is_c_callback = func.is_c_callback();
-        let effect_ctx = if is_extern { EffectCtx.new() } else { mono.current_effect_ctx.clone() };
-        let implicit_ctx = if is_extern || is_c_callback { ImplicitCtx.new() } else { mono.current_implicit_ctx.clone() };
-        let effect_associated_type_ctx = if is_extern { EffectAssociatedTypeCtx.new() } else { mono.current_effect_associated_type_ctx.clone() };
+        let callee_mono_ctx = if func.is_extern() {
+            MonoContext.new()
+        } else if func.is_c_callback() {
+            mono.current_mono_ctx.without_implicits()
+        } else {
+            mono.current_mono_ctx
+        };
         let mono_key = fn_mono_key(
             mono,
             info.name,
             callee_type_args,
             callee_witnesses,
-            effect_ctx.clone(),
-            effect_associated_type_ctx.clone(),
-            implicit_ctx.clone());
+            callee_mono_ctx);
         if !mono.fn_done.contains(mono_key) {
             mono.fn_queue.push_back(FnWork(
                 info.name,
                 callee_type_args,
                 callee_witnesses,
-                effect_ctx,
-                effect_associated_type_ctx,
-                implicit_ctx,
+                callee_mono_ctx,
             ));
         }
         FunctionPtrInfo(mono_key, WitnessInfo.new())
@@ -179,18 +177,14 @@ instance Specialize[CreateClosureInfo] {
             info.name,
             callee_type_args,
             callee_witnesses,
-            mono.current_effect_ctx.clone(),
-            mono.current_effect_associated_type_ctx.clone(),
-            mono.current_implicit_ctx.clone(),
+            mono.current_mono_ctx,
         );
         if !mono.fn_done.contains(mono_callee) {
             mono.fn_queue.push_back(FnWork(
                 info.name.clone(),
                 callee_type_args,
                 callee_witnesses,
-                mono.current_effect_ctx.clone(),
-                mono.current_effect_associated_type_ctx.clone(),
-                mono.current_implicit_ctx.clone(),
+                mono.current_mono_ctx,
             ));
         }
         CreateClosureInfo(mono_callee, info.params.clone(), WitnessInfo.new())
@@ -212,9 +206,9 @@ instance Specialize[FunctionCallInfo] {
 
 instance Specialize[WithInfo] {
     fn specialize(info: WithInfo, mono: Monomorphizer) -> WithInfo {
-        let saved_effect_ctx = mono.current_effect_ctx.clone();
-        let saved_effect_associated_type_ctx = mono.current_effect_associated_type_ctx.clone();
-        let saved_implicit_ctx = mono.current_implicit_ctx.clone();
+        let saved_mono_ctx = mono.current_mono_ctx;
+        let with_mono_ctx = mono.current_mono_ctx.clone();
+        mono.current_mono_ctx = with_mono_ctx;
         let implicit_selections = [];
         for sel in info.selections {
             match sel {
@@ -226,12 +220,12 @@ instance Specialize[WithInfo] {
                     // not the call site's. The handler itself is monomorphized later,
                     // at the effect call site, in the call-site dynamic context.
                     match mono.resolve_witnesses(witness_info.witnesses) {
-                        Some(handler_witnesses) => mono.current_effect_ctx.insert(method.clone(), HandlerInfo(handler.clone(), handler_witnesses)),
+                        Some(handler_witnesses) => mono.current_mono_ctx.insert_effect(method.clone(), HandlerInfo(handler.clone(), handler_witnesses)),
                         None => {},
                     }
                 }
                 HandlerSelection.Implicit(implicit_qn, var) => {
-                    mono.current_implicit_ctx.insert(implicit_qn.clone());
+                    mono.current_mono_ctx.insert_implicit(implicit_qn.clone());
                     mono.used_implicits.insert(implicit_qn.clone());
                     implicit_selections.push(HandlerSelection.Implicit(implicit_qn.clone(), var.clone()));
                 }
@@ -243,7 +237,7 @@ instance Specialize[WithInfo] {
                     // read. Resolve the EAT's bound witnesses here, at the `with` site, so
                     // an EffectAssociatedTypeBound can later fetch them from this ctx.
                     match mono.resolve_witnesses(witness_info.witnesses) {
-                        Some(resolved) => mono.current_effect_associated_type_ctx.insert(assoc_qname.clone(), TypeHandlerInfo(handler_type, resolved)),
+                        Some(resolved) => mono.current_mono_ctx.insert_effect_associated_type(assoc_qname.clone(), TypeHandlerInfo(handler_type, resolved)),
                         None => {},
                     }
                 }
@@ -253,9 +247,7 @@ instance Specialize[WithInfo] {
         }
         mono.clear_type_cache();
         let spec_body = info.body.specialize(mono);
-        mono.current_effect_ctx = saved_effect_ctx;
-        mono.current_effect_associated_type_ctx = saved_effect_associated_type_ctx;
-        mono.current_implicit_ctx = saved_implicit_ctx;
+        mono.current_mono_ctx = saved_mono_ctx;
         WithInfo(implicit_selections, spec_body)
     }
 }
