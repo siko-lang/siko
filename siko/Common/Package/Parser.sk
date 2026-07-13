@@ -31,6 +31,13 @@ struct Table {
         }
     }
 
+    fn get_string_opt(t: Table, name: String) -> Option[String] {
+        match t.m.get(name) {
+            Some(T.TomlValue.Str(s)) => Some(s),
+            _ => None,
+        }
+    }
+
     fn get_table(t: Table, name: String) -> Result[Table, Error] {
          match t.m.get(name) {
             Some(T.TomlValue.Table(m)) => Ok(Table(m)),
@@ -65,15 +72,20 @@ pub fn parse(f: String) -> Result[PackageInfo, Error] {
                     if root.m.contains_key("dependencies") {
                         let dep_table = root.get_table("dependencies")?;
                         for (name, dep_info) in dep_table.m {
-                            let version = match dep_info {
-                                T.TomlValue.Str(s) => s,
+                            let (version, path) = match dep_info {
+                                T.TomlValue.Str(s) => (s, None),
                                 T.TomlValue.Table(m) => {
                                     let t = Table(m);
-                                    t.get_string("version")?
+                                    let version = t.get_string_opt("version").unwrap_or("");
+                                    let path = t.get_string_opt("path");
+                                    if version.is_empty() && path == None {
+                                        return Err(Error.ContentError);
+                                    }
+                                    (version, path)
                                 }
                                 _ => return Err(Error.ContentError),
                             };
-                            let dep = Dependency(name: name, version: version);
+                            let dep = Dependency(name: name, version: version, path: path);
                             dependencies.push(dep);
                         }
                     }

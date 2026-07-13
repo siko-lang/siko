@@ -12,11 +12,21 @@ pub struct PackageInfo {
 pub struct Dependency {
     pub name: String,
     pub version: String,
+    pub path: Option[String],
 }
 
 instance ToString[Dependency] {
     fn to_string(d: Dependency) -> String {
-        "${d.name}@${d.version}"
+        match d.path {
+            Some(path) => {
+                if d.version.is_empty() {
+                    "${d.name} path ${path}"
+                } else {
+                    "${d.name}@${d.version} path ${path}"
+                }
+            }
+            None => "${d.name}@${d.version}",
+        }
     }
 }
 

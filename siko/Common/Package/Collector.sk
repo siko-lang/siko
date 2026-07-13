@@ -87,6 +87,14 @@ fn select_packages(
     Ok(())
 }
 
+fn resolve_dependency_path(pkg_root: String, dep_path: String) -> String {
+    if dep_path.starts_with("/") {
+        dep_path
+    } else {
+        pkg_root + "/" + dep_path
+    }
+}
+
 pub struct Collector {
     packages: Map[String, SourcePackage],
     bare_files: Vec[String],
@@ -130,6 +138,10 @@ pub struct Collector {
         subdirs.sort();
         sk_files.sort();
 
+        if has_toml && active_pkg.is_some() {
+            return Ok(());
+        }
+
         let pkg_key = if has_toml {
             let toml_path = dir + "/package.toml";
             let info = P.parse(toml_path)?;
@@ -153,6 +165,40 @@ pub struct Collector {
         Ok(())
     }
 
+    fn collect_pkg_path_dependencies(c: Collector, pkg: SourcePackage) -> Result[(), CollectorError] {
+        let pkg_root = match pkg.root {
+            Some(root) => root,
+            None => return Ok(()),
+        };
+        for dep in pkg.info.dependencies {
+            match dep.path {
+                Some(dep_path) => {
+                    let dep_root = resolve_dependency_path(pkg_root, dep_path);
+                    if !c.packages.contains_key(dep_root) {
+                        c.walk(dep_root, None, False)?;
+                    }
+                    match c.packages.get(dep_root) {
+                        Some(dep_pkg) => c.collect_pkg_path_dependencies(dep_pkg)?,
+                        None => {}
+                    }
+                }
+                None => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn collect_path_dependencies(c: Collector) -> Result[(), CollectorError] {
+        let packages: Vec[SourcePackage] = Vec.new();
+        for (_, pkg) in c.packages {
+            packages.push(pkg);
+        }
+        for pkg in packages {
+            c.collect_pkg_path_dependencies(pkg)?;
+        }
+        Ok(())
+    }
+
     pub fn collect(c: Collector, inputs: Vec[String], lib_paths: Vec[String]) -> Result[Vec[SourcePackage], CollectorError] {
         for lib in lib_paths {
             let s = S.stat(lib)?;
@@ -168,6 +214,7 @@ pub struct Collector {
                 c.bare_files.push(input);
             }
         }
+        c.collect_path_dependencies()?;
 
         let pkgs: Vec[SourcePackage] = Vec.new();
         let root_count = 0;
@@ -184,7 +231,7 @@ pub struct Collector {
         if root_count == 0 && !c.bare_files.is_empty() {
             let deps: Vec[Dependency] = Vec.new();
             if !c.no_std {
-                deps.push(Dependency(name: "Std", version: ""));
+                deps.push(Dependency(name: "Std", version: "", path: None));
             }
             pkgs.push(SourcePackage(
                 root: None,
