@@ -45,6 +45,20 @@ struct Table {
         }
     }
 
+    fn get_table_opt(t: Table, name: String) -> Option[Table] {
+         match t.m.get(name) {
+            Some(T.TomlValue.Table(m)) => Some(Table(m)),
+            _ => None,
+        }
+    }
+
+    fn get_array(t: Table, name: String) -> Result[Vec[T.TomlValue], Error] {
+         match t.m.get(name) {
+            Some(T.TomlValue.Array(values)) => Ok(values),
+            _ => Err(Error.ContentError),
+        }
+    }
+
     fn get_bool_opt(t: Table, name: String) -> Option[Bool] {
         match t.m.get(name) {
             Some(T.TomlValue.Boolean(b)) => Some(b),
@@ -58,6 +72,75 @@ fn as_table(v: T.TomlValue) -> Result[Table, Error] {
         T.TomlValue.Table(m) => Ok(Table(m)),
         _ => Err(Error.ContentError),
     }
+}
+
+fn as_string_array(v: T.TomlValue) -> Result[Vec[String], Error] {
+    match v {
+        T.TomlValue.Array(values) => {
+            let strings: Vec[String] = Vec.new();
+            for value in values {
+                match value {
+                    T.TomlValue.Str(s) => strings.push(s),
+                    _ => return Err(Error.ContentError),
+                }
+            }
+            Ok(strings)
+        }
+        _ => Err(Error.ContentError),
+    }
+}
+
+fn parse_native_candidate(v: T.TomlValue) -> Result[NativeLibCandidate, Error] {
+    let t = as_table(v)?;
+    let path = t.get_string_opt("path");
+    let command = t.get_string_opt("command");
+    match path {
+        Some(path_value) => {
+            if command != None {
+                return Err(Error.ContentError);
+            }
+            Ok(NativeLibCandidate.Path(path: path_value))
+        }
+        None => {
+            match command {
+                Some(command_value) => {
+                    let args = match t.m.get("args") {
+                        Some(value) => as_string_array(value)?,
+                        None => Vec.new(),
+                    };
+                    Ok(NativeLibCandidate.Command(command: command_value, args: args))
+                }
+                None => Err(Error.ContentError),
+            }
+        }
+    }
+}
+
+fn parse_native_lib(v: T.TomlValue) -> Result[NativeLib, Error] {
+    let t = as_table(v)?;
+    let name = t.get_string("name")?;
+    let candidate_values = t.get_array("candidates")?;
+    let candidates: Vec[NativeLibCandidate] = Vec.new();
+    for candidate_value in candidate_values {
+        candidates.push(parse_native_candidate(candidate_value)?);
+    }
+    if candidates.is_empty() {
+        return Err(Error.ContentError);
+    }
+    Ok(NativeLib(name: name, candidates: candidates))
+}
+
+fn parse_native_libs(root: Table) -> Result[Vec[NativeLib], Error] {
+    let native_libs: Vec[NativeLib] = Vec.new();
+    match root.get_table_opt("native") {
+        Some(native) => {
+            for value in native.get_array("libs")? {
+                native_libs.push(parse_native_lib(value)?);
+            }
+        }
+        None => {}
+    }
+    Ok(native_libs)
 }
 
 pub fn parse(f: String) -> Result[PackageInfo, Error] {
@@ -89,11 +172,13 @@ pub fn parse(f: String) -> Result[PackageInfo, Error] {
                             dependencies.push(dep);
                         }
                     }
+                    let native_libs = parse_native_libs(root)?;
                     let pure = root.get_bool_opt("pure").unwrap_or(False);
                     let info = PackageInfo(
                         name: name,
                         version: version,
                         dependencies: dependencies,
+                        native_libs: native_libs,
                         pure: pure);
                     Ok(info)
                 }

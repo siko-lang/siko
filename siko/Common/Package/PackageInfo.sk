@@ -5,6 +5,7 @@ pub struct PackageInfo {
     pub name: String,
     pub version: String,
     pub dependencies: Vec[Dependency],
+    pub native_libs: Vec[NativeLib],
     pub pure: Bool,
 }
 
@@ -28,6 +29,18 @@ instance ToString[Dependency] {
             None => "${d.name}@${d.version}",
         }
     }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct NativeLib {
+    pub name: String,
+    pub candidates: Vec[NativeLibCandidate],
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum NativeLibCandidate {
+    Path(path: String),
+    Command(command: String, args: Vec[String]),
 }
 
 instance ToString[PackageInfo] {

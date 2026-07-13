@@ -22,7 +22,10 @@ import Siko.LowerMatch
 import Siko.LowerPointers
 import Siko.LowerTuples
 import Siko.Monomorphizer
+import Siko.Package.Collector as PC
+import Siko.Package.Info
 import Siko.ValueTypes as ValueTypes
+import Std.Fs.Stat as S
 
 fn object_paths(prefix: String, count: Int) -> Vec[String] {
     let paths: Vec[String] = Vec.new();
@@ -41,35 +44,68 @@ fn gc_lib_args() -> Vec[String] {
     gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect()
 }
 
-// Locates llvm-config and returns the linker flags for libLLVM, used by
-// programs that call the LLVM-C API (such as the compiler itself). Returns
-// no flags when llvm-config is not available; programs that do not use the
-// LLVM-C API still link fine without it.
-fn llvm_lib_args() -> Vec[String] {
-    let candidates: Vec[String] = Vec.new();
-    if let Some(path) = Sys.getenv("LLVM_CONFIG") {
-        candidates.push(path);
+fn is_existing_dir(path: String) -> Bool {
+    match S.stat(path) {
+        Ok(s) => s.is_directory(),
+        Err(_) => False,
     }
-    candidates.push("llvm-config");
-    candidates.push("/opt/homebrew/opt/llvm/bin/llvm-config");
-    for candidate in candidates {
-        let result = Command.new(candidate).with_path().with_capture_stdout().arg("--libdir").run();
-        if result.success() {
-            let libdir = result.captured_stdout().replace("\n", "");
-            return ["-L${libdir}", "-lLLVM", "-Wl,-rpath,${libdir}"];
-        }
-    }
-    Vec.new()
 }
 
-fn common_link_args(output: String) -> Vec[String] {
+fn native_candidate_path(candidate: NativeLibCandidate) -> Option[String] {
+    match candidate {
+        NativeLibCandidate.Path(path: path) => {
+            if is_existing_dir(path) {
+                Some(path)
+            } else {
+                None
+            }
+        }
+        NativeLibCandidate.Command(command: command, args: args) => {
+            let result = Command.new(command).with_path().with_capture_stdout().args(args).run();
+            if !result.success() {
+                return None;
+            }
+            let path = result.captured_stdout().replace("\n", "").replace("\r", "").trim();
+            if path.is_empty() || !is_existing_dir(path) {
+                None
+            } else {
+                Some(path)
+            }
+        }
+    }
+}
+
+fn native_lib_args(lib: NativeLib) -> Vec[String] {
+    for candidate in lib.candidates {
+        match native_candidate_path(candidate) {
+            Some(path) => return ["-L${path}", "-l${lib.name}", "-Wl,-rpath,${path}"],
+            None => {}
+        }
+    }
+    println("error: native library `${lib.name}` not found");
+    exit_with_error();
+}
+
+fn package_native_link_args(packages: Vec[PC.SourcePackage]) -> Vec[String] {
+    let args: Vec[String] = Vec.new();
+    for pkg in packages {
+        for lib in pkg.info.native_libs {
+            for arg in native_lib_args(lib) {
+                args.push(arg);
+            }
+        }
+    }
+    args
+}
+
+fn common_link_args(output: String, packages: Vec[PC.SourcePackage]) -> Vec[String] {
     let args: Vec[String] = Vec.new();
     args.push("-o");
     args.push(output);
     for flag in gc_lib_args() {
         args.push(flag);
     }
-    for flag in llvm_lib_args() {
+    for flag in package_native_link_args(packages) {
         args.push(flag);
     }
     for arg in get_config().link_args {
@@ -78,9 +114,9 @@ fn common_link_args(output: String) -> Vec[String] {
     args
 }
 
-fn link_objects(object_paths: Vec[String], output: String) {
+fn link_objects(object_paths: Vec[String], output: String, packages: Vec[PC.SourcePackage]) {
     let clang = Command.new("clang").with_path().args(object_paths);
-    for arg in common_link_args(output) {
+    for arg in common_link_args(output, packages) {
         clang = clang.arg(arg);
     }
     let result = clang.run();
@@ -269,7 +305,7 @@ pub fn build_full_passes(driver: Driver) -> Vec[Pass] {
                         if config.obj {
                             return;
                         }
-                        link_objects(paths, out);
+                        link_objects(paths, out, driver.packages);
                         for path in paths {
                             Fs.remove_file(path).unwrap();
                         }
