@@ -19,7 +19,13 @@ pub struct TcpStream {
         let stream = Base.TcpStream.connect_async(host, port)?;
         let fd = stream.get_fd().get_fd();
         Async.await_writable(fd);
-        Ok(TcpStream(stream))
+        match stream.check_connect_result() {
+            Ok(()) => Ok(TcpStream(stream)),
+            Err(e) => {
+                defer stream.close();
+                Err(e)
+            }
+        }
     }
 
     pub fn get_fd(s: TcpStream) -> I32 {

@@ -61,6 +61,27 @@ pub struct TcpStream {
         Ok(TcpStream.new(sock))
     }
 
+    @safe
+    pub fn check_connect_result(s: TcpStream) -> Result[(), Error] {
+        let error = 0.as_i32();
+        let error_len = sizeof(I32).as_int().as_u32();
+        let ret = Std.Libc.Socket.getsockopt(
+            s.fd.get_fd(),
+            Std.Arch.Socket.SOL_SOCKET,
+            Std.Arch.Socket.SO_ERROR,
+            &error,
+            &error_len,
+        );
+        if ret < 0.as_i32() {
+            return Err(Error.new(Std.Arch.Errno.get_errno()));
+        }
+        if error != 0.as_i32() {
+            let errno: Option[Std.Arch.Errno.Errno] = from_int(error.as_int());
+            return Err(Error.new(errno.expect("Failed to parse socket error code ${error}")));
+        }
+        Ok(())
+    }
+
     pub fn close(s: TcpStream) -> Result[(), Error] {
         s.fd.close()
     }
