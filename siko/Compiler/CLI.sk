@@ -3,6 +3,7 @@ module Siko.CLI {
 import Std.Sys.Process as Sys
 import Std.Fs.Directory
 import Siko.Config
+import Siko.StdPath
 
 fn read_target_info() -> Option[TargetInfo] {
     match Sys.getenv("SIKO_TARGET_OS") {
@@ -123,7 +124,7 @@ pub fn parse_cli_args() -> Option[Config] {
     let std_path = if no_std {
         None
     } else {
-        Sys.getenv("SIKO_ROOT").map(|root| root + "/std")
+        find_std_path()
     };
     let target_info = match read_target_info() {
         Some(info) => info,

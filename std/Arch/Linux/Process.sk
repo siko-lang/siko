@@ -1,0 +1,23 @@
+module Std.Arch.Process {
+
+import Std.Libc.String
+import Std.Libc.Unistd
+
+@safe
+pub fn get_executable_path() -> Option[String] {
+    let proc_path = CString.from_string("/proc/self/exe");
+    let size = 256;
+    loop {
+        let buf: Vec[U8] = Vec.with_value(size, 0.as_u8());
+        let len = Std.Libc.Unistd.readlink(proc_path.as_ptr(), buf.as_ptr(), size.as_u64());
+        if len < 0 {
+            return None;
+        }
+        if len < size {
+            return Some(String.from_bytes(buf.as_ptr(), len));
+        }
+        size = size * 2;
+    }
+}
+
+}

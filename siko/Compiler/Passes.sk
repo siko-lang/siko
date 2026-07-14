@@ -1,6 +1,7 @@
 module Siko.Compiler.Passes {
 
 import Std.Fs.File as Fs
+import Std.Fs.Path as Path
 import Std.Sys.Command
 import Std.Sys.Process as Sys
 import Siko.ClosureLowering.Lower as ClosureLowering
@@ -25,7 +26,6 @@ import Siko.Monomorphizer
 import Siko.Package.Collector as PC
 import Siko.Package.Info
 import Siko.ValueTypes as ValueTypes
-import Std.Fs.Stat as S
 
 fn object_paths(prefix: String, count: Int) -> Vec[String] {
     let paths: Vec[String] = Vec.new();
@@ -44,17 +44,10 @@ fn gc_lib_args() -> Vec[String] {
     gc_flags_raw.replace("\n", "").split(" ").filter(|s| !s.is_empty()).collect()
 }
 
-fn is_existing_dir(path: String) -> Bool {
-    match S.stat(path) {
-        Ok(s) => s.is_directory(),
-        Err(_) => False,
-    }
-}
-
 fn native_candidate_path(candidate: NativeLibCandidate) -> Option[String] {
     match candidate {
         NativeLibCandidate.Path(path: path) => {
-            if is_existing_dir(path) {
+            if Path.is_directory(path) {
                 Some(path)
             } else {
                 None
@@ -66,7 +59,7 @@ fn native_candidate_path(candidate: NativeLibCandidate) -> Option[String] {
                 return None;
             }
             let path = result.captured_stdout().replace("\n", "").replace("\r", "").trim();
-            if path.is_empty() || !is_existing_dir(path) {
+            if path.is_empty() || !Path.is_directory(path) {
                 None
             } else {
                 Some(path)

@@ -6,6 +6,7 @@ import Siko.FileManager
 import Siko.Config
 import Siko.Errors
 import Siko.LSP
+import Siko.StdPath
 import Std.Fs.Directory as Directory
 import Std.Sys.Process as Sys
 
@@ -34,10 +35,7 @@ fn build_config() -> Config {
             exit_with_error();
         }
     }
-    let std_path = match Sys.getenv("SIKO_ROOT") {
-        Some(root) => Some(root + "/std"),
-        None => None,
-    };
+    let std_path = find_std_path();
     Config(
         check_only: True,
         pass: None,

@@ -4,13 +4,14 @@ import Siko.Parser.Module
 import Siko.Errors
 import Siko.Config
 import Siko.Package.Collector as PC
+import Std.Fs.Path as Path
 
 pub fn collect_files(paths: Vec[String], no_std: Bool, std_path: Option[String]) -> Vec[PC.SourcePackage] {
     let lib_paths: Vec[String] = Vec.new();
     match std_path {
         Some(p) => {
-            lib_paths.push("${p}/Common");
-            lib_paths.push("${p}/Arch/${get_config().target_info.arch_dir_name}");
+            lib_paths.push(Path.join(p, "Common"));
+            lib_paths.push(Path.join(Path.join(p, "Arch"), get_config().target_info.arch_dir_name));
         }
         None => {}
     }

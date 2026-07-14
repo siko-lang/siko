@@ -3,6 +3,7 @@ module Std.Fs.Directory {
 import Std.Arch.Dirent
 import Std.Arch.Errno
 import Std.Array
+import Std.Fs.Path as Path
 import Std.IO.Error
 import Std.Libc.Dir
 import Std.Libc.String
@@ -184,14 +185,10 @@ pub fn create_dir(path: String) -> Result[(), Error] {
 }
 
 pub fn create_dir_all(path: String) -> Result[(), Error] {
-    let current = "";
+    let current = if Path.is_absolute(path) { "/" } else { "" };
     for part in path.split("/") {
         if part.is_empty() { continue; }
-        if current.is_empty() {
-            current = part;
-        } else {
-            current = "${current}/${part}";
-        }
+        current = Path.join(current, part);
         create_dir(current)?;
     }
     Ok(())

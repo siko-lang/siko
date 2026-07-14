@@ -4,7 +4,7 @@ import Std.Sys.Process as Sys
 import Std.Sys.Command
 import Std.Fs.Directory
 import Std.Fs.File
-import Std.Fs.Stat
+import Std.Fs.Path as Path
 import Std.Time
 import Std.Console
 
@@ -329,7 +329,7 @@ pub struct TestRunner {
         print("  ${test.path} ...");
         flush();
 
-        if !file_exists(r.compiler) {
+        if !Path.exists(r.compiler) {
             println(" ${RED}FAIL${RESET} (compiler not found)");
             r.stats.failed = r.stats.failed + 1;
             r.stats.failed_names.push(test.path);
@@ -452,13 +452,6 @@ pub struct TestRunner {
     }
 }
 
-fn file_exists(path: String) -> Bool {
-    match Std.Fs.Stat.stat(path) {
-        Ok(_) => True,
-        Err(_) => False,
-    }
-}
-
 fn any_filter_matches(path: String, filters: Vec[String]) -> Bool {
     for f in filters {
         if path.contains(f) {
@@ -521,7 +514,7 @@ fn discover_pass_tests(case: String) -> Vec[PassTest] {
 
     let pass_tests: Vec[PassTest] = Vec.new();
     for name in names {
-        let args_path = "${case}/pass-${name}.txt";
+        let args_path = Path.join(case, "pass-${name}.txt");
         let args: Vec[String] = Vec.new();
         let args_error = match Std.Fs.File.read_file(args_path) {
             Ok(s) => {
@@ -534,7 +527,7 @@ fn discover_pass_tests(case: String) -> Vec[PassTest] {
             name: name,
             args: args,
             args_path: args_path,
-            snapshot: "${case}/output-${name}.txt",
+            snapshot: Path.join(case, "output-${name}.txt"),
             args_error: args_error,
         ));
     }
@@ -542,23 +535,23 @@ fn discover_pass_tests(case: String) -> Vec[PassTest] {
 }
 
 fn build_test_case(path: String, nostd: Bool) -> TestCase {
-    let has_package = file_exists("${path}/package.toml");
+    let has_package = Path.exists(Path.join(path, "package.toml"));
     let input = if has_package {
         path
     } else {
-        "${path}/main.sk"
+        Path.join(path, "main.sk")
     };
-    let snapshot = "${path}/output.txt";
-    let compiler_snapshot = "${path}/compiler-output.txt";
+    let snapshot = Path.join(path, "output.txt");
+    let compiler_snapshot = Path.join(path, "compiler-output.txt");
     TestCase(
         path: path,
         input: input,
         nostd: nostd,
         has_package: has_package,
         snapshot: snapshot,
-        has_snapshot: file_exists(snapshot),
-        compiler_snapshot: if file_exists(compiler_snapshot) { Some(compiler_snapshot) } else { None },
-        skipped: file_exists("${path}/SKIP"),
+        has_snapshot: Path.exists(snapshot),
+        compiler_snapshot: if Path.exists(compiler_snapshot) { Some(compiler_snapshot) } else { None },
+        skipped: Path.exists(Path.join(path, "SKIP")),
         pass_tests: discover_pass_tests(path),
     )
 }
@@ -575,7 +568,7 @@ fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: B
                 if entry.is_directory() {
                     let name = entry.name();
                     if name != "." && name != ".." {
-                        subdirs.push("${dir}/${name}");
+                        subdirs.push(Path.join(dir, name));
                     }
                 }
             }
@@ -584,7 +577,7 @@ fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: B
     }
     subdirs.sort();
     for subdir in subdirs {
-        if file_exists("${subdir}/main.sk") {
+        if Path.exists(Path.join(subdir, "main.sk")) {
             if filters.is_empty() || any_filter_matches(subdir, filters) {
                 out.push(build_test_case(subdir, nostd));
             }
@@ -702,7 +695,7 @@ fn main() {
     runner.run_success_cases(std_cases);
 
     // failure cases
-    if file_exists("test/failure") {
+    if Path.exists("test/failure") {
         let failure_cases = discover_cases("test/failure", filters, False);
         println("\n=== failure (${failure_cases.len()} cases) ===");
         for test in failure_cases {

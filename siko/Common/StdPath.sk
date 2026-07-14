@@ -1,0 +1,18 @@
+module Siko.StdPath {
+
+import Std.Fs.Path as Path
+import Std.Sys.Process as Sys
+
+pub fn find_std_path() -> Option[String] {
+    if let Some(executable) = Sys.get_executable_path() {
+        if let Some(dir) = Path.parent(executable) {
+            let candidate = Path.join(dir, "std");
+            if Path.is_directory(candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+    Sys.getenv("SIKO_ROOT").map(|root| Path.join(root, "std"))
+}
+
+}

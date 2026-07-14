@@ -4,6 +4,7 @@ import Std.IO.Error as IO
 import Siko.Package.Info
 import Siko.Package.Parser as P
 import Std.Fs.Directory
+import Std.Fs.Path as Path
 import Std.Fs.Stat as S
 import Std.Map
 import Std.Set
@@ -70,7 +71,7 @@ fn select_packages(
     visited.insert(name, True);
     let pkg = by_name.get(name).unwrap();
     let toml = match pkg.root {
-        Some(r) => r + "/package.toml",
+        Some(r) => Path.join(r, "package.toml"),
         None => "<unknown>",
     };
     for dep in pkg.info.dependencies {
@@ -88,11 +89,7 @@ fn select_packages(
 }
 
 fn resolve_dependency_path(pkg_root: String, dep_path: String) -> String {
-    if dep_path.starts_with("/") {
-        dep_path
-    } else {
-        pkg_root + "/" + dep_path
-    }
+    Path.join_if_relative(pkg_root, dep_path)
 }
 
 pub struct Collector {
@@ -116,14 +113,11 @@ pub struct Collector {
             if entry.name() == "." || entry.name() == ".." {
                 continue;
             }
-            let path = dir + "/" + entry.name();
+            let path = Path.join(dir, entry.name());
             let is_dir = if entry.is_directory() {
                 True
             } else if entry.file_type() == FileType.Symlink {
-                match S.stat(path) {
-                    Ok(s) => s.is_directory(),
-                    Err(_) => False,
-                }
+                Path.is_directory(path)
             } else {
                 False
             };
@@ -143,7 +137,7 @@ pub struct Collector {
         }
 
         let pkg_key = if has_toml {
-            let toml_path = dir + "/package.toml";
+            let toml_path = Path.join(dir, "package.toml");
             let info = P.parse(toml_path)?;
             c.packages.insert(dir, SourcePackage(root: Some(dir), info: info, files: Vec.new(), is_root: is_root));
             Some(dir)

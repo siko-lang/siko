@@ -1,0 +1,79 @@
+module Std.Fs.Path {
+
+import Std.Arch.Errno
+import Std.IO.Error
+import Std.Libc.Stdlib
+import Std.Libc.String
+import Std.Ptr
+import Std.Fs.Stat as S
+import Std.Intrinsics
+
+pub fn exists(path: String) -> Bool {
+    match S.stat(path) {
+        Ok(_) => True,
+        Err(_) => False,
+    }
+}
+
+pub fn is_directory(path: String) -> Bool {
+    match S.stat(path) {
+        Ok(stat) => stat.is_directory(),
+        Err(_) => False,
+    }
+}
+
+pub fn is_file(path: String) -> Bool {
+    match S.stat(path) {
+        Ok(stat) => stat.is_file(),
+        Err(_) => False,
+    }
+}
+
+pub fn is_absolute(path: String) -> Bool {
+    path.starts_with("/")
+}
+
+pub fn parent(path: String) -> Option[String] {
+    if path.is_empty() {
+        return None;
+    }
+    match path.rfind('/') {
+        Some(0) => Some("/"),
+        Some(index) => Some(path.substring(0, index)),
+        None => None,
+    }
+}
+
+pub fn join(dir: String, name: String) -> String {
+    if name.is_empty() {
+        dir
+    } else if dir.is_empty() || is_absolute(name) {
+        name
+    } else if dir == "/" || dir.ends_with("/") {
+        dir + name
+    } else {
+        dir + "/" + name
+    }
+}
+
+pub fn join_if_relative(dir: String, path: String) -> String {
+    if is_absolute(path) {
+        path
+    } else {
+        join(dir, path)
+    }
+}
+
+@safe
+pub fn canonicalize(path: String) -> Result[String, Error] {
+    let c_path = CString.from_string(path.clone());
+    let resolved: *U8 = Std.Libc.Stdlib.realpath(c_path.as_ptr(), get_null_ptr());
+    if is_null_ptr(resolved) {
+        return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
+    }
+    let result = from_cstring(resolved);
+    Std.Libc.Stdlib.free(transmute(resolved));
+    Ok(result)
+}
+
+}
