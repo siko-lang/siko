@@ -291,6 +291,23 @@ pub struct Finalizer {
 
             ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args, is_co)) => {
                 let new_args = finalize(args, f);
+                if qname.base_name() == B.get_util_downcast_qn() {
+                    let value = new_args[0];
+                    let trait_qname = match value.ty.unwrap() {
+                        TypeDef.Named(NamedInfo(Name.Resolved(name: trait_qname, ..), _)) => trait_qname,
+                        _ => panic("finalize: validated downcast receiver is not a trait object"),
+                    };
+                    let target_ty = match ty.unwrap() {
+                        TypeDef.Named(NamedInfo(Name.Resolved(name: option_qname, ..), args))
+                            if option_qname.base_name() == B.get_option_type_qn() => args[0],
+                        _ => panic("finalize: downcast result is not Option[T]"),
+                    };
+                    return Expr(
+                        ExprKind.TraitObjectDowncast(trait_qname, value, target_ty),
+                        loc,
+                        ty,
+                    );
+                }
                 match kind {
                     FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
                         let new_args = f.inject_default_args(qname, new_args, loc);
@@ -382,6 +399,9 @@ pub struct Finalizer {
 
             ExprKind.TraitObjectCall(_, _) =>
                 panic("finalize: TraitObjectCall before finalization"),
+
+            ExprKind.TraitObjectCarrierPack(_, _) | ExprKind.TraitObjectDowncast(_, _, _) =>
+                panic("finalize: lowered trait-object carrier node before finalization"),
 
             kind => Expr(kind.finalize(f), loc, ty),
         }

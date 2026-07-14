@@ -230,6 +230,9 @@ pub struct Collector {
                     result: ty,
                     is_coroutine_create: is_co,
                 ), loc);
+                if qname.base_name() == B.get_util_downcast_qn() && !arg_tys.is_empty() {
+                    c.emit(C.ConstraintKind.ValidateTraitObjectDowncast(arg_tys[0]), loc);
+                }
                 if !named_args.is_empty() {
                     match kind {
                         FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
@@ -303,6 +306,9 @@ pub struct Collector {
 
             ExprKind.TraitObjectCall(_, _) =>
                 panic("collector: TraitObjectCall before typecheck finalization"),
+
+            ExprKind.TraitObjectCarrierPack(_, _) | ExprKind.TraitObjectDowncast(_, _, _) =>
+                panic("collector: lowered trait-object carrier node before typecheck finalization"),
 
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let (scrutinee_ty, new_scrutinee) = c.collect_expr(scrutinee, env);

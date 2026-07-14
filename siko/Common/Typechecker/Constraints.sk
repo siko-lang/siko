@@ -33,6 +33,7 @@ pub enum ConstraintKind {
     HasIndex(container: TypeDef, idx: TypeDef, result: TypeDef),
     HasIndexAssign(container: TypeDef, idx: TypeDef, value: TypeDef, assign_result_ty: TypeDef),
     GetFunctionPtrType(qname: QualifiedName, result: TypeDef),
+    ValidateTraitObjectDowncast(receiver: TypeDef),
     ValidateEffectHandler(effect_method: QualifiedName, instance_method: QualifiedName),
     ValidateEffectTypeAssociation(assoc: QualifiedName, ty: TypeDef),
 
@@ -107,6 +108,8 @@ pub enum ConstraintKind {
                 ),
             ConstraintKind.GetFunctionPtrType(qname, result) =>
                 ConstraintKind.GetFunctionPtrType(qname: qname, result: sub.apply(result)),
+            ConstraintKind.ValidateTraitObjectDowncast(receiver) =>
+                ConstraintKind.ValidateTraitObjectDowncast(receiver: sub.apply(receiver)),
             ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
                 ConstraintKind.ValidateEffectHandler(effect_method: effect_method, instance_method: instance_method),
             ConstraintKind.ValidateEffectTypeAssociation(assoc, ty) =>
@@ -144,6 +147,8 @@ pub enum ConstraintKind {
                 "HasIndexAssign(${format_type(container)}[${format_type(idx)}] = ${format_type(value)})",
             ConstraintKind.GetFunctionPtrType(qname, result) =>
                 "GetFunctionPtrType(${qname.name()} -> ${format_type(result)})",
+            ConstraintKind.ValidateTraitObjectDowncast(receiver) =>
+                "ValidateTraitObjectDowncast(${format_type(receiver)})",
             ConstraintKind.ValidateEffectHandler(effect_method, instance_method) =>
                 "ValidateEffectHandler(${effect_method.name()} ~ ${instance_method.name()})",
             ConstraintKind.ValidateEffectTypeAssociation(assoc, ty) =>

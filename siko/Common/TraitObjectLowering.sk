@@ -133,6 +133,7 @@ struct ObjectMethod {
 }
 
 struct ObjectInfo {
+    carrier_qname: QualifiedName,
     variant_qname: QualifiedName,
     methods: Vec[ObjectMethod],
 }
@@ -150,6 +151,15 @@ struct TraitObjectLowerer {
                 l.lower_pack(trait_qname, rewrite(value, l), witnesses, loc, ty),
             ExprKind.TraitObjectCall(trait_qname, call) =>
                 l.lower_call(trait_qname, rewrite(call, l), loc, ty),
+            ExprKind.TraitObjectDowncast(trait_qname, value, target_ty) => Expr(
+                ExprKind.TraitObjectDowncast(
+                    trait_qname,
+                    rewrite(value, l),
+                    rewrite(target_ty, l),
+                ),
+                loc,
+                ty,
+            ),
             kind => Expr(rewrite(kind, l), loc, ty),
         }
     }
@@ -168,7 +178,13 @@ struct TraitObjectLowerer {
             _ => panic("trait-object pack value was not normalized to a variable"),
         };
         let capture_ty = value.ty.expect("trait-object pack value has no type");
-        let closures: Vec[Expr] = Vec.new();
+        let fields: Vec[Expr] = Vec.new();
+        let carrier_ty = TypeDef.Named(NamedInfo(Name.inner(info.carrier_qname), Vec.new()));
+        fields.push(Expr(
+            ExprKind.TraitObjectCarrierPack(trait_qname, value),
+            loc.clone(),
+            Some(carrier_ty),
+        ));
         for method in info.methods {
             let (param_tys, result_ty) = match method.closure_ty {
                 TypeDef.Fn(ClosureInfo(params, result, _)) => (params, result),
@@ -191,7 +207,7 @@ struct TraitObjectLowerer {
                 loc.clone(),
                 Some(result_ty),
             );
-            closures.push(Expr(
+            fields.push(Expr(
                 ExprKind.ResolvedLambda(lambda_args, body, 1),
                 loc.clone(),
                 Some(method.closure_ty),
@@ -201,7 +217,7 @@ struct TraitObjectLowerer {
             ExprKind.FunctionCall(FunctionCallInfo(
                 qname: info.variant_qname,
                 kind: FunctionKind.VariantCtor,
-                args: closures,
+                args: fields,
             )),
             loc,
             ty,
@@ -225,6 +241,8 @@ struct TraitObjectLowerer {
         let object_ty = receiver.ty.expect("trait-object receiver has no type");
         let bindings: Vec[VariableName] = Vec.new();
         let subpatterns: Vec[Pattern] = Vec.new();
+        let carrier_ty = TypeDef.Named(NamedInfo(Name.inner(info.carrier_qname), Vec.new()));
+        subpatterns.push(Pattern(PatternKind.Wildcard, loc.clone(), Some(carrier_ty)));
         for method in info.methods {
             let binding = l.var_alloc.allocate_temp();
             bindings.push(binding);
@@ -368,7 +386,7 @@ instance[K, V: Rewrite[V], Ord[K]] Rewrite[Map[K, V]] {
     }
 }
 
-fn generated_qnames(trait_qname: QualifiedName) -> (QualifiedName, QualifiedName) {
+fn generated_qnames(trait_qname: QualifiedName) -> (QualifiedName, QualifiedName, QualifiedName) {
     match trait_qname.base() {
         BaseName.Trait(_, _) => {}
         _ => panic("object-safe trait has a non-trait qualified name"),
@@ -376,6 +394,7 @@ fn generated_qnames(trait_qname: QualifiedName) -> (QualifiedName, QualifiedName
     (
         QualifiedName.new_trait_object(trait_qname.name()),
         QualifiedName.new_trait_object_variant(trait_qname.name()),
+        QualifiedName.new_trait_object_carrier(trait_qname.name()),
     )
 }
 
@@ -389,7 +408,7 @@ pub fn lower_trait_objects(program: Program) -> Bool {
     let object_types: Map[QualifiedName, QualifiedName] = Map.new();
     for (trait_qname, trait_def) in program.traits {
         if trait_def.object_safe && uses.names.contains(trait_qname) {
-            let (enum_qname, _) = generated_qnames(trait_qname);
+            let (enum_qname, _, _) = generated_qnames(trait_qname);
             object_types.insert(trait_qname, enum_qname);
         }
     }
@@ -398,18 +417,22 @@ pub fn lower_trait_objects(program: Program) -> Bool {
     }
 
     let lowerer = TraitObjectLowerer(object_types, Map.new(), VarAllocator.new());
-    let new_enums: Vec[(QualifiedName, EnumDef, QualifiedName)] = Vec.new();
+    let new_enums: Vec[(QualifiedName, EnumDef, Option[QualifiedName])] = Vec.new();
     for (trait_qname, trait_def) in program.traits {
         if !trait_def.object_safe || !uses.names.contains(trait_qname) {
             continue;
         }
-        let (enum_qname, variant_qname) = generated_qnames(trait_qname);
+        let (enum_qname, variant_qname, carrier_qname) = generated_qnames(trait_qname);
         let trait_name = match trait_qname.base() {
             BaseName.Trait(_, trait_name) => trait_name,
             _ => panic("object-safe trait has a non-trait qualified name"),
         };
         let methods: Vec[ObjectMethod] = Vec.new();
         let items: Vec[ItemInfo] = Vec.new();
+        items.push(ItemInfo(
+            name: None,
+            ty: TypeDef.Named(NamedInfo(Name.inner(carrier_qname), Vec.new())),
+        ));
         for method_qname in trait_def.method_map.names.values() {
             let method = program.functions.get(method_qname).unwrap();
             let params: Vec[TypeDef] = method.args.iter().skip(1)
@@ -441,15 +464,33 @@ pub fn lower_trait_objects(program: Program) -> Bool {
             },
             value_type: False,
         );
-        lowerer.infos.insert(trait_qname, ObjectInfo(variant_qname, methods));
-        new_enums.push((enum_qname, enum_def, variant_qname));
+        let carrier_def = EnumDef(
+            annotations: Vec.new(),
+            public: False,
+            name: Identifier.new(trait_name, loc),
+            qualified_name: Some(carrier_qname),
+            type_arg_defs: None,
+            variants: Vec.new(),
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+            module_name: match trait_qname.base() {
+                BaseName.Trait(module_name, _) => module_name,
+                _ => panic("object-safe trait has a non-trait qualified name"),
+            },
+            value_type: False,
+        );
+        lowerer.infos.insert(trait_qname, ObjectInfo(carrier_qname, variant_qname, methods));
+        new_enums.push((carrier_qname, carrier_def, None));
+        new_enums.push((enum_qname, enum_def, Some(variant_qname)));
     }
 
     program.structs = rewrite(program.structs, lowerer);
     program.enums = rewrite(program.enums, lowerer);
     for (enum_qname, enum_def, variant_qname) in new_enums {
         program.enums.insert(enum_qname, enum_def);
-        program.variant_enum_map.insert(variant_qname, enum_qname);
+        if let Some(variant_qname) = variant_qname {
+            program.variant_enum_map.insert(variant_qname, enum_qname);
+        }
     }
 
     let function_keys: Vec[QualifiedName] = program.functions.keys().collect();

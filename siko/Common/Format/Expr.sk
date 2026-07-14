@@ -358,6 +358,20 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
+        ExprKind.TraitObjectCarrierPack(trait_qname, value) => {
+            f.push("trait_object_carrier_pack!(");
+            f.push(I.resolve(trait_qname.name()));
+            f.push(", ");
+            format_expr(f, value);
+            f.push(")");
+        }
+        ExprKind.TraitObjectDowncast(_, value, target_ty) => {
+            f.push("downcast[");
+            format_type_def(f, target_ty);
+            f.push("](");
+            format_expr(f, value);
+            f.push(")");
+        }
         ExprKind.EnumTag(inner) => {
             f.push("enum_tag!(");
             format_expr(f, inner);

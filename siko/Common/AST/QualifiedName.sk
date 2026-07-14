@@ -15,6 +15,8 @@ pub enum BaseName {
     Trait(module_name: I.String, trait_name: I.String),
     TraitObject(parent_name: I.String),
     TraitObjectVariant(parent_name: I.String),
+    TraitObjectCarrier(parent_name: I.String),
+    TraitObjectCarrierVariant(parent_name: I.String, index: Int),
     Effect(module_name: I.String, effect_name: I.String),
     EffectAssociatedType(module_name: I.String, effect_name: I.String, name: I.String),
     Global(module_name: I.String, global_name: I.String),
@@ -62,6 +64,9 @@ pub enum BaseName {
             Variant(m, e, v) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(v)),
             TraitObject(parent) => I.intern("#trait_object[" + I.resolve(parent) + "]"),
             TraitObjectVariant(parent) => I.intern("#trait_object_variant[" + I.resolve(parent) + "]"),
+            TraitObjectCarrier(parent) => I.intern("#trait_object_carrier[" + I.resolve(parent) + "]"),
+            TraitObjectCarrierVariant(parent, index) =>
+                I.intern("#trait_object_carrier_variant[" + I.resolve(parent) + "," + index.to_string() + "]"),
             Lambda(parent, i) => I.intern(I.resolve(parent) + "_lambda_" + i.to_string()),
             ClosureEnum(i) => I.intern("closure_" + i.to_string()),
             ClosureVariant(ei, vi) => I.intern("closure_" + ei.to_string() + ".Variant" + vi.to_string()),
@@ -254,6 +259,14 @@ pub enum QualifiedName {
 
     pub fn new_trait_object_variant(parent_name: I.String) -> QualifiedName {
         Base(BaseNameInfo.new(BaseName.TraitObjectVariant(parent_name)))
+    }
+
+    pub fn new_trait_object_carrier(parent_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.TraitObjectCarrier(parent_name)))
+    }
+
+    pub fn new_trait_object_carrier_variant(parent_name: I.String, index: Int) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.TraitObjectCarrierVariant(parent_name, index)))
     }
 
     pub fn new_effect(module_name: I.String, effect_name: I.String) -> QualifiedName {

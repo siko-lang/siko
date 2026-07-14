@@ -227,6 +227,13 @@ pub enum ExprKind {
     // A finalized call whose receiver is a trait object. FunctionCallInfo.args
     // contains the receiver followed by the exposed method arguments.
     TraitObjectCall(QualifiedName, FunctionCallInfo),
+    // The concrete value stored in the compiler-generated carrier enum. This
+    // survives until after monomorphization, when all reachable packed types
+    // are known and concrete carrier variants can be generated.
+    TraitObjectCarrierPack(QualifiedName, Expr),
+    // A checked downcast from a trait object to target_type. The result type is
+    // Option[target_type]. Lowered together with carrier packs after mono.
+    TraitObjectDowncast(QualifiedName, Expr, TypeDef),
     Yield(YieldInfo),
     EnumTag(Expr),
     Switch(Expr, Vec[Expr]),

@@ -1,0 +1,416 @@
+module Siko.TraitObjectCarriers {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Data
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+import Siko.Utils.VarAllocator
+
+// Carrier variants are keyed only by the erased trait and concrete source
+// type. Witness identity deliberately does not participate: two instances for
+// the same type still pack and downcast as that same type.
+@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+struct CarrierKey {
+    trait_qname: QualifiedName,
+    ty: TypeDef,
+}
+
+struct PackCollector {
+    types: Map[QualifiedName, Set[TypeDef]],
+
+    fn add(c: PackCollector, trait_qname: QualifiedName, ty: TypeDef) {
+        match c.types.get(trait_qname) {
+            Some(types) => { types.insert(ty); }
+            None => {
+                let types: Set[TypeDef] = Set.new();
+                types.insert(ty);
+                c.types.insert(trait_qname, types);
+            }
+        }
+    }
+}
+
+trait CollectPacks[T] {
+    fn collect_packs(value: T, collector: PackCollector)
+}
+
+instance CollectPacks[Location] = auto(Fold, =)
+instance CollectPacks[I.String] = auto(Fold, =)
+instance CollectPacks[String] = auto(Fold, =)
+instance CollectPacks[Int] = auto(Fold, =)
+instance CollectPacks[U8] = auto(Fold, =)
+instance CollectPacks[Bool] = auto(Fold, =)
+instance CollectPacks[QualifiedName] = auto(Fold, =)
+instance CollectPacks[VariableName] = auto(Fold, =)
+instance CollectPacks[Name] = auto(Fold, =)
+instance CollectPacks[Identifier] = auto(Fold, =)
+instance CollectPacks[FunctionKind] = auto(Fold, =)
+instance CollectPacks[BinaryOp] = auto(Fold, =)
+instance CollectPacks[UnaryOp] = auto(Fold, =)
+instance CollectPacks[WitnessInfo] = auto(Fold, =)
+instance CollectPacks[HandlerSelection] = auto(Fold, =)
+instance CollectPacks[ImplicitRefInfo] = auto(Fold, =)
+instance CollectPacks[CreateClosureInfo] = auto(Fold, =)
+instance CollectPacks[FunctionPtrInfo] = auto(Fold, =)
+instance CollectPacks[NamedArgument] = auto(Fold, =)
+instance CollectPacks[NamedPatternArg] = auto(Fold, =)
+instance CollectPacks[TypeVar] = auto(Fold, =)
+instance CollectPacks[LambdaArg] = auto(Fold)
+instance CollectPacks[FunctionCallInfo] = auto(Fold)
+instance CollectPacks[TypeAssociatedCallInfo] = auto(Fold)
+instance CollectPacks[MethodCallInfo] = auto(Fold)
+instance CollectPacks[CallInfo] = auto(Fold)
+instance CollectPacks[MatchInfo] = auto(Fold)
+instance CollectPacks[YieldInfo] = auto(Fold)
+instance CollectPacks[MatchArm] = auto(Fold)
+instance CollectPacks[WithInfo] = auto(Fold)
+instance CollectPacks[Pattern] = auto(Fold)
+instance CollectPacks[PatternKind] = auto(Fold)
+instance CollectPacks[NamedPatternInfo] = auto(Fold)
+instance CollectPacks[BlockInfo] = auto(Fold)
+instance CollectPacks[ExprKind] = auto(Fold)
+instance CollectPacks[S.LetInfo] = auto(Fold)
+instance CollectPacks[S.DeclareInfo] = auto(Fold)
+instance CollectPacks[S.Statement] = auto(Fold)
+instance CollectPacks[ClosureInfo] = auto(Fold)
+instance CollectPacks[CoroutineInfo] = auto(Fold)
+instance CollectPacks[NamedInfo] = auto(Fold)
+instance CollectPacks[TypeDef] = auto(Fold)
+
+instance CollectPacks[Expr] {
+    fn collect_packs(expr: Expr, collector: PackCollector) {
+        if let ExprKind.TraitObjectCarrierPack(trait_qname, value) = expr.kind {
+            collector.add(
+                trait_qname,
+                value.ty.expect("trait-object carrier pack value has no type"),
+            );
+        }
+        collect_packs(expr.kind, collector);
+    }
+}
+
+instance[T: CollectPacks[T]] CollectPacks[Option[T]] {
+    fn collect_packs(value: Option[T], collector: PackCollector) {
+        if let Some(value) = value {
+            collect_packs(value, collector);
+        }
+    }
+}
+
+instance[T: CollectPacks[T]] CollectPacks[Vec[T]] {
+    fn collect_packs(values: Vec[T], collector: PackCollector) {
+        for value in values {
+            collect_packs(value, collector);
+        }
+    }
+}
+
+struct CarrierLowerer {
+    program: Program,
+    variants: Map[CarrierKey, QualifiedName],
+    var_alloc: VarAllocator,
+
+    fn variant_call(
+        l: CarrierLowerer,
+        qname: QualifiedName,
+        args: Vec[Expr],
+        ty: TypeDef,
+        loc: Location,
+    ) -> Expr {
+        Expr(ExprKind.FunctionCall(FunctionCallInfo(
+            qname: qname,
+            kind: FunctionKind.VariantCtor,
+            args: args,
+        )), loc, Some(ty))
+    }
+
+    fn option_variants(l: CarrierLowerer, option_ty: TypeDef) -> (QualifiedName, QualifiedName) {
+        let option_qname = match option_ty {
+            TypeDef.Named(NamedInfo(name, _)) => name.resolved(),
+            _ => panic("trait-object downcast result is not Option[T]"),
+        };
+        let def = l.program.enums.get(option_qname)
+            .expect("trait-object downcast Option definition not found");
+        let some: Option[QualifiedName] = None;
+        let none: Option[QualifiedName] = None;
+        for variant in def.variants {
+            let qname = variant.qualified_name.unwrap();
+            if qname.base_name() == B.get_option_some_qn() {
+                some = Some(qname);
+            }
+            if qname.base_name() == B.get_option_none_qn() {
+                none = Some(qname);
+            }
+        }
+        (
+            some.expect("trait-object downcast Some variant not found"),
+            none.expect("trait-object downcast None variant not found"),
+        )
+    }
+
+    fn named_pattern(
+        l: CarrierLowerer,
+        qname: QualifiedName,
+        args: Vec[Pattern],
+        ty: TypeDef,
+        loc: Location,
+    ) -> Pattern {
+        Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.inner(qname),
+                args: args,
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            loc,
+            Some(ty),
+        )
+    }
+
+    fn lower_pack(
+        l: CarrierLowerer,
+        trait_qname: QualifiedName,
+        value: Expr,
+        loc: Location,
+        ty: TypeDef,
+    ) -> Expr {
+        let value = rewrite(value, l);
+        let key = CarrierKey(
+            trait_qname,
+            value.ty.expect("trait-object carrier pack value has no type"),
+        );
+        let variant_qname = l.variants.get(key)
+            .expect("trait-object carrier variant not generated");
+        l.variant_call(variant_qname, [value], ty, loc)
+    }
+
+    fn lower_downcast(
+        l: CarrierLowerer,
+        trait_qname: QualifiedName,
+        value: Expr,
+        target_ty: TypeDef,
+        loc: Location,
+        option_ty: TypeDef,
+    ) -> Expr {
+        let value = rewrite(value, l);
+        let object_ty = value.ty.expect("trait-object downcast value has no type");
+        let object_qname = match object_ty {
+            TypeDef.Named(NamedInfo(name, _)) => name.resolved(),
+            _ => panic("trait-object downcast value is not a named object type"),
+        };
+        let object_def = l.program.enums.get(object_qname)
+            .expect("trait-object downcast object definition not found");
+        let object_variant = object_def.variants[0];
+        let object_variant_qname = object_variant.qualified_name.unwrap();
+        let carrier_ty = object_variant.items[0].ty;
+        let (some_qname, none_qname) = l.option_variants(option_ty);
+        let none_expr = l.variant_call(none_qname, Vec.new(), option_ty, loc.clone());
+
+        let carrier_var = l.var_alloc.allocate_temp();
+        let object_subpatterns: Vec[Pattern] = Vec.new();
+        let carrier_variant = l.variants.get(CarrierKey(trait_qname, target_ty));
+        if carrier_variant.is_some() {
+            object_subpatterns.push(Pattern(
+                PatternKind.Binding(carrier_var),
+                loc.clone(),
+                Some(carrier_ty),
+            ));
+        } else {
+            object_subpatterns.push(Pattern(PatternKind.Wildcard, loc.clone(), Some(carrier_ty)));
+        }
+        for item in object_variant.items.iter().skip(1) {
+            object_subpatterns.push(Pattern(PatternKind.Wildcard, loc.clone(), Some(item.ty)));
+        }
+        let object_pattern = l.named_pattern(
+            object_variant_qname,
+            object_subpatterns,
+            object_ty,
+            loc.clone(),
+        );
+
+        let body = match carrier_variant {
+            None => none_expr,
+            Some(carrier_variant_qname) => {
+                let payload_var = l.var_alloc.allocate_temp();
+                let payload_pattern = Pattern(
+                    PatternKind.Binding(payload_var),
+                    loc.clone(),
+                    Some(target_ty),
+                );
+                let matching_pattern = l.named_pattern(
+                    carrier_variant_qname,
+                    [payload_pattern],
+                    carrier_ty,
+                    loc.clone(),
+                );
+                let payload_expr = Expr(
+                    ExprKind.Var(payload_var),
+                    loc.clone(),
+                    Some(target_ty),
+                );
+                let some_expr = l.variant_call(
+                    some_qname,
+                    [payload_expr],
+                    option_ty,
+                    loc.clone(),
+                );
+                let carrier_expr = Expr(
+                    ExprKind.Var(carrier_var),
+                    loc.clone(),
+                    Some(carrier_ty),
+                );
+                Expr(
+                    ExprKind.Match(MatchInfo(carrier_expr, [
+                        MatchArm(matching_pattern, some_expr),
+                        MatchArm(
+                            Pattern(PatternKind.Wildcard, loc.clone(), Some(carrier_ty)),
+                            none_expr,
+                        ),
+                    ])),
+                    loc.clone(),
+                    Some(option_ty),
+                )
+            }
+        };
+
+        Expr(
+            ExprKind.Match(MatchInfo(value, [MatchArm(object_pattern, body)])),
+            loc,
+            Some(option_ty),
+        )
+    }
+}
+
+trait Rewrite[T] {
+    fn rewrite(value: T, lowerer: CarrierLowerer) -> T
+}
+
+instance Rewrite[Location] = auto(Map, =)
+instance Rewrite[I.String] = auto(Map, =)
+instance Rewrite[String] = auto(Map, =)
+instance Rewrite[Int] = auto(Map, =)
+instance Rewrite[U8] = auto(Map, =)
+instance Rewrite[Bool] = auto(Map, =)
+instance Rewrite[QualifiedName] = auto(Map, =)
+instance Rewrite[VariableName] = auto(Map, =)
+instance Rewrite[Name] = auto(Map, =)
+instance Rewrite[Identifier] = auto(Map, =)
+instance Rewrite[FunctionKind] = auto(Map, =)
+instance Rewrite[BinaryOp] = auto(Map, =)
+instance Rewrite[UnaryOp] = auto(Map, =)
+instance Rewrite[WitnessInfo] = auto(Map, =)
+instance Rewrite[HandlerSelection] = auto(Map, =)
+instance Rewrite[ImplicitRefInfo] = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map, =)
+instance Rewrite[FunctionPtrInfo] = auto(Map, =)
+instance Rewrite[LambdaArg] = auto(Map, =)
+instance Rewrite[NamedArgument] = auto(Map, =)
+instance Rewrite[NamedPatternArg] = auto(Map, =)
+instance Rewrite[TypeDef] = auto(Map, =)
+instance Rewrite[Pattern] = auto(Map)
+instance Rewrite[PatternKind] = auto(Map)
+instance Rewrite[FunctionCallInfo] = auto(Map)
+instance Rewrite[TypeAssociatedCallInfo] = auto(Map, !)
+instance Rewrite[NamedPatternInfo] = auto(Map)
+instance Rewrite[MethodCallInfo] = auto(Map)
+instance Rewrite[CallInfo] = auto(Map)
+instance Rewrite[WithInfo] = auto(Map)
+instance Rewrite[MatchArm] = auto(Map)
+instance Rewrite[S.LetInfo] = auto(Map)
+instance Rewrite[S.DeclareInfo] = auto(Map)
+instance Rewrite[S.Statement] = auto(Map)
+instance Rewrite[MatchInfo] = auto(Map)
+instance Rewrite[YieldInfo] = auto(Map)
+instance Rewrite[ExprKind] = auto(Map)
+instance Rewrite[BlockInfo] = auto(Map)
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(value: Option[T], lowerer: CarrierLowerer) -> Option[T] {
+        value.map(|value| rewrite(value, lowerer))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(values: Vec[T], lowerer: CarrierLowerer) -> Vec[T] {
+        values.into_iter().map(|value| rewrite(value, lowerer)).collect()
+    }
+}
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, lowerer: CarrierLowerer) -> Expr {
+        let loc = expr.location;
+        let ty = expr.ty;
+        match expr.kind {
+            ExprKind.TraitObjectCarrierPack(trait_qname, value) =>
+                lowerer.lower_pack(
+                    trait_qname,
+                    value,
+                    loc,
+                    ty.expect("trait-object carrier pack has no type"),
+                ),
+            ExprKind.TraitObjectDowncast(trait_qname, value, target_ty) =>
+                lowerer.lower_downcast(
+                    trait_qname,
+                    value,
+                    target_ty,
+                    loc,
+                    ty.expect("trait-object downcast has no type"),
+                ),
+            kind => Expr(rewrite(kind, lowerer), loc, ty),
+        }
+    }
+}
+
+fn carrier_qname(trait_qname: QualifiedName) -> QualifiedName {
+    QualifiedName.new_trait_object_carrier(trait_qname.name()).as_mono()
+}
+
+pub fn lower_trait_object_carriers(program: Program) {
+    let collector = PackCollector(Map.new());
+    for func in program.functions.values() {
+        collect_packs(func.body, collector);
+    }
+
+    let variants: Map[CarrierKey, QualifiedName] = Map.new();
+    for (trait_qname, types) in collector.types {
+        let enum_qname = carrier_qname(trait_qname);
+        let enum_def = program.enums.get(enum_qname)
+            .expect("trait-object carrier enum not found after monomorphization");
+        let generated: Vec[VariantDef] = Vec.new();
+        for (index, ty) in types.iter().enumerate() {
+            let variant_qname = QualifiedName.new_trait_object_carrier_variant(
+                trait_qname.name(),
+                index,
+            ).as_mono();
+            generated.push(VariantDef(
+                name: Identifier.new(variant_qname.name(), enum_def.name.location.clone()),
+                qualified_name: Some(variant_qname),
+                items: [ItemInfo(name: None, ty: ty)],
+            ));
+            variants.insert(CarrierKey(trait_qname, ty), variant_qname);
+            program.variant_enum_map.insert(variant_qname, enum_qname);
+        }
+        enum_def.variants = generated;
+    }
+
+    let lowerer = CarrierLowerer(program, variants, VarAllocator.new());
+    let function_keys: Vec[QualifiedName] = program.functions.keys().collect();
+    for key in function_keys {
+        let func = program.functions.get(key).unwrap();
+        lowerer.var_alloc = func.var_allocator;
+        func.body = rewrite(func.body, lowerer);
+        program.functions.insert(key, func);
+    }
+}
+
+}

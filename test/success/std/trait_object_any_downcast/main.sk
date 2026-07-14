@@ -1,0 +1,29 @@
+module Main {
+
+trait Any[T] {}
+
+instance[T] Any[T] {}
+
+fn erase[T](value: T) -> Any {
+    Any(value)
+}
+
+fn main() {
+    let boolean: Option[Bool] = downcast(erase(True));
+    if boolean.unwrap() {
+        println("bool")
+    }
+
+    let text: Option[String] = downcast(erase("hello"));
+    println(text.unwrap());
+
+    let wrong: Option[Bool] = downcast(erase("not a bool"));
+    if wrong.is_none() {
+        println("none")
+    }
+
+    let callable: Option[fn() -> String] = downcast(erase(|| "closure"));
+    println(callable.unwrap()());
+}
+
+}

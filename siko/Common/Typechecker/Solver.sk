@@ -181,7 +181,6 @@ fn is_object_receiver(ty: TypeDef, trait_qname: QualifiedName) -> Bool {
     match ty {
         TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), args)) =>
             qname == trait_qname && args.is_empty(),
-        TypeDef.Paren(inner) => is_object_receiver(inner, trait_qname),
         _ => False,
     }
 }
@@ -920,6 +919,22 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
         C.ConstraintKind.ResolveImplicit(qname, result) => {
             let implicit_def = ctx.program.implicits.get(qname).unwrap();
             ok_satisfied([(C.ConstraintKind.Unify(lhs: result, rhs: implicit_def.ty), location)])
+        }
+
+        C.ConstraintKind.ValidateTraitObjectDowncast(receiver) => {
+            let receiver = ctx.sub.apply(receiver);
+            let pending = collect_flex_vars(receiver);
+            if !pending.is_empty() {
+                return ProcessResult.Pending(pending);
+            }
+            let qname = match receiver {
+                TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), _)) => Some(qname),
+                _ => None,
+            };
+            match qname.and_then(|q| ctx.program.traits.get(q).map(|def| def.object_safe)) {
+                Some(True) => ok_satisfied(Vec.new()),
+                _ => ProcessResult.Failed(TypeError.DowncastOnNonTraitObject(receiver, location)),
+            }
         }
 
         C.ConstraintKind.ValidateEffectHandler(effect_method, instance_method) => {
