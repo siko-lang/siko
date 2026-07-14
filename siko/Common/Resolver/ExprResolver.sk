@@ -217,6 +217,18 @@ pub struct ExprResolver {
                                     is_co,
                                 )
                             ),
+                            ModuleItemKind.Trait(_, _, _, object_safe) => {
+                                if !object_safe {
+                                    return Err(ResolveError.TraitNotObjectSafe(ident));
+                                }
+                                if !named_args.is_empty() {
+                                    return Err(ResolveError.NamedArgOnTraitObjectPack(expr.location));
+                                }
+                                if resolved_args.len() != 1 {
+                                    return Err(ResolveError.InvalidTraitObjectPackArgCount(ident, resolved_args.len()));
+                                }
+                                ExprKind.TraitObjectPack(item.qualified_name, resolved_args[0], WitnessInfo.new())
+                            }
                             _ => return Err(ResolveError.NotAVariant(ident)),
                         }
                     }
@@ -374,6 +386,8 @@ pub struct ExprResolver {
                 ExprKind.Yield(YieldInfo(inner))
             }
             ExprKind.TypeAssociatedCall(_) => panic("resolver: TypeAssociatedCall already resolved"),
+            ExprKind.TraitObjectPack(_, _, _) => panic("resolver: TraitObjectPack already resolved"),
+            ExprKind.TraitObjectCall(_, _) => panic("resolver: TraitObjectCall before typecheck finalization"),
             ExprKind.Discriminator(_) => panic("resolver: Discriminator in expr resolver"),
             ExprKind.Goto(_) | ExprKind.Label(_) => panic("resolver: Goto/Label before coroutine lowering"),
             ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>

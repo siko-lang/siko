@@ -149,6 +149,17 @@ struct Normalizer {
                 }
             }
 
+            ExprKind.TraitObjectPack(trait_name, value, witnesses) => {
+                let value = match norm.to_atom(value, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.TraitObjectPack(trait_name, value, witnesses), loc, ty))
+            }
+
+            ExprKind.TraitObjectCall(_, _) =>
+                panic("normalizer: TraitObjectCall must be lowered before normalization"),
+
             ExprKind.DynamicCall(callee, args) => {
                 let callee_atom = match norm.to_atom(callee, out) {
                     None => return None,

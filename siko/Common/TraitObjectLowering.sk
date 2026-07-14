@@ -1,0 +1,472 @@
+module Siko.TraitObjectLowering {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Annotations
+import Siko.AST.Data
+import Siko.AST.Effects as Eff
+import Siko.AST.Expr
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Implicits
+import Siko.AST.Instances
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Interner as I
+import Siko.Location
+import Siko.Package.Collector as PC
+import Siko.Utils.LabelAllocator
+import Siko.Utils.VarAllocator
+
+struct ObjectUseCollector {
+    names: Set[QualifiedName],
+}
+
+trait CollectObjectUses[T] {
+    fn collect_object_uses(value: T, collector: ObjectUseCollector)
+}
+
+instance CollectObjectUses[Location] = auto(Fold, =)
+instance CollectObjectUses[I.String] = auto(Fold, =)
+instance CollectObjectUses[String] = auto(Fold, =)
+instance CollectObjectUses[Int] = auto(Fold, =)
+instance CollectObjectUses[U8] = auto(Fold, =)
+instance CollectObjectUses[Bool] = auto(Fold, =)
+instance CollectObjectUses[QualifiedName] = auto(Fold, =)
+instance CollectObjectUses[VariableName] = auto(Fold, =)
+instance CollectObjectUses[Name] = auto(Fold, =)
+instance CollectObjectUses[Identifier] = auto(Fold, =)
+instance CollectObjectUses[FunctionKind] = auto(Fold, =)
+instance CollectObjectUses[BinaryOp] = auto(Fold, =)
+instance CollectObjectUses[UnaryOp] = auto(Fold, =)
+instance CollectObjectUses[WitnessInfo] = auto(Fold, =)
+instance CollectObjectUses[ImplicitRefInfo] = auto(Fold, =)
+instance CollectObjectUses[CreateClosureInfo] = auto(Fold, =)
+instance CollectObjectUses[FunctionPtrInfo] = auto(Fold, =)
+instance CollectObjectUses[NamedArgument] = auto(Fold, =)
+instance CollectObjectUses[NamedPatternArg] = auto(Fold, =)
+instance CollectObjectUses[TypeVar] = auto(Fold, =)
+instance CollectObjectUses[Annotation] = auto(Fold, =)
+instance CollectObjectUses[FunctionDefKind] = auto(Fold, =)
+instance CollectObjectUses[VarAllocator] = auto(Fold, =)
+instance CollectObjectUses[LabelAllocator] = auto(Fold, =)
+instance CollectObjectUses[DefaultValueInfo] = auto(Fold, =)
+instance CollectObjectUses[PC.SourcePackage] = auto(Fold, =)
+instance CollectObjectUses[MethodMap] = auto(Fold, =)
+instance CollectObjectUses[BoundOrigin] = auto(Fold, =)
+instance CollectObjectUses[LambdaArg] = auto(Fold)
+instance CollectObjectUses[HandlerSelection] = auto(Fold)
+instance CollectObjectUses[FunctionCallInfo] = auto(Fold)
+instance CollectObjectUses[TypeAssociatedCallInfo] = auto(Fold)
+instance CollectObjectUses[MethodCallInfo] = auto(Fold)
+instance CollectObjectUses[CallInfo] = auto(Fold)
+instance CollectObjectUses[MatchInfo] = auto(Fold)
+instance CollectObjectUses[YieldInfo] = auto(Fold)
+instance CollectObjectUses[MatchArm] = auto(Fold)
+instance CollectObjectUses[WithInfo] = auto(Fold)
+instance CollectObjectUses[Pattern] = auto(Fold)
+instance CollectObjectUses[PatternKind] = auto(Fold)
+instance CollectObjectUses[NamedPatternInfo] = auto(Fold)
+instance CollectObjectUses[BlockInfo] = auto(Fold)
+instance CollectObjectUses[ExprKind] = auto(Fold)
+instance CollectObjectUses[Expr] = auto(Fold)
+instance CollectObjectUses[S.LetInfo] = auto(Fold)
+instance CollectObjectUses[S.DeclareInfo] = auto(Fold)
+instance CollectObjectUses[S.Statement] = auto(Fold)
+instance CollectObjectUses[FunctionArg] = auto(Fold)
+instance CollectObjectUses[ClosureInfo] = auto(Fold)
+instance CollectObjectUses[CoroutineInfo] = auto(Fold)
+instance CollectObjectUses[TypeDef] = auto(Fold)
+instance CollectObjectUses[Constraint] = auto(Fold)
+instance CollectObjectUses[Bound] = auto(Fold)
+instance CollectObjectUses[TypeArgDefs] = auto(Fold)
+instance CollectObjectUses[FunctionDef] = auto(Fold)
+instance CollectObjectUses[FieldDef] = auto(Fold)
+instance CollectObjectUses[StructDef] = auto(Fold)
+instance CollectObjectUses[ItemInfo] = auto(Fold)
+instance CollectObjectUses[VariantDef] = auto(Fold)
+instance CollectObjectUses[EnumDef] = auto(Fold)
+instance CollectObjectUses[ImplicitDef] = auto(Fold)
+
+instance CollectObjectUses[NamedInfo] {
+    fn collect_object_uses(info: NamedInfo, collector: ObjectUseCollector) {
+        if let Name.Resolved(qname, _) = info.name {
+            collector.names.insert(qname);
+        }
+        collect_object_uses(info.args, collector);
+    }
+}
+
+instance[T: CollectObjectUses[T]] CollectObjectUses[Option[T]] {
+    fn collect_object_uses(value: Option[T], collector: ObjectUseCollector) {
+        if let Some(v) = value {
+            collect_object_uses(v, collector);
+        }
+    }
+}
+
+instance[T: CollectObjectUses[T]] CollectObjectUses[Vec[T]] {
+    fn collect_object_uses(values: Vec[T], collector: ObjectUseCollector) {
+        for value in values {
+            collect_object_uses(value, collector);
+        }
+    }
+}
+
+instance[K, V: CollectObjectUses[V], Ord[K]] CollectObjectUses[Map[K, V]] {
+    fn collect_object_uses(values: Map[K, V], collector: ObjectUseCollector) {
+        for value in values.values() {
+            collect_object_uses(value, collector);
+        }
+    }
+}
+
+struct ObjectMethod {
+    qname: QualifiedName,
+    closure_ty: TypeDef,
+}
+
+struct ObjectInfo {
+    variant_qname: QualifiedName,
+    methods: Vec[ObjectMethod],
+}
+
+struct TraitObjectLowerer {
+    object_types: Map[QualifiedName, QualifiedName],
+    infos: Map[QualifiedName, ObjectInfo],
+    var_alloc: VarAllocator,
+
+    fn rewrite_expr(l: TraitObjectLowerer, expr: Expr) -> Expr {
+        let loc = expr.location.clone();
+        let ty = rewrite(expr.ty, l);
+        match expr.kind {
+            ExprKind.TraitObjectPack(trait_qname, value, witnesses) =>
+                l.lower_pack(trait_qname, rewrite(value, l), witnesses, loc, ty),
+            ExprKind.TraitObjectCall(trait_qname, call) =>
+                l.lower_call(trait_qname, rewrite(call, l), loc, ty),
+            kind => Expr(rewrite(kind, l), loc, ty),
+        }
+    }
+
+    fn lower_pack(
+        l: TraitObjectLowerer,
+        trait_qname: QualifiedName,
+        value: Expr,
+        witnesses: WitnessInfo,
+        loc: Location,
+        ty: Option[TypeDef],
+    ) -> Expr {
+        let info = l.infos.get(trait_qname).expect("trait-object info not found");
+        let capture = match value.kind {
+            ExprKind.Var(name) => name,
+            _ => panic("trait-object pack value was not normalized to a variable"),
+        };
+        let capture_ty = value.ty.expect("trait-object pack value has no type");
+        let closures: Vec[Expr] = Vec.new();
+        for method in info.methods {
+            let (param_tys, result_ty) = match method.closure_ty {
+                TypeDef.Fn(ClosureInfo(params, result, _)) => (params, result),
+                _ => panic("trait-object method field is not a closure"),
+            };
+            let lambda_args: Vec[LambdaArg] = [LambdaArg(capture, Some(capture_ty))];
+            let call_args: Vec[Expr] = [Expr(ExprKind.Var(capture), loc.clone(), Some(capture_ty))];
+            for param_ty in param_tys {
+                let param = l.var_alloc.allocate_temp();
+                lambda_args.push(LambdaArg(param, Some(param_ty)));
+                call_args.push(Expr(ExprKind.Var(param), loc.clone(), Some(param_ty)));
+            }
+            let body = Expr(
+                ExprKind.FunctionCall(FunctionCallInfo(
+                    qname: method.qname,
+                    kind: FunctionKind.UserDefined,
+                    args: call_args,
+                    witnesses: witnesses.clone(),
+                )),
+                loc.clone(),
+                Some(result_ty),
+            );
+            closures.push(Expr(
+                ExprKind.ResolvedLambda(lambda_args, body, 1),
+                loc.clone(),
+                Some(method.closure_ty),
+            ));
+        }
+        Expr(
+            ExprKind.FunctionCall(FunctionCallInfo(
+                qname: info.variant_qname,
+                kind: FunctionKind.VariantCtor,
+                args: closures,
+            )),
+            loc,
+            ty,
+        )
+    }
+
+    fn lower_call(
+        l: TraitObjectLowerer,
+        trait_qname: QualifiedName,
+        call: FunctionCallInfo,
+        loc: Location,
+        ty: Option[TypeDef],
+    ) -> Expr {
+        let info = l.infos.get(trait_qname).expect("trait-object info not found");
+        let selected = info.methods.iter().position(|m| m.qname == call.qname)
+            .expect("trait-object method not found");
+        if call.args.is_empty() {
+            panic("trait-object call has no receiver");
+        }
+        let receiver = call.args[0];
+        let object_ty = receiver.ty.expect("trait-object receiver has no type");
+        let bindings: Vec[VariableName] = Vec.new();
+        let subpatterns: Vec[Pattern] = Vec.new();
+        for method in info.methods {
+            let binding = l.var_alloc.allocate_temp();
+            bindings.push(binding);
+            subpatterns.push(Pattern(
+                PatternKind.Binding(binding),
+                loc.clone(),
+                Some(method.closure_ty),
+            ));
+        }
+        let pattern = Pattern(
+            PatternKind.Named(NamedPatternInfo(
+                name: Name.inner(info.variant_qname),
+                args: subpatterns,
+                named_args: Vec.new(),
+                has_rest: False,
+            )),
+            loc.clone(),
+            Some(object_ty),
+        );
+        let callee_ty = info.methods[selected].closure_ty;
+        let callee = Expr(ExprKind.Var(bindings[selected]), loc.clone(), Some(callee_ty));
+        let exposed_args = call.args.iter().skip(1).collect();
+        let body = Expr(ExprKind.DynamicCall(callee, exposed_args), loc.clone(), ty.clone());
+        Expr(
+            ExprKind.Match(MatchInfo(receiver, [MatchArm(pattern, body)])),
+            loc,
+            ty,
+        )
+    }
+}
+
+trait Rewrite[T] {
+    fn rewrite(t: T, lowerer: TraitObjectLowerer) -> T
+}
+
+instance Rewrite[Location] = auto(Map, =)
+instance Rewrite[I.String] = auto(Map, =)
+instance Rewrite[String] = auto(Map, =)
+instance Rewrite[Int] = auto(Map, =)
+instance Rewrite[U8] = auto(Map, =)
+instance Rewrite[Bool] = auto(Map, =)
+instance Rewrite[QualifiedName] = auto(Map, =)
+instance Rewrite[VariableName] = auto(Map, =)
+instance Rewrite[Name] = auto(Map, =)
+instance Rewrite[Identifier] = auto(Map, =)
+instance Rewrite[FunctionKind] = auto(Map, =)
+instance Rewrite[BinaryOp] = auto(Map, =)
+instance Rewrite[UnaryOp] = auto(Map, =)
+instance Rewrite[WitnessInfo] = auto(Map, =)
+instance Rewrite[ImplicitRefInfo] = auto(Map, =)
+instance Rewrite[CreateClosureInfo] = auto(Map, =)
+instance Rewrite[FunctionPtrInfo] = auto(Map, =)
+instance Rewrite[NamedArgument] = auto(Map, =)
+instance Rewrite[NamedPatternArg] = auto(Map, =)
+instance Rewrite[BoundOrigin] = auto(Map, =)
+instance Rewrite[Annotation] = auto(Map, =)
+instance Rewrite[FunctionDefKind] = auto(Map, =)
+instance Rewrite[VarAllocator] = auto(Map, =)
+instance Rewrite[LabelAllocator] = auto(Map, =)
+instance Rewrite[DefaultValueInfo] = auto(Map, =)
+instance Rewrite[PC.SourcePackage] = auto(Map, =)
+instance Rewrite[InstanceKind] = auto(Map, =)
+instance Rewrite[ExternalDerivedInstanceInfo] = auto(Map, =)
+instance Rewrite[MethodMap] = auto(Map, =)
+instance Rewrite[Eff.AssociatedType] = auto(Map, =)
+instance Rewrite[TypeVar] = auto(Map, =)
+
+instance Rewrite[LambdaArg] = auto(Map)
+instance Rewrite[HandlerSelection] = auto(Map)
+instance Rewrite[FunctionCallInfo] = auto(Map)
+instance Rewrite[TypeAssociatedCallInfo] = auto(Map)
+instance Rewrite[MethodCallInfo] = auto(Map)
+instance Rewrite[CallInfo] = auto(Map)
+instance Rewrite[MatchInfo] = auto(Map)
+instance Rewrite[YieldInfo] = auto(Map)
+instance Rewrite[MatchArm] = auto(Map)
+instance Rewrite[WithInfo] = auto(Map)
+instance Rewrite[Pattern] = auto(Map)
+instance Rewrite[PatternKind] = auto(Map)
+instance Rewrite[NamedPatternInfo] = auto(Map)
+instance Rewrite[BlockInfo] = auto(Map)
+instance Rewrite[ExprKind] = auto(Map)
+instance Rewrite[S.LetInfo] = auto(Map)
+instance Rewrite[S.DeclareInfo] = auto(Map)
+instance Rewrite[S.Statement] = auto(Map)
+instance Rewrite[FunctionArg] = auto(Map)
+instance Rewrite[Constraint] = auto(Map)
+instance Rewrite[Bound] = auto(Map)
+instance Rewrite[TypeArgDefs] = auto(Map)
+instance Rewrite[TypeAssignment] = auto(Map)
+instance Rewrite[FunctionDef] = auto(Map)
+instance Rewrite[InstanceDef] = auto(Map)
+instance Rewrite[ImplicitDef] = auto(Map)
+instance Rewrite[Eff.EffectDef] = auto(Map)
+instance Rewrite[FieldDef] = auto(Map)
+instance Rewrite[StructDef] = auto(Map)
+instance Rewrite[ItemInfo] = auto(Map)
+instance Rewrite[VariantDef] = auto(Map)
+instance Rewrite[EnumDef] = auto(Map)
+instance Rewrite[ClosureInfo] = auto(Map)
+instance Rewrite[CoroutineInfo] = auto(Map)
+instance Rewrite[TypeDef] = auto(Map)
+
+instance Rewrite[NamedInfo] {
+    fn rewrite(info: NamedInfo, lowerer: TraitObjectLowerer) -> NamedInfo {
+        let args = rewrite(info.args, lowerer);
+        match info.name {
+            Name.Resolved(qname, loc) => match lowerer.object_types.get(qname) {
+                Some(object_qname) => NamedInfo(
+                    Name.Resolved(name: object_qname, location: loc),
+                    Vec.new(),
+                ),
+                None => NamedInfo(info.name, args),
+            },
+            _ => NamedInfo(info.name, args),
+        }
+    }
+}
+
+instance Rewrite[Expr] {
+    fn rewrite(expr: Expr, lowerer: TraitObjectLowerer) -> Expr {
+        lowerer.rewrite_expr(expr)
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Option[T]] {
+    fn rewrite(value: Option[T], lowerer: TraitObjectLowerer) -> Option[T] {
+        value.map(|v| rewrite(v, lowerer))
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Vec[T]] {
+    fn rewrite(values: Vec[T], lowerer: TraitObjectLowerer) -> Vec[T] {
+        values.into_iter().map(|v| rewrite(v, lowerer)).collect()
+    }
+}
+
+instance[K, V: Rewrite[V], Ord[K]] Rewrite[Map[K, V]] {
+    fn rewrite(values: Map[K, V], lowerer: TraitObjectLowerer) -> Map[K, V] {
+        values.iter().map(|(key, value)| (key, rewrite(value, lowerer))).collect()
+    }
+}
+
+fn generated_qnames(trait_qname: QualifiedName) -> (QualifiedName, QualifiedName) {
+    match trait_qname.base() {
+        BaseName.Trait(_, _) => {}
+        _ => panic("object-safe trait has a non-trait qualified name"),
+    }
+    (
+        QualifiedName.new_trait_object(trait_qname.name()),
+        QualifiedName.new_trait_object_variant(trait_qname.name()),
+    )
+}
+
+pub fn lower_trait_objects(program: Program) -> Bool {
+    let uses = ObjectUseCollector(Set.new());
+    collect_object_uses(program.functions, uses);
+    collect_object_uses(program.structs, uses);
+    collect_object_uses(program.enums, uses);
+    collect_object_uses(program.implicits, uses);
+
+    let object_types: Map[QualifiedName, QualifiedName] = Map.new();
+    for (trait_qname, trait_def) in program.traits {
+        if trait_def.object_safe && uses.names.contains(trait_qname) {
+            let (enum_qname, _) = generated_qnames(trait_qname);
+            object_types.insert(trait_qname, enum_qname);
+        }
+    }
+    if object_types.is_empty() {
+        return False;
+    }
+
+    let lowerer = TraitObjectLowerer(object_types, Map.new(), VarAllocator.new());
+    let new_enums: Vec[(QualifiedName, EnumDef, QualifiedName)] = Vec.new();
+    for (trait_qname, trait_def) in program.traits {
+        if !trait_def.object_safe || !uses.names.contains(trait_qname) {
+            continue;
+        }
+        let (enum_qname, variant_qname) = generated_qnames(trait_qname);
+        let trait_name = match trait_qname.base() {
+            BaseName.Trait(_, trait_name) => trait_name,
+            _ => panic("object-safe trait has a non-trait qualified name"),
+        };
+        let methods: Vec[ObjectMethod] = Vec.new();
+        let items: Vec[ItemInfo] = Vec.new();
+        for method_qname in trait_def.method_map.names.values() {
+            let method = program.functions.get(method_qname).unwrap();
+            let params: Vec[TypeDef] = method.args.iter().skip(1)
+                .map(|arg| rewrite(arg.type_def, lowerer))
+                .collect();
+            let result = rewrite(method.result_type.unwrap_or(TypeDef.Tuple(Vec.new())), lowerer);
+            let closure_ty = TypeDef.Fn(ClosureInfo(params, result, None));
+            methods.push(ObjectMethod(method_qname, closure_ty));
+            items.push(ItemInfo(name: None, ty: closure_ty));
+        }
+        let loc = trait_def.name.location;
+        let variant = VariantDef(
+            name: Identifier.new(trait_name, loc.clone()),
+            qualified_name: Some(variant_qname),
+            items: items,
+        );
+        let enum_def = EnumDef(
+            annotations: Vec.new(),
+            public: False,
+            name: Identifier.new(trait_name, loc.clone()),
+            qualified_name: Some(enum_qname),
+            type_arg_defs: None,
+            variants: [variant],
+            methods: Vec.new(),
+            method_map: MethodMap.new(),
+            module_name: match trait_qname.base() {
+                BaseName.Trait(module_name, _) => module_name,
+                _ => panic("object-safe trait has a non-trait qualified name"),
+            },
+            value_type: False,
+        );
+        lowerer.infos.insert(trait_qname, ObjectInfo(variant_qname, methods));
+        new_enums.push((enum_qname, enum_def, variant_qname));
+    }
+
+    program.structs = rewrite(program.structs, lowerer);
+    program.enums = rewrite(program.enums, lowerer);
+    for (enum_qname, enum_def, variant_qname) in new_enums {
+        program.enums.insert(enum_qname, enum_def);
+        program.variant_enum_map.insert(variant_qname, enum_qname);
+    }
+
+    let function_keys: Vec[QualifiedName] = program.functions.keys().collect();
+    for key in function_keys {
+        let func = program.functions.get(key).unwrap();
+        lowerer.var_alloc = func.var_allocator;
+        program.functions.insert(key, rewrite(func, lowerer));
+    }
+
+    program.implicits = rewrite(program.implicits, lowerer);
+    program.effects = rewrite(program.effects, lowerer);
+
+    program.all_instances = rewrite(program.all_instances, lowerer);
+    program.named_instances = rewrite(program.named_instances, lowerer);
+    program.canonical_instances = rewrite(program.canonical_instances, lowerer);
+    program.instance_resolver = InstanceResolver.build(program);
+    True
+}
+
+}

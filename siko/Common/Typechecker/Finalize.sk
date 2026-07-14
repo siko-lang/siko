@@ -21,6 +21,7 @@ pub struct CallResolution {
     pub result_var: Int,
     pub qname: QualifiedName,
     pub kind: FunctionKind,
+    pub trait_object: Option[QualifiedName],
 }
 
 // ── Finalize trait ────────────────────────────────────────────────────────────
@@ -281,7 +282,11 @@ pub struct Finalizer {
                     Some(t) => Some(t),
                     None => ty,
                 };
-                Expr(ExprKind.FunctionCall(FunctionCallInfo(cr.qname, cr.kind, new_args, witnesses, Vec.new(), False)), loc, call_ty)
+                let call = FunctionCallInfo(cr.qname, cr.kind, new_args, witnesses, Vec.new(), False);
+                match cr.trait_object {
+                    Some(trait_qname) => Expr(ExprKind.TraitObjectCall(trait_qname, call), loc, call_ty),
+                    None => Expr(ExprKind.FunctionCall(call), loc, call_ty),
+                }
             }
 
             ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args, is_co)) => {
@@ -298,7 +303,11 @@ pub struct Finalizer {
                             Some(t) => Some(t),
                             None => ty,
                         };
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co)), loc, call_ty)
+                        let call = FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co);
+                        match f.method_resolutions.get(result_var).and_then(|cr| cr.trait_object) {
+                            Some(trait_qname) => Expr(ExprKind.TraitObjectCall(trait_qname, call), loc, call_ty),
+                            None => Expr(ExprKind.FunctionCall(call), loc, call_ty),
+                        }
                     }
                     FunctionKind.StructCtor => {
                         let new_args = f.inject_ctor_default_args(qname, new_args, loc);
@@ -361,6 +370,19 @@ pub struct Finalizer {
                 Expr(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, new_args, witnesses, named_args)), loc, ty)
             }
 
+            ExprKind.TraitObjectPack(trait_qname, value, _) => {
+                let result_var = f.result_var(expr);
+                let witnesses = f.build_witnesses(result_var);
+                Expr(
+                    ExprKind.TraitObjectPack(trait_qname, f.finalize_expr(value), witnesses),
+                    loc,
+                    ty,
+                )
+            }
+
+            ExprKind.TraitObjectCall(_, _) =>
+                panic("finalize: TraitObjectCall before finalization"),
+
             kind => Expr(kind.finalize(f), loc, ty),
         }
     }
@@ -411,4 +433,3 @@ pub struct Finalizer {
 }
 
 }
-

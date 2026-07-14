@@ -341,6 +341,23 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             }
             f.push(")");
         }
+        ExprKind.TraitObjectPack(trait_qname, value, _) => {
+            f.push(I.resolve(trait_qname.name()));
+            f.push("(");
+            format_expr(f, value);
+            f.push(")");
+        }
+        ExprKind.TraitObjectCall(trait_qname, call) => {
+            f.push("trait_object_call!(");
+            f.push(I.resolve(trait_qname.name()));
+            f.push(", ");
+            f.push(I.resolve(call.qname.name()));
+            for arg in call.args {
+                f.push(", ");
+                format_expr(f, arg);
+            }
+            f.push(")");
+        }
         ExprKind.EnumTag(inner) => {
             f.push("enum_tag!(");
             format_expr(f, inner);

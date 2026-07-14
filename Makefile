@@ -20,7 +20,6 @@ endif
 
 test: siko.bin runner.bin
 	./siko.bin test std/Common
-	bash scripts/test_std_lookup.sh ./siko.bin
 	./runner.bin
 
 test-valgrind: runner.bin

@@ -12,6 +12,7 @@ import Siko.Instances.InstanceChecker
 import Siko.Instances.InstanceResolver
 import Siko.Typechecker.Checker
 import Siko.Typechecker.Statistics
+import Siko.TraitObjectLowering
 import Siko.MatchValidation as MV
 import Siko.PurityCheck.Checker as PC
 import Siko.SafetyChecker as SC
@@ -110,6 +111,18 @@ pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
                 tc_stats.dump();
                 if let Err(type_errors) = typecheck_result {
                     report_type_errors(type_errors);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "lower-trait-objects",
+            label: "Lowering trait objects...",
+            run: |driver| {
+                if lower_trait_objects(driver.program) {
+                    // Trait-object dispatch introduces closure-valued constructors
+                    // and matches after the ordinary normalization pass.
+                    Siko.Normalizer.normalize(driver.program);
                 }
             },
             dump: Some(|driver| println(driver.program.format())),

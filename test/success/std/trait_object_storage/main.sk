@@ -1,0 +1,62 @@
+module Main {
+
+trait Label[L] {
+    fn label(value: L) -> String
+}
+
+enum Source {
+    StructField
+    EnumItem
+    LambdaCapture
+    CoroutineYield
+}
+
+instance Label[Source] {
+    fn label(value: Source) -> String {
+        match value {
+            StructField => "struct field",
+            EnumItem => "enum item",
+            LambdaCapture => "lambda capture",
+            CoroutineYield => "coroutine yield",
+        }
+    }
+}
+
+struct Holder {
+    object: Label,
+}
+
+enum Container {
+    Wrapped(Label)
+}
+
+fn use_struct(holder: Holder) {
+    println(holder.object.label());
+}
+
+fn use_enum(container: Container) {
+    match container {
+        Wrapped(object) => println(object.label())
+    }
+}
+
+fn use_lambda(object: Label) {
+    let get_label = || object.label();
+    println(get_label());
+}
+
+fn objects() co(Label) -> () {
+    yield Label(CoroutineYield);
+    ()
+}
+
+fn main() {
+    use_struct(Holder(object: Label(StructField)));
+    use_enum(Wrapped(Label(EnumItem)));
+    use_lambda(Label(LambdaCapture));
+    for object in co objects() {
+        println(object.label());
+    }
+}
+
+}

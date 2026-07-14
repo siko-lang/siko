@@ -6,6 +6,7 @@ import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Import
 import Siko.Resolver.TypeResolver
+import Siko.Resolver.TraitObjectCheck
 import Siko.Resolver.Autoderive.PartialEq
 import Siko.Resolver.Autoderive.Eq
 import Siko.Resolver.Autoderive.PartialOrd
@@ -143,6 +144,7 @@ pub struct Resolver {
     pub fn resolve(resolver: Resolver, modules: Vec[M.Module], pkg_reachability: Map[String, Set[String]]) -> Result[Program, ResolveError] {
         //println("Resolving...");
         add_preludes(modules);
+        check_trait_objects(modules);
 
         let module_visibility = resolver.build_module_visibility(modules, pkg_reachability);
         let groups = create_module_groups(modules)?;
@@ -296,7 +298,7 @@ pub struct Resolver {
         let all_items = [local_items, import_items, implicit_items];
         for item_list in all_items {
             for item in item_list {
-                if let ModuleItemKind.Trait(_, _, _) = item.kind {
+                if let ModuleItemKind.Trait(_, _, _, _) = item.kind {
                     if let Some(def) = item.import_def { def.used = True; }
                     let traits = resolver
                         .module_traits_map
@@ -1379,8 +1381,6 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
-
 
 
 

@@ -21,7 +21,7 @@ pub enum ModuleItemKind {
     Enum(enum_name: Identifier, type_arg_count: Int),
     Variant(enum_name: Identifier, variant_name: Identifier, item_count: Int),
     Function(name: Identifier, kind: FunctionKind, def_kind: FunctionDefKind),
-    Trait(trait_name: Identifier, type_arg_count: Int, associated_types: Vec[I.String]),
+    Trait(trait_name: Identifier, type_arg_count: Int, associated_types: Vec[I.String], object_safe: Bool),
     Instance(instance_name: Identifier),
     Effect(effect_name: Identifier, associated_types: Vec[I.String]),
     EffectAssociatedType(name: Identifier),
@@ -39,7 +39,7 @@ pub enum ModuleItemKind {
 
     pub fn is_trait(kind: ModuleItemKind) -> Bool {
         match kind {
-            ModuleItemKind.Trait(_, _, _) => True,
+            ModuleItemKind.Trait(_, _, _, _) => True,
             _ => False,
         }
     }
@@ -54,7 +54,7 @@ pub enum ModuleItemKind {
     pub fn get_type_arg_count(kind: ModuleItemKind) -> Int {
         match kind {
             ModuleItemKind.Struct(_, c, _) | ModuleItemKind.Enum(_, c) => c,
-            ModuleItemKind.Trait(_, c, _) => c,
+            ModuleItemKind.Trait(_, c, _, _) => c,
             _ => 0,
         }
     }
@@ -102,7 +102,7 @@ instance ToString[ModuleItemKind] {
             ModuleItemKind.Enum(_, _) => "enum",
             ModuleItemKind.Variant(_, _, _) => "variant",
             ModuleItemKind.Function(_, _, _) => "function",
-            ModuleItemKind.Trait(_, _, _) => "trait",
+            ModuleItemKind.Trait(_, _, _, _) => "trait",
             ModuleItemKind.Instance(_) => "instance",
             ModuleItemKind.Effect(_, _) => "effect",
             ModuleItemKind.EffectAssociatedType(_) => "effect associated type",

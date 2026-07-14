@@ -1,0 +1,52 @@
+module Main {
+
+trait Error[E] {
+    fn message(e: E) -> String
+    fn code(e: E) -> Int
+}
+
+enum Errno { NotFound }
+enum TlsError { Handshake }
+
+instance Error[Errno] {
+    fn message(e: Errno) -> String { "not found" }
+    fn code(e: Errno) -> Int { 2 }
+}
+
+instance Error[TlsError] {
+    fn message(e: TlsError) -> String { "TLS handshake failed" }
+    fn code(e: TlsError) -> Int { 35 }
+}
+
+fn erase(e: Errno) -> Error {
+    Error(e)
+}
+
+fn erase_generic[E: Error[E]](e: E) -> Error {
+    Error(e)
+}
+
+fn describe_method(e: Error) -> String {
+    e.message()
+}
+
+fn describe_function(e: Error) -> String {
+    message(e)
+}
+
+fn describe_code(e: Error) -> Int {
+    e.code()
+}
+
+fn main() {
+    let errno = erase(NotFound);
+    let tls = erase_generic(Handshake);
+    println(describe_method(errno));
+    println(describe_function(errno));
+    println(describe_code(errno));
+    println(describe_method(tls));
+    println(describe_function(tls));
+    println(describe_code(tls));
+}
+
+}

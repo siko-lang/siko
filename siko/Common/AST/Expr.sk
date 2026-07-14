@@ -220,6 +220,13 @@ pub enum ExprKind {
     Deref(Expr),
     AddrOf(Expr),
     TypeAssociatedCall(TypeAssociatedCallInfo),
+    // Explicitly erase one concrete value behind an object-safe trait.
+    // This node exists only through typechecking and is lowered immediately
+    // afterwards to the generated object's single enum variant.
+    TraitObjectPack(QualifiedName, Expr, WitnessInfo),
+    // A finalized call whose receiver is a trait object. FunctionCallInfo.args
+    // contains the receiver followed by the exposed method arguments.
+    TraitObjectCall(QualifiedName, FunctionCallInfo),
     Yield(YieldInfo),
     EnumTag(Expr),
     Switch(Expr, Vec[Expr]),

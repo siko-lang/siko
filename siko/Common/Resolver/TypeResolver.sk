@@ -1,6 +1,7 @@
 module Siko.Resolver.TypeResolver {
 
 import Siko.Resolver.ModuleResolver
+import Siko.Resolver.ModuleItem
 import Siko.Resolver.Error
 import Siko.AST.Identifier
 import Siko.AST.Name
@@ -52,6 +53,13 @@ pub struct TypeResolver {
             return Ok(TypeDef.Var(TypeVar.Named(name.name())));
         }
         let item = tr.module_resolver.resolve_type_name(name)?;
+        if let ModuleItemKind.Trait(_, _, _, object_safe) = item.kind {
+            if object_safe && resolved_args.is_empty() {
+                let name = Name.Resolved(name: item.qualified_name, location: name.location);
+                return Ok(TypeDef.Named(NamedInfo(name, Vec.new())));
+            }
+            return Err(ResolveError.TraitNotObjectSafe(name));
+        }
         if item.kind.is_type() {
             let type_arg_count = item.kind.get_type_arg_count();
             if type_arg_count != resolved_args.len() {

@@ -284,6 +284,26 @@ pub struct Collector {
                 ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co))
             }
 
+            ExprKind.TraitObjectPack(trait_name, value, witnesses) => {
+                let (value_ty, new_value) = c.collect_expr(value, env);
+                let object_ty = TypeDef.Named(NamedInfo(Name.inner(trait_name), Vec.new()));
+                c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: object_ty), loc);
+                let result_var = match ty {
+                    TypeDef.Var(TypeVar.Var(n)) => n,
+                    _ => panic("collector: trait-object pack result is not a fresh var"),
+                };
+                c.emit(C.ConstraintKind.HasInstance(
+                    trait_name: trait_name.name(),
+                    args: [value_ty],
+                    assoc_constraints: Vec.new(),
+                    witness_key: Some(C.WitnessKey.Call(result_var, 0)),
+                ), loc);
+                ExprKind.TraitObjectPack(trait_name, new_value, witnesses)
+            }
+
+            ExprKind.TraitObjectCall(_, _) =>
+                panic("collector: TraitObjectCall before typecheck finalization"),
+
             ExprKind.Match(MatchInfo(scrutinee, arms)) => {
                 let (scrutinee_ty, new_scrutinee) = c.collect_expr(scrutinee, env);
                 c.emit(C.ConstraintKind.Unify(lhs: ty, rhs: unit()), loc);

@@ -1,0 +1,117 @@
+module Siko.Resolver.TraitObjectCheck {
+
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Module as M
+import Siko.AST.Name
+import Siko.AST.Traits
+import Siko.AST.Type
+import Siko.Interner as I
+
+fn is_type_param(ty: TypeDef, param: I.String) -> Bool {
+    match ty {
+        TypeDef.Named(NamedInfo(Name.Unresolved(id), args)) =>
+            id.name() == param && args.is_empty(),
+        TypeDef.Paren(inner) => is_type_param(inner, param),
+        _ => False,
+    }
+}
+
+trait CollectTypeParams[T] {
+    fn collect_type_params(t: T, out: Vec[I.String])
+}
+
+instance CollectTypeParams[TypeDef] = auto(Fold)
+instance CollectTypeParams[Bool] = auto(Fold, =)
+instance CollectTypeParams[Int] = auto(Fold, =)
+
+instance[T: CollectTypeParams[T]] CollectTypeParams[Vec[T]] {
+    fn collect_type_params(items: Vec[T], out: Vec[I.String]) {
+        for item in items {
+            item.collect_type_params(out);
+        }
+    }
+}
+
+instance[T: CollectTypeParams[T]] CollectTypeParams[Option[T]] {
+    fn collect_type_params(item: Option[T], out: Vec[I.String]) {
+        if let Some(value) = item {
+            value.collect_type_params(out);
+        }
+    }
+}
+
+instance CollectTypeParams[ClosureInfo] = auto(Fold)
+instance CollectTypeParams[CoroutineInfo] = auto(Fold)
+instance CollectTypeParams[NamedInfo] = auto(Fold)
+
+instance CollectTypeParams[Name] {
+    fn collect_type_params(name: Name, out: Vec[I.String]) {
+        if let Name.Unresolved(id) = name {
+            out.push(id.name());
+        }
+    }
+}
+
+instance CollectTypeParams[TypeVar] {
+    fn collect_type_params(type_var: TypeVar, out: Vec[I.String]) {
+        if let TypeVar.Named(name) = type_var {
+            out.push(name);
+        }
+    }
+}
+
+fn contains_type_param(ty: TypeDef, param: I.String) -> Bool {
+    let params = Vec.new();
+    ty.collect_type_params(params);
+    params.contains(param)
+}
+
+fn is_object_safe_trait(
+    type_args: Vec[Identifier],
+    associated_types: Vec[AssociatedType],
+    header: Option[TypeArgDefs],
+    methods: Vec[FunctionDef],
+) -> Bool {
+    if type_args.len() != 1 || !associated_types.is_empty() || header.is_some() {
+        return False;
+    }
+    let erased = type_args[0].name();
+    for method in methods {
+        if method.type_arg_defs.is_some() || method.yield_type.is_some() || method.args.is_empty() {
+            return False;
+        }
+        if !is_type_param(method.args[0].type_def, erased) {
+            return False;
+        }
+        for arg in method.args.iter().skip(1) {
+            if contains_type_param(arg.type_def, erased) {
+                return False;
+            }
+        }
+        if let Some(result) = method.result_type {
+            if contains_type_param(result, erased) {
+                return False;
+            }
+        }
+    }
+    True
+}
+
+pub fn check_trait_objects(modules: Vec[M.Module]) {
+    for m in modules {
+        for item in m.items {
+            if let M.ModuleItem.Trait(def) = item {
+                def.object_safe = is_object_safe_trait(
+                    def.type_args,
+                    def.associated_types,
+                    def.type_arg_defs,
+                    def.methods,
+                );
+            }
+        }
+    }
+}
+
+}

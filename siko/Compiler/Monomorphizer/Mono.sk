@@ -351,15 +351,27 @@ fn fixup_variant_enum_map(program: Program) {
 pub fn get_mono_variant_qn(enum_qn: QualifiedName, variant_qn: QualifiedName) -> QualifiedName {
     match enum_qn {
         QualifiedName.Mono(m) => {
-            let (module_name, enum_name) = match m.name.base() {
-                BaseName.Enum(module_name, enum_name) => (module_name, enum_name),
+            let base = match m.name.base() {
+                BaseName.Enum(module_name, enum_name) => {
+                    let variant_base = match variant_qn.base() {
+                        BaseName.Variant(_, _, variant_base) => variant_base,
+                        _ => panic("variant qname is not variant!"),
+                    };
+                    BaseName.Variant(module_name, enum_name, variant_base)
+                }
+                BaseName.TraitObject(parent_name) => {
+                    match variant_qn.base() {
+                        BaseName.TraitObjectVariant(variant_parent) => {
+                            if parent_name != variant_parent {
+                                panic("trait object variant parent mismatch");
+                            }
+                        }
+                        _ => panic("trait object variant qname is not a trait object variant!"),
+                    }
+                    BaseName.TraitObjectVariant(parent_name)
+                }
                 _ => panic("enum qname is not enum!"),
             };
-            let variant_base = match variant_qn.base() {
-                BaseName.Variant(_, _, variant_base) => variant_base,
-                _ => panic("variant qname is not variant!"),
-            };
-            let base = BaseName.Variant(module_name, enum_name, variant_base);
             let m = m.clone();
             // FIXME: maybe we should rebuild the mono qn by copying the args and then we dont have to rehash?
             m.name = BaseNameInfo.new(base);

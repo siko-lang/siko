@@ -139,6 +139,14 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
                     }
                 }
                 None => {
+                    if let Some(trait_def) = program.traits.get(type_qname) {
+                        if trait_def.object_safe {
+                            match trait_def.method_map.names.get(method) {
+                                Some(mq) => return Ok(mq),
+                                None => return Err(TypeError.MethodNotFound(type_qname.name(), method, location)),
+                            }
+                        }
+                    }
                     if let Some(assoc_def) = program.effect_associated_types.get(type_qname) {
                         let effect_def = program.effects.get(assoc_def.effect_name).unwrap();
                         match effect_def.method_map.names.get(method) {
@@ -158,6 +166,84 @@ fn resolve_method(type_qname: QualifiedName, method: I.String, caller_module: I.
         }
     }
     Err(TypeError.MethodNotFound(type_qname.name(), method, location))
+}
+
+fn object_trait_for_method(program: Program, method_qname: QualifiedName) -> Option[QualifiedName] {
+    for (trait_qname, trait_def) in program.traits {
+        if trait_def.object_safe && trait_def.method_map.names.values().any(|q| q == method_qname) {
+            return Some(trait_qname);
+        }
+    }
+    None
+}
+
+fn is_object_receiver(ty: TypeDef, trait_qname: QualifiedName) -> Bool {
+    match ty {
+        TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), args)) =>
+            qname == trait_qname && args.is_empty(),
+        TypeDef.Paren(inner) => is_object_receiver(inner, trait_qname),
+        _ => False,
+    }
+}
+
+fn process_trait_object_call(
+    qname: QualifiedName,
+    kind: FunctionKind,
+    args: Vec[TypeDef],
+    result: TypeDef,
+    is_co: Bool,
+    trait_qname: QualifiedName,
+    ctx: SolverContext,
+    location: Location,
+) -> ProcessResult {
+    let func = ctx.program.functions.get(qname).unwrap();
+    if is_co || func.yield_type.is_some() {
+        return ProcessResult.Failed(TypeError.InvalidReceiverType(
+            TypeDef.Named(NamedInfo(Name.inner(trait_qname), Vec.new())),
+            location,
+        ));
+    }
+    if args.len() > func.args.len() {
+        return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), func.args.len(), args.len(), location));
+    } else if args.len() < func.args.len() {
+        let all_covered = (args.len() .. func.args.len()).iter().all(|i| func.default_value_names.iter().any(|dv| dv.index == i));
+        if !all_covered {
+            return ProcessResult.Failed(TypeError.ArgCountMismatch(qname.name(), func.args.len(), args.len(), location));
+        }
+    }
+
+    let spawn: Vec[(C.ConstraintKind, Location)] = Vec.new();
+    // The receiver has already selected this special path. Only the exposed
+    // parameters participate in ordinary unification; the erased E never does.
+    let i = 1;
+    while i < args.len() {
+        spawn.push((C.ConstraintKind.Unify(lhs: args[i], rhs: func.args[i].type_def), location));
+        i += 1;
+    }
+    for i in args.len() .. func.args.len() {
+        let dv = func.default_value_names.iter().find(|dv| dv.index == i).unwrap();
+        let fresh = ctx.allocator.allocate();
+        spawn.push((C.ConstraintKind.CallFunction(
+            qname: dv.name,
+            kind: FunctionKind.UserDefined,
+            args: Vec.new(),
+            result: fresh,
+            is_coroutine_create: False,
+        ), location));
+        spawn.push((C.ConstraintKind.Unify(lhs: fresh, rhs: func.args[i].type_def), location));
+    }
+    let ret_ty = func.result_type.unwrap_or(TypeDef.Tuple(Vec.new()));
+    spawn.push((C.ConstraintKind.Unify(lhs: result, rhs: ret_ty), location));
+    let result_var = match result {
+        TypeDef.Var(TypeVar.Var(n)) => n,
+        _ => panic("solver: trait-object call result is not a fresh var"),
+    };
+    satisfied(
+        Vec.new(),
+        spawn,
+        Some(CallResolution(result_var, qname, kind, Some(trait_qname))),
+        None,
+    )
 }
 
 fn resolve_trait_method(method: I.String, receiver_name: I.String, module_name: I.String, program: Program, location: Location) -> Result[QualifiedName, TypeError] {
@@ -366,12 +452,20 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                     result: result,
                     is_coroutine_create: False,
                 ), location)],
-                Some(CallResolution(result_var, method_qname, kind)),
+                Some(CallResolution(result_var, method_qname, kind, None)),
                 None
             )
         }
 
         C.ConstraintKind.CallFunction(qname, kind, args, result, is_co) => {
+            if let Some(trait_qname) = object_trait_for_method(ctx.program, qname) {
+                if !args.is_empty() {
+                    let receiver = ctx.sub.apply(args[0]);
+                    if is_object_receiver(receiver, trait_qname) {
+                        return process_trait_object_call(qname, kind, args, result, is_co, trait_qname, ctx, location);
+                    }
+                }
+            }
             match kind {
                 FunctionKind.UserDefined | FunctionKind.Extern(_) | FunctionKind.Builtin => {
                     let func = ctx.program.functions.get(qname).unwrap();
@@ -820,7 +914,7 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 None => if func.is_extern() { FunctionKind.Extern(None) } else { if func.is_builtin() { FunctionKind.Builtin } else { FunctionKind.UserDefined } },
             };
 
-            satisfied(Vec.new(), spawn, Some(CallResolution(call_result_var, qname, kind)), None)
+            satisfied(Vec.new(), spawn, Some(CallResolution(call_result_var, qname, kind, None)), None)
         }
 
         C.ConstraintKind.ResolveImplicit(qname, result) => {
