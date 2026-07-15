@@ -4,6 +4,7 @@ const vscode = require('vscode');
 const cp = require('child_process');
 const http = require('http');
 const net = require('net');
+const path = require('path');
 
 function pickPort() {
     return new Promise((resolve, reject) => {
@@ -55,8 +56,9 @@ function waitForServer(port, child) {
     const deadline = Date.now() + 5000;
     return new Promise((resolve, reject) => {
         function attempt() {
-            if (child.exitCode !== null) {
-                reject(new Error(`siko lsp exited before HTTP startup (code: ${child.exitCode})`));
+            if (child.exitCode !== null || child.signalCode !== null) {
+                const reason = child.exitCode !== null ? `code: ${child.exitCode}` : `signal: ${child.signalCode}`;
+                reject(new Error(`siko lsp exited before HTTP startup (${reason})`));
                 return;
             }
             const req = http.request({ host: '127.0.0.1', port, path: '/health', method: 'GET' }, (res) => {
@@ -87,50 +89,174 @@ async function activate(context) {
     if (!folder) {
         return;
     }
-    const root = folder.uri.fsPath;
+    const workspaceRoot = folder.uri.fsPath;
     const output = vscode.window.createOutputChannel('Siko');
     const collection = vscode.languages.createDiagnosticCollection('siko');
     context.subscriptions.push(output, collection);
+    output.appendLine('activating Siko extension');
 
-    const command = vscode.workspace.getConfiguration('siko').get('lspCommand');
-    const port = await pickPort();
-    const env = Object.assign({}, process.env);
-    if (!env.SIKO_ROOT) {
-        env.SIKO_ROOT = root;
+    const configuration = vscode.workspace.getConfiguration('siko', folder.uri);
+    const configuredCommand = configuration.get('lspCommand');
+    const command = Array.isArray(configuredCommand) && configuredCommand.length > 0
+        ? configuredCommand
+        : ['./siko-lsp.bin'];
+    const resolvedCommand = command.slice();
+    if (!path.isAbsolute(resolvedCommand[0]) &&
+        (resolvedCommand[0].startsWith('.') || resolvedCommand[0].includes(path.sep))) {
+        resolvedCommand[0] = path.resolve(workspaceRoot, resolvedCommand[0]);
     }
+    const configuredProjectPath = configuration.get('projectPath', '');
+    const root = configuredProjectPath ? path.resolve(workspaceRoot, configuredProjectPath) : workspaceRoot;
+    output.appendLine(`workspace root: ${workspaceRoot}`);
+    output.appendLine(`project root: ${root}${configuredProjectPath ? ' (configured)' : ' (workspace default)'}`);
+    output.appendLine(`lsp command: ${resolvedCommand.join(' ')}`);
+    output.appendLine('allocating local HTTP port');
+    const port = await pickPort();
+    output.appendLine(`allocated local HTTP port: ${port}`);
+    const env = Object.assign({}, process.env);
     if (!env.SIKO_TARGET_OS) {
         env.SIKO_TARGET_OS = process.platform === 'darwin' ? 'macos' : 'linux';
     }
     env.SIKO_LSP_PORT = String(port);
 
-    output.appendLine(`starting: ${command.join(' ')} (cwd: ${root}, port: ${port})`);
-    const server = cp.spawn(command[0], command.slice(1), { cwd: root, env });
-    server.on('error', (err) => output.appendLine(`failed to start siko lsp: ${err.message}`));
-    server.on('exit', (code, signal) => output.appendLine(`siko lsp exited (code: ${code}, signal: ${signal})`));
-    server.stdout.on('data', (data) => output.append(data.toString()));
-    server.stderr.on('data', (data) => output.append(data.toString()));
-
     let nextId = 1;
-    const ready = waitForServer(port, server);
     let latestDiagnosticsRun = 0;
+    let server = null;
+    let healthy = false;
+    let disposed = false;
+    let restartAttempt = 0;
+    let restartTimer = null;
+    let stableTimer = null;
+    let readyWaiters = [];
+
+    function settleReadyWaiters(error) {
+        const waiters = readyWaiters;
+        readyWaiters = [];
+        waiters.forEach(({ resolve, reject }) => error ? reject(error) : resolve());
+    }
+
+    function waitUntilReady() {
+        if (disposed) {
+            return Promise.reject(new Error('siko lsp is shutting down'));
+        }
+        if (healthy) {
+            return Promise.resolve();
+        }
+        return new Promise((resolve, reject) => readyWaiters.push({ resolve, reject }));
+    }
+
+    function applyMessages(messages, diagnosticsRun) {
+        if (diagnosticsRun && diagnosticsRun !== latestDiagnosticsRun) {
+            return;
+        }
+        if (diagnosticsRun) {
+            collection.clear();
+        }
+        messages.forEach(handle);
+    }
+
+    async function initializeServer(child) {
+        output.appendLine('waiting for siko lsp HTTP health check');
+        await waitForServer(port, child);
+        if (disposed || server !== child) {
+            return;
+        }
+
+        output.appendLine('siko lsp health check passed; sending initialize');
+        const initializeMessages = await postJson(port, '/rpc', {
+            id: nextId++,
+            method: 'initialize',
+            params: {
+                processId: process.pid,
+                rootUri: vscode.Uri.file(root).toString(),
+                capabilities: {},
+            },
+        });
+        if (disposed || server !== child) {
+            return;
+        }
+        initializeMessages.forEach(handle);
+
+        output.appendLine('initialize completed; requesting initial project check');
+        const diagnosticsRun = ++latestDiagnosticsRun;
+        const initializedMessages = await postJson(port, '/rpc', { method: 'initialized', params: {} });
+        if (disposed || server !== child) {
+            return;
+        }
+        applyMessages(initializedMessages, diagnosticsRun);
+        healthy = true;
+        settleReadyWaiters();
+        output.appendLine('siko lsp ready');
+
+        // A server that stays up is no longer part of the previous crash streak.
+        stableTimer = setTimeout(() => {
+            restartAttempt = 0;
+            stableTimer = null;
+        }, 30000);
+    }
+
+    function scheduleRestart() {
+        if (disposed || restartTimer !== null) {
+            return;
+        }
+        const delay = Math.min(250 * Math.pow(2, restartAttempt), 10000);
+        restartAttempt += 1;
+        output.appendLine(`restarting siko lsp in ${delay}ms (attempt ${restartAttempt})`);
+        restartTimer = setTimeout(() => {
+            restartTimer = null;
+            startServer();
+        }, delay);
+    }
+
+    function startServer() {
+        if (disposed) {
+            return;
+        }
+
+        healthy = false;
+        output.appendLine(`starting: ${resolvedCommand.join(' ')} (cwd: ${root}, port: ${port})`);
+        const child = cp.spawn(resolvedCommand[0], resolvedCommand.slice(1), { cwd: root, env });
+        server = child;
+        child.on('error', (err) => output.appendLine(`failed to start siko lsp: ${err.message}`));
+        child.on('close', (code, signal) => {
+            output.appendLine(`siko lsp exited (code: ${code}, signal: ${signal})`);
+            if (server !== child) {
+                return;
+            }
+            server = null;
+            healthy = false;
+            if (stableTimer !== null) {
+                clearTimeout(stableTimer);
+                stableTimer = null;
+            }
+            scheduleRestart();
+        });
+        child.stdout.on('data', (data) => output.append(data.toString()));
+        child.stderr.on('data', (data) => output.append(data.toString()));
+        output.appendLine('siko lsp process spawned; stdout and stderr are attached');
+
+        initializeServer(child).catch((err) => {
+            if (disposed || server !== child) {
+                return;
+            }
+            output.appendLine(`siko lsp startup failed: ${err.message}`);
+            if (child.exitCode === null && child.signalCode === null) {
+                child.kill();
+            }
+        });
+    }
+
     function send(message, options) {
         const diagnosticsRun = options && options.clearDiagnostics ? ++latestDiagnosticsRun : 0;
-        return ready.then(() => postJson(port, '/rpc', message))
+        return waitUntilReady().then(() => postJson(port, '/rpc', message))
             .then((messages) => {
-                if (diagnosticsRun && diagnosticsRun !== latestDiagnosticsRun) {
-                    return;
-                }
-                if (diagnosticsRun) {
-                    collection.clear();
-                }
-                messages.forEach(handle);
+                applyMessages(messages, diagnosticsRun);
             })
             .catch((err) => {
-                output.appendLine(`siko lsp request failed: ${err.message}`);
+                if (!disposed) {
+                    output.appendLine(`siko lsp request failed: ${err.message}`);
+                }
             });
-    }
-    function request(method, params) {
-        send({ id: nextId++, method, params });
     }
     function notify(method, params, options) {
         send({ method, params }, options);
@@ -161,24 +287,36 @@ async function activate(context) {
         }
     }
 
-    request('initialize', {
-        processId: process.pid,
-        rootUri: vscode.Uri.file(root).toString(),
-        capabilities: {},
-    });
-    notify('initialized', {}, { clearDiagnostics: true });
+    startServer();
 
     context.subscriptions.push(vscode.workspace.onDidSaveTextDocument((document) => {
         if (document.languageId === 'siko') {
+            output.appendLine(`saved Siko document: ${document.uri.toString()}; requesting project check`);
             notify('textDocument/didSave', { textDocument: { uri: document.uri.toString() } }, { clearDiagnostics: true });
         }
     }));
 
     context.subscriptions.push({
         dispose() {
+            output.appendLine('stopping siko lsp');
+            disposed = true;
+            healthy = false;
+            settleReadyWaiters(new Error('siko lsp is shutting down'));
+            if (restartTimer !== null) {
+                clearTimeout(restartTimer);
+                restartTimer = null;
+            }
+            if (stableTimer !== null) {
+                clearTimeout(stableTimer);
+                stableTimer = null;
+            }
+            const child = server;
+            server = null;
             try {
                 postJson(port, '/rpc', { method: 'exit' }).catch(() => {});
-                server.kill();
+                if (child !== null) {
+                    child.kill();
+                }
             } catch (err) {
                 // the server is already gone
             }
