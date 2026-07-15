@@ -280,29 +280,29 @@ pub struct Lexer {
             match l.peek() {
                 Some(b) if b == 'x' || b == 'X' => {
                     l.advance();
-                    while match l.peek() { Some(b) => is_hex_digit(b), None => False } {
+                    while match l.peek() { Some(b) => is_hex_digit(b) || b == '_', None => False } {
                         l.advance();
                     }
-                    let s = collect_bytes(l.input, rel + 2, l.pos);
+                    let s = collect_bytes_without_underscores(l.input, rel + 2, l.pos);
                     let value = s.parse_int(16).unwrap();
                     return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
                 },
                 Some(b) if b == 'o' || b == 'O' => {
                     l.advance();
-                    while match l.peek() { Some(b) => b >= '0' && b <= '7', None => False } {
+                    while match l.peek() { Some(b) => (b >= '0' && b <= '7') || b == '_', None => False } {
                         l.advance();
                     }
-                    let s = collect_bytes(l.input, rel + 2, l.pos);
+                    let s = collect_bytes_without_underscores(l.input, rel + 2, l.pos);
                     let value = s.parse_int(8).unwrap();
                     return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
                 },
                 _ => {},
             }
         }
-        while match l.peek() { Some(b) => is_digit(b), None => False } {
+        while match l.peek() { Some(b) => is_digit(b) || b == '_', None => False } {
             l.advance();
         }
-        let s = collect_bytes(l.input, start - l.base_pos, l.pos);
+        let s = collect_bytes_without_underscores(l.input, start - l.base_pos, l.pos);
         Token(IntLiteral(I.intern(s)), start, l.absolute_pos())
     }
 
@@ -439,6 +439,17 @@ fn is_upper(b: U8) -> Bool {
 
 fn collect_bytes(input: Vec[U8], from: Int, to: Int) -> String {
     String.from_slice(input.sub_slice(from, to))
+}
+
+fn collect_bytes_without_underscores(input: Vec[U8], from: Int, to: Int) -> String {
+    let bytes: Vec[U8] = Vec.new(to - from);
+    for i in from..to {
+        let b = input[i];
+        if b != '_' {
+            bytes.push(b);
+        }
+    }
+    String.from_slice(bytes.slice())
 }
 
 fn keyword_or_ident(s: String) -> TokenKind {
