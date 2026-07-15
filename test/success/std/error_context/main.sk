@@ -1,0 +1,47 @@
+module Main {
+
+@derive(PartialEq, Eq)
+enum Errno {
+    CONNREFUSED,
+    TIMEDOUT
+}
+
+instance Error[Errno] {
+    fn message(error: Errno) -> String {
+        match error {
+            Errno.CONNREFUSED => "connection refused",
+            Errno.TIMEDOUT => "connection timed out"
+        }
+    }
+}
+
+fn open_connection() -> Result[String, Errno] {
+    Err(Errno.CONNREFUSED)
+}
+
+fn connect_database() -> Result[String, Error] {
+    open_connection().context("connecting to database")
+}
+
+fn start_application() -> Result[String, Error] {
+    connect_database().context("starting application")
+}
+
+fn main() {
+    match start_application() {
+        Ok(_) => println("connected"),
+        Err(error) => {
+            println(format_error(error));
+
+            if is_error(error, Errno.CONNREFUSED) {
+                println("connection refused found");
+            }
+
+            if !is_error(error, Errno.TIMEDOUT) {
+                println("timeout not found");
+            }
+        }
+    }
+}
+
+}

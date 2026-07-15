@@ -1,0 +1,39 @@
+module Main {
+
+trait Node[N] {
+    fn label(node: N) -> String
+
+    fn source(node: N) -> Option[Node] {
+        None
+    }
+}
+
+struct First {}
+
+instance Node[First] {
+    fn label(node: First) -> String {
+        "first"
+    }
+}
+
+struct Second {}
+
+instance Node[Second] {
+    fn label(node: Second) -> String {
+        "second"
+    }
+
+    fn source(node: Second) -> Option[Node] {
+        Some(Node(First()))
+    }
+}
+
+fn main() {
+    let second: Node = Node(Second());
+    println(second.label());
+    if let Some(source) = second.source() {
+        println(source.label());
+    }
+}
+
+}

@@ -1,8 +1,118 @@
 @prelude
 module Std.Error {
 
+pub struct ErrorChain {
+    next: Option[Error]
+}
+
 pub trait Error[E] {
     fn message(error: E) -> String
+
+    fn source(error: E) -> Option[Error] {
+        None
+    }
+}
+
+
+pub fn error_chain(error: Error) -> ErrorChain {
+    ErrorChain(Some(error))
+}
+
+instance Iterator[ErrorChain] {
+    type Item = Error
+
+    fn next(chain: ErrorChain) -> Option[Error] {
+        match chain.next {
+            Some(error) => {
+                chain.next = error.source();
+                Some(error)
+            }
+            None => None
+        }
+    }
+}
+
+instance[E: Error[E]] Into[E, Error] {
+    fn into(error: E) -> Error {
+        Error(error)
+    }
+}
+
+pub trait IntoError[E] {
+    fn into_error(error: E) -> Error
+}
+
+instance[E: Error[E]] IntoError[E] {
+    fn into_error(error: E) -> Error {
+        Error(error)
+    }
+}
+
+instance IntoError[Error] {
+    fn into_error(error: Error) -> Error {
+        error
+    }
+}
+
+pub struct ContextError {
+    description: String,
+    cause: Error
+}
+
+instance Error[ContextError] {
+    fn message(error: ContextError) -> String {
+        error.description
+    }
+
+    fn source(error: ContextError) -> Option[Error] {
+        Some(error.cause)
+    }
+}
+
+pub fn with_context[E: IntoError[E]](error: E, description: String) -> Error {
+    Error(ContextError(description, error.into_error()))
+}
+
+pub trait ResultErrorContext[R] {
+    type Value
+
+    fn context(result: R, description: String) -> Result[Value, Error]
+}
+
+instance[T, E: IntoError[E]] ResultErrorContext[Result[T, E]] {
+    type Value = T
+
+    fn context(result: Result[T, E], description: String) -> Result[T, Error] {
+        match result {
+            Ok(value) => Ok(value),
+            Err(error) => Err(with_context(error, description))
+        }
+    }
+}
+
+pub fn is_error[E: Error[E], PartialEq[E]](error: Error, expected: E) -> Bool {
+    for cause in error_chain(error) {
+        if cause is E {
+            if cause == expected {
+                return True;
+            }
+        }
+    }
+    False
+}
+
+pub fn format_error(error: Error) -> String {
+    let output = "";
+    let first = True;
+    for cause in error_chain(error) {
+        if first {
+            output = cause.message();
+            first = False;
+        } else {
+            output = output + "\ncaused by: " + cause.message();
+        }
+    }
+    output
 }
 
 }

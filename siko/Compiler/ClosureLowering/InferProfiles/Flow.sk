@@ -449,7 +449,7 @@ instance Flow[E.Expr] {
             }
             E.ExprKind.FieldAccess(recv, fname) => {
                 flow(recv, ctx);
-                field_access_edges(ctx, recv, fname.name, out);
+                field_access_edges(ctx, recv, fname.name, ctx.nodes(evars(expr)));
             }
             E.ExprKind.TupleIndex(recv, idx) => {
                 flow(recv, ctx);
@@ -737,7 +737,7 @@ fn named_pattern_edges(ctx: FlowCtx, pat_ty: Option[TypeDef], info: NamedPattern
                         src_vars.extend(signature_ty_vars(targs[p]));
                     }
                 }
-                ctx.unify(ctx.nodes(src_vars), ctx.nodes(signature_opt_ty_vars(sub.ty)));
+                ctx.unify(ctx.nodes(src_vars), ctx.nodes(opt_ty_vars(sub.ty)));
             }
             _ => {}
         }
