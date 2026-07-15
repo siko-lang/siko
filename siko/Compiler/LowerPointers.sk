@@ -92,6 +92,7 @@ struct PointerLowerer {
     fn lower_expr(l: PointerLowerer, expr: Expr) -> Expr {
         let kind = match expr.kind {
             ExprKind.IntLiteral(_) |
+            ExprKind.FloatLiteral(_) |
             ExprKind.StringLiteral(_) |
             ExprKind.CharLiteral(_) |
             ExprKind.Var(_) |
@@ -162,6 +163,8 @@ pub fn lower_pointers(program: Program) {
     builtin_scalars.insert(B.get_u16_type_qn().as_mono());
     builtin_scalars.insert(B.get_u32_type_qn().as_mono());
     builtin_scalars.insert(B.get_u64_type_qn().as_mono());
+    builtin_scalars.insert(B.get_f32_type_qn().as_mono());
+    builtin_scalars.insert(B.get_f64_type_qn().as_mono());
     let l = PointerLowerer(program, builtin_scalars);
 
     let struct_keys: Vec[QualifiedName] = program.structs.keys().cloned().collect();

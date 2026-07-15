@@ -19,6 +19,7 @@ import Siko.Config
 enum BackendTypeKind {
     Void,
     Int(Int),
+    Float(Int),
     Ptr,
     Aggregate,
 }
@@ -56,6 +57,7 @@ struct FieldInfo {
 struct Lowerer {
     program: Program,
     builtin_int_bits: Map[QualifiedName, Int],
+    builtin_float_bits: Map[QualifiedName, Int],
     variable_names: Map[VariableName, String],
     mangled_names: Map[QualifiedName, String],
     string_symbols: Map[String, String],
@@ -73,9 +75,13 @@ struct Lowerer {
         builtin_int_bits.insert(B.get_u16_type_qn().as_mono(), 16);
         builtin_int_bits.insert(B.get_u32_type_qn().as_mono(), 32);
         builtin_int_bits.insert(B.get_u64_type_qn().as_mono(), 64);
+        let builtin_float_bits: Map[QualifiedName, Int] = Map.new();
+        builtin_float_bits.insert(B.get_f32_type_qn().as_mono(), 32);
+        builtin_float_bits.insert(B.get_f64_type_qn().as_mono(), 64);
         Lowerer(
             program,
             builtin_int_bits,
+            builtin_float_bits,
             Map.new(),
             Map.new(),
             Map.new(),
@@ -168,6 +174,13 @@ struct Lowerer {
                 qname == B.get_u32_type_qn().as_mono() ||
                 qname == B.get_u64_type_qn().as_mono()
             }
+            _ => False,
+        }
+    }
+
+    fn is_float_type(l: Lowerer, ty: TypeDef) -> Bool {
+        match ty {
+            TypeDef.Named(NamedInfo(name, _)) => l.builtin_float_bits.get(name.resolved()).is_some(),
             _ => False,
         }
     }
@@ -284,10 +297,19 @@ struct ModuleLowerer {
                 if let Some(bits) = ml.lowerer.builtin_int_bits.get(resolved) {
                     BackendType(ml.ctx.int_type(bits), BackendTypeKind.Int(bits))
                 } else {
-                    BackendType(
-                        ml.types.get(ml.lowerer.mangled_name(resolved)).unwrap(),
-                        BackendTypeKind.Aggregate,
-                    )
+                    if let Some(bits) = ml.lowerer.builtin_float_bits.get(resolved) {
+                        let handle = match bits {
+                            32 => ml.ctx.float_type(),
+                            64 => ml.ctx.double_type(),
+                            _ => panic("llvm: unsupported float width"),
+                        };
+                        BackendType(handle, BackendTypeKind.Float(bits))
+                    } else {
+                        BackendType(
+                            ml.types.get(ml.lowerer.mangled_name(resolved)).unwrap(),
+                            BackendTypeKind.Aggregate,
+                        )
+                    }
                 }
             }
             TypeDef.Array(elem, n) => {
@@ -304,7 +326,9 @@ struct ModuleLowerer {
         match ty {
             TypeDef.Named(NamedInfo(name, _)) => {
                 let resolved = name.resolved();
-                if ml.lowerer.builtin_int_bits.get(resolved).is_none() && !ml.lowerer.is_value_type(resolved) {
+                if ml.lowerer.builtin_int_bits.get(resolved).is_none() &&
+                   ml.lowerer.builtin_float_bits.get(resolved).is_none() &&
+                   !ml.lowerer.is_value_type(resolved) {
                     BackendType(ml.ctx.ptr_type(), BackendTypeKind.Ptr)
                 } else {
                     ml.lower_type(ty)
@@ -476,10 +500,41 @@ struct FunctionLowerer {
         }
     }
 
+    fn lower_fcmp(fl: FunctionLowerer, pred: LLVM.FloatPredicate, lhs: TypedValue, rhs: TypedValue, result_ty: BackendType) -> TypedValue {
+        let cmp = fl.builder.build_fcmp(pred, lhs.value, rhs.value);
+        match result_ty.kind {
+            BackendTypeKind.Int(1) => TypedValue(result_ty, cmp),
+            BackendTypeKind.Int(_) => TypedValue(
+                result_ty,
+                fl.builder.build_cast(LLVM.CastOp.ZExt, cmp, result_ty.handle),
+            ),
+            _ => panic("llvm: comparison result is not an integer"),
+        }
+    }
+
     fn lower_binary_op(fl: FunctionLowerer, op: BinaryOp, lhs: Expr, rhs: Expr, result_ty: BackendType) -> TypedValue {
         let unsigned = fl.ml.lowerer.is_unsigned_int_type(lhs.ty.unwrap());
+        let float = fl.ml.lowerer.is_float_type(lhs.ty.unwrap());
         let lhs_value = fl.lower_expr(lhs);
         let rhs_value = fl.lower_expr(rhs);
+        if float {
+            return match op {
+                BinaryOp.Add => fl.lower_binary_instr(LLVM.BinaryOp.FAdd, lhs_value, rhs_value),
+                BinaryOp.Sub => fl.lower_binary_instr(LLVM.BinaryOp.FSub, lhs_value, rhs_value),
+                BinaryOp.Mul => fl.lower_binary_instr(LLVM.BinaryOp.FMul, lhs_value, rhs_value),
+                BinaryOp.Div => fl.lower_binary_instr(LLVM.BinaryOp.FDiv, lhs_value, rhs_value),
+                BinaryOp.Mod => fl.lower_binary_instr(LLVM.BinaryOp.FRem, lhs_value, rhs_value),
+                BinaryOp.Eq => fl.lower_fcmp(LLVM.FloatPredicate.OEq, lhs_value, rhs_value, result_ty),
+                BinaryOp.NotEq => fl.lower_fcmp(LLVM.FloatPredicate.UNe, lhs_value, rhs_value, result_ty),
+                BinaryOp.Less => fl.lower_fcmp(LLVM.FloatPredicate.OLt, lhs_value, rhs_value, result_ty),
+                BinaryOp.Greater => fl.lower_fcmp(LLVM.FloatPredicate.OGt, lhs_value, rhs_value, result_ty),
+                BinaryOp.LessEq => fl.lower_fcmp(LLVM.FloatPredicate.OLe, lhs_value, rhs_value, result_ty),
+                BinaryOp.GreaterEq => fl.lower_fcmp(LLVM.FloatPredicate.OGe, lhs_value, rhs_value, result_ty),
+                BinaryOp.And | BinaryOp.Or | BinaryOp.BitAnd | BinaryOp.BitOr |
+                BinaryOp.Xor | BinaryOp.Shl | BinaryOp.Shr =>
+                    panic("llvm: integer-only binary operation on float"),
+            };
+        }
         match op {
             BinaryOp.Add => fl.lower_binary_instr(LLVM.BinaryOp.Add, lhs_value, rhs_value),
             BinaryOp.Sub => fl.lower_binary_instr(LLVM.BinaryOp.Sub, lhs_value, rhs_value),
@@ -502,6 +557,12 @@ struct FunctionLowerer {
 
     fn lower_unary_op(fl: FunctionLowerer, op: UnaryOp, operand: Expr) -> TypedValue {
         let value = fl.lower_expr(operand);
+        if let BackendTypeKind.Float(_) = value.ty.kind {
+            return match op {
+                UnaryOp.Neg => TypedValue(value.ty, fl.builder.build_fneg(value.value)),
+                UnaryOp.Not | UnaryOp.BNot => panic("llvm: integer-only unary operation on float"),
+            };
+        }
         let constant = match op {
             UnaryOp.Neg => value.ty.handle.const_int(0, False),
             UnaryOp.Not | UnaryOp.BNot => value.ty.handle.const_int_text("-1"),
@@ -600,12 +661,35 @@ struct FunctionLowerer {
                             TypedValue(dest_ty, fl.builder.build_cast(op, value.value, dest_ty.handle))
                         }
                     }
+                    BackendTypeKind.Float(dest_bits) => {
+                        if src_bits != dest_bits {
+                            panic("llvm: integer/float transmute width mismatch");
+                        }
+                        TypedValue(dest_ty, fl.builder.build_cast(LLVM.CastOp.BitCast, value.value, dest_ty.handle))
+                    }
                     _ => panic("llvm: unsupported integer transmute"),
+                }
+            }
+            BackendTypeKind.Float(src_bits) => {
+                match dest_ty.kind {
+                    BackendTypeKind.Float(dest_bits) => {
+                        if src_bits != dest_bits {
+                            panic("llvm: float transmute width mismatch");
+                        }
+                        TypedValue(dest_ty, value.value)
+                    }
+                    BackendTypeKind.Int(dest_bits) => {
+                        if src_bits != dest_bits {
+                            panic("llvm: float/integer transmute width mismatch");
+                        }
+                        TypedValue(dest_ty, fl.builder.build_cast(LLVM.CastOp.BitCast, value.value, dest_ty.handle))
+                    }
+                    _ => panic("llvm: unsupported float transmute"),
                 }
             }
             _ => {
                 match dest_ty.kind {
-                    BackendTypeKind.Ptr | BackendTypeKind.Int(_) => panic("llvm: unsupported aggregate transmute"),
+                    BackendTypeKind.Ptr | BackendTypeKind.Int(_) | BackendTypeKind.Float(_) => panic("llvm: unsupported aggregate transmute"),
                     _ => TypedValue(dest_ty, value.value),
                 }
             }
@@ -647,6 +731,7 @@ struct FunctionLowerer {
         let ty = fl.ml.lower_type(expr.ty.unwrap());
         match expr.kind {
             ExprKind.IntLiteral(v) => TypedValue(ty, ty.handle.const_int_text(v)),
+            ExprKind.FloatLiteral(v) => TypedValue(ty, ty.handle.const_real_text(v)),
             ExprKind.StringLiteral(s) => TypedValue(ty, fl.ml.global(fl.ml.lowerer.string_symbol(s))),
             ExprKind.CharLiteral(v) => TypedValue(ty, ty.handle.const_int(v.as_int().as_u64(), False)),
             ExprKind.BinaryOp(op, lhs, rhs) => fl.lower_binary_op(op, lhs, rhs, ty),

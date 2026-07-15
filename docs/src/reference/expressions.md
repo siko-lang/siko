@@ -7,12 +7,22 @@ A quick tour of every expression and statement form in Siko. Each section shows 
 
 ## Literals
 
-The three primitive literal forms.
+The four primitive literal forms.
 
 ```
 let i = 42;          // integer
+let f = 1.25;        // floating point (F64 by default)
 let s = "hello";     // string
 let c = 'A';         // char (a single byte)
+```
+
+Floating-point literals can be annotated as `F32` or `F64`. There are no
+implicit conversions between integer and floating-point types, or between the
+two float widths.
+
+```
+let narrow: F32 = 1.25;
+let wide: F64 = 1.25e2;
 ```
 
 String literals support interpolation with `${}`:

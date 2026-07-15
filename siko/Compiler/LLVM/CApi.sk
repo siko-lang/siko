@@ -61,6 +61,14 @@ fn llvm_void_type_in_context(ctx: void*) -> void*
 fn llvm_int_type_in_context(ctx: void*, bits: U32) -> void*
 
 @extern("C")
+@rename("LLVMFloatTypeInContext")
+fn llvm_float_type_in_context(ctx: void*) -> void*
+
+@extern("C")
+@rename("LLVMDoubleTypeInContext")
+fn llvm_double_type_in_context(ctx: void*) -> void*
+
+@extern("C")
 @rename("LLVMPointerTypeInContext")
 fn llvm_pointer_type_in_context(ctx: void*, address_space: U32) -> void*
 
@@ -95,6 +103,10 @@ fn llvm_const_int(ty: void*, value: U64, sign_extend: I32) -> void*
 @extern("C")
 @rename("LLVMConstIntOfString")
 fn llvm_const_int_of_string(ty: void*, text: *I8, radix: U8) -> void*
+
+@extern("C")
+@rename("LLVMConstRealOfStringAndSize")
+fn llvm_const_real_of_string_and_size(ty: void*, text: *I8, len: U32) -> void*
 
 @extern("C")
 @rename("LLVMConstNull")
@@ -245,6 +257,30 @@ fn llvm_build_urem(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
 fn llvm_build_srem(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
 
 @extern("C")
+@rename("LLVMBuildFAdd")
+fn llvm_build_fadd(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFSub")
+fn llvm_build_fsub(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFMul")
+fn llvm_build_fmul(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFDiv")
+fn llvm_build_fdiv(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFRem")
+fn llvm_build_frem(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFNeg")
+fn llvm_build_fneg(b: void*, value: void*, name: *I8) -> void*
+
+@extern("C")
 @rename("LLVMBuildAnd")
 fn llvm_build_and(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
 
@@ -271,6 +307,10 @@ fn llvm_build_ashr(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
 @extern("C")
 @rename("LLVMBuildICmp")
 fn llvm_build_icmp(b: void*, pred: I32, lhs: void*, rhs: void*, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildFCmp")
+fn llvm_build_fcmp(b: void*, pred: I32, lhs: void*, rhs: void*, name: *I8) -> void*
 
 @extern("C")
 @rename("LLVMBuildGEP2")
@@ -502,6 +542,47 @@ pub enum IntPredicate {
     }
 }
 
+pub enum FloatPredicate {
+    AlwaysFalse,
+    OEq,
+    OGt,
+    OGe,
+    OLt,
+    OLe,
+    ONe,
+    Ord,
+    Uno,
+    UEq,
+    UGt,
+    UGe,
+    ULt,
+    ULe,
+    UNe,
+    AlwaysTrue,
+
+    // Codes from LLVMRealPredicate in llvm-c/Core.h.
+    fn code(p: FloatPredicate) -> I32 {
+        match p {
+            FloatPredicate.AlwaysFalse => 0,
+            FloatPredicate.OEq => 1,
+            FloatPredicate.OGt => 2,
+            FloatPredicate.OGe => 3,
+            FloatPredicate.OLt => 4,
+            FloatPredicate.OLe => 5,
+            FloatPredicate.ONe => 6,
+            FloatPredicate.Ord => 7,
+            FloatPredicate.Uno => 8,
+            FloatPredicate.UEq => 9,
+            FloatPredicate.UGt => 10,
+            FloatPredicate.UGe => 11,
+            FloatPredicate.ULt => 12,
+            FloatPredicate.ULe => 13,
+            FloatPredicate.UNe => 14,
+            FloatPredicate.AlwaysTrue => 15,
+        }
+    }
+}
+
 pub enum BinaryOp {
     Add,
     Sub,
@@ -510,6 +591,11 @@ pub enum BinaryOp {
     SDiv,
     URem,
     SRem,
+    FAdd,
+    FSub,
+    FMul,
+    FDiv,
+    FRem,
     And,
     Or,
     Xor,
@@ -617,6 +703,12 @@ pub struct TypeRef {
     pub fn const_int_text(ty: TypeRef, text: String) -> Value {
         let c_text = CString.from_string(text);
         Value(llvm_const_int_of_string(ty.handle, c_text.as_ptr(), 10))
+    }
+
+    @safe
+    pub fn const_real_text(ty: TypeRef, text: String) -> Value {
+        let c_text = CString.from_string(text);
+        Value(llvm_const_real_of_string_and_size(ty.handle, c_text.as_ptr(), text.len().as_u32()))
     }
 
     // Also produces zeroinitializer for aggregate types.
@@ -749,6 +841,16 @@ pub struct Context {
     @safe
     pub fn int_type(ctx: Context, bits: Int) -> TypeRef {
         TypeRef(llvm_int_type_in_context(ctx.handle, bits.as_u32()))
+    }
+
+    @safe
+    pub fn float_type(ctx: Context) -> TypeRef {
+        TypeRef(llvm_float_type_in_context(ctx.handle))
+    }
+
+    @safe
+    pub fn double_type(ctx: Context) -> TypeRef {
+        TypeRef(llvm_double_type_in_context(ctx.handle))
     }
 
     @safe
@@ -1019,6 +1121,11 @@ pub struct Builder {
             BinaryOp.SDiv => llvm_build_sdiv(b.handle, lhs.handle, rhs.handle, empty_name()),
             BinaryOp.URem => llvm_build_urem(b.handle, lhs.handle, rhs.handle, empty_name()),
             BinaryOp.SRem => llvm_build_srem(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.FAdd => llvm_build_fadd(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.FSub => llvm_build_fsub(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.FMul => llvm_build_fmul(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.FDiv => llvm_build_fdiv(b.handle, lhs.handle, rhs.handle, empty_name()),
+            BinaryOp.FRem => llvm_build_frem(b.handle, lhs.handle, rhs.handle, empty_name()),
             BinaryOp.And => llvm_build_and(b.handle, lhs.handle, rhs.handle, empty_name()),
             BinaryOp.Or => llvm_build_or(b.handle, lhs.handle, rhs.handle, empty_name()),
             BinaryOp.Xor => llvm_build_xor(b.handle, lhs.handle, rhs.handle, empty_name()),
@@ -1032,6 +1139,16 @@ pub struct Builder {
     @safe
     pub fn build_icmp(b: Builder, pred: IntPredicate, lhs: Value, rhs: Value) -> Value {
         Value(llvm_build_icmp(b.handle, pred.code(), lhs.handle, rhs.handle, empty_name()))
+    }
+
+    @safe
+    pub fn build_fcmp(b: Builder, pred: FloatPredicate, lhs: Value, rhs: Value) -> Value {
+        Value(llvm_build_fcmp(b.handle, pred.code(), lhs.handle, rhs.handle, empty_name()))
+    }
+
+    @safe
+    pub fn build_fneg(b: Builder, value: Value) -> Value {
+        Value(llvm_build_fneg(b.handle, value.handle, empty_name()))
     }
 
     @safe

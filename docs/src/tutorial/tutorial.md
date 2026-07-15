@@ -30,6 +30,7 @@ Module names are dotted identifiers. Dots are just part of the name — they are
 | Category | Types |
 |||
 | Integers | `Int`, `I8`, `I16`, `I32`, `I64`, `U8`, `U16`, `U32`, `U64` |
+| Floating point | `F32`, `F64` |
 | Text | `String`, `U8` (char) |
 | Boolean | `Bool` (`True` / `False`) |
 | Containers | `Vec[T]`, `Map[K, V]`, `Set[T]`, `VecDeque[T]`, `Slice[T]` |
@@ -38,7 +39,7 @@ Module names are dotted identifiers. Dots are just part of the name — they are
 | Unit | `()` — the empty tuple |
 | Functions | `fn(A, B) -> C` |
 
-Most of these come from the standard library. `Option`, `Result`, `Vec`, `String`, `Bool`, and the numeric types are `@prelude` — available everywhere with no import. `Map`, `Set`, `VecDeque`, and `Slice` are **not** prelude and require an explicit import:
+Most of these come from the standard library. `Option`, `Result`, `Vec`, `String`, `Bool`, and the numeric types are `@prelude` — available everywhere with no import. Floating-point literals default to `F64`; use a type annotation for `F32`. There are no implicit conversions between numeric types. `Map`, `Set`, `VecDeque`, and `Slice` are **not** prelude and require an explicit import:
 
 ```
 import Std.Map

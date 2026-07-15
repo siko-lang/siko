@@ -44,7 +44,7 @@ pub struct Lexer {
                                 l.tokens.push(l.lex_ident_or_keyword(start));
                             } else {
                                 if is_digit(c) {
-                                    l.tokens.push(l.lex_int_literal(start));
+                                    l.tokens.push(l.lex_numeric_literal(start)?);
                                 } else {
                                     l.tokens.push(l.lex_symbol(c, start)?);
                                 }
@@ -274,7 +274,7 @@ pub struct Lexer {
         Token(keyword_or_ident(s), start, l.absolute_pos())
     }
 
-    fn lex_int_literal(l: Lexer, start: Int) -> Token {
+    fn lex_numeric_literal(l: Lexer, start: Int) -> Result[Token, LexError] {
         let rel = start - l.base_pos;
         if l.input[rel] == '0' {
             match l.peek() {
@@ -285,7 +285,7 @@ pub struct Lexer {
                     }
                     let s = collect_bytes_without_underscores(l.input, rel + 2, l.pos);
                     let value = s.parse_int(16).unwrap();
-                    return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
+                    return Ok(Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos()));
                 },
                 Some(b) if b == 'o' || b == 'O' => {
                     l.advance();
@@ -294,7 +294,7 @@ pub struct Lexer {
                     }
                     let s = collect_bytes_without_underscores(l.input, rel + 2, l.pos);
                     let value = s.parse_int(8).unwrap();
-                    return Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos());
+                    return Ok(Token(IntLiteral(I.intern(value.to_string())), start, l.absolute_pos()));
                 },
                 _ => {},
             }
@@ -302,8 +302,40 @@ pub struct Lexer {
         while match l.peek() { Some(b) => is_digit(b) || b == '_', None => False } {
             l.advance();
         }
+
+        // A decimal point starts a float only when followed by a digit. This
+        // preserves both integer ranges (`1..2`) and postfix tuple indices.
+        if l.peek() == Some('.') && match l.peek2() { Some(b) => is_digit(b), None => False } {
+            l.advance();
+            while match l.peek() { Some(b) => is_digit(b) || b == '_', None => False } {
+                l.advance();
+            }
+
+            // Exponents are accepted on decimal float literals. Keeping the
+            // spelling as text lets LLVM parse and round it for F32/F64.
+            match l.peek() {
+                Some(b) if b == 'e' || b == 'E' => {
+                    l.advance();
+                    match l.peek() {
+                        Some(b) if b == '+' || b == '-' => l.advance(),
+                        _ => {}
+                    }
+                    match l.peek() {
+                        Some(b) if is_digit(b) => {}
+                        _ => return Err(LexError("float exponent requires digits", l.absolute_pos()))
+                    }
+                    while match l.peek() { Some(b) => is_digit(b) || b == '_', None => False } {
+                        l.advance();
+                    }
+                }
+                _ => {}
+            }
+
+            let s = collect_bytes_without_underscores(l.input, start - l.base_pos, l.pos);
+            return Ok(Token(FloatLiteral(I.intern(s)), start, l.absolute_pos()));
+        }
         let s = collect_bytes_without_underscores(l.input, start - l.base_pos, l.pos);
-        Token(IntLiteral(I.intern(s)), start, l.absolute_pos())
+        Ok(Token(IntLiteral(I.intern(s)), start, l.absolute_pos()))
     }
 
     fn lex_symbol(l: Lexer, c: U8, start: Int) -> Result[Token, LexError] {

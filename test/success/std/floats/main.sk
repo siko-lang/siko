@@ -1,0 +1,119 @@
+module Main {
+
+import Std.Libc.String
+import Std.Intrinsics
+
+struct Pair {
+    narrow: F32,
+    wide: F64,
+}
+
+enum Number {
+    Narrow(F32),
+    Wide(F64),
+}
+
+fn accepts_f64(value: F64) -> F64 {
+    value
+}
+
+@safe
+fn apply_f32(f: fn*(F32) -> F32, value: F32) -> F32 {
+    f(value)
+}
+
+fn double_f32(value: F32) -> F32 {
+    value + value
+}
+
+fn is_unordered(value: Option[Ordering]) -> Bool {
+    match value {
+        None => True,
+        _ => False,
+    }
+}
+
+@safe
+fn main() {
+    // An unconstrained literal defaults to F64.
+    assert(accepts_f64(1.25) == 1.25);
+    assert(1.25e2 == 125.0);
+    assert(1_000.5_0 == 1000.5);
+
+    let a: F64 = 7.5;
+    let b: F64 = 2.5;
+    assert(a + b == 10.0);
+    assert(a - b == 5.0);
+    assert(a * b == 18.75);
+    assert(a / b == 3.0);
+    assert(5.5 % 2.0 == 1.5);
+    assert(-b == -2.5);
+
+    assert(a == 7.5);
+    assert(a != b);
+    assert(b < a);
+    assert(a > b);
+    assert(b <= b);
+    assert(a >= b);
+
+    let zero: F64 = 0.0;
+    let negative_zero = -zero;
+    assert(negative_zero == zero);
+
+    let nan = zero / zero;
+    assert(nan != nan);
+    assert(!(nan == nan));
+    assert(!(nan < zero));
+    assert(!(nan > zero));
+    assert(is_unordered(nan.partial_cmp(nan)));
+
+    let infinity = 1.0 / zero;
+    assert(infinity > a);
+
+    let narrow: F32 = 1.5;
+    assert(narrow + narrow == 3.0);
+    assert(narrow.clone() == narrow);
+    assert(apply_f32(double_f32, narrow) == 3.0);
+
+    // This addition rounds away in F32 but not in F64.
+    let f32_limit: F32 = 16777216.0;
+    assert(f32_limit + 1.0 == f32_limit);
+    let f64_limit: F64 = 16777216.0;
+    assert(f64_limit + 1.0 != f64_limit);
+
+    let narrow_bits: I32 = transmute(narrow);
+    let narrow_roundtrip: F32 = transmute(narrow_bits);
+    assert(narrow_roundtrip == narrow);
+    let wide_bits: I64 = transmute(a);
+    let wide_roundtrip: F64 = transmute(wide_bits);
+    assert(wide_roundtrip == a);
+
+    assert(sizeof(F32) == 4);
+    assert(sizeof(F64) == 8);
+
+    let pair = Pair(narrow, a);
+    assert(pair.narrow == narrow);
+    assert(pair.wide == a);
+
+    let optional: Option[F32] = Some(narrow);
+    match optional {
+        Some(value) => assert(value == narrow),
+        None => assert(False),
+    }
+
+    let number = Number.Wide(a);
+    match number {
+        Number.Wide(value) => assert(value == a),
+        _ => assert(False),
+    }
+
+    let values: [F32; 2] = uninitialized();
+    values[0] = narrow;
+    values[1] = 2.25;
+    assert(values[0] == 1.5);
+    assert(values[1] == 2.25);
+
+    println("floats ok");
+}
+
+}
