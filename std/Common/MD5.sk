@@ -2,7 +2,7 @@ module Std.MD5 {
 
 import Std.Vec
 
-fn s_table() -> Vec[Int] {
+fn s_table() -> Vec[U32] {
     let s = Vec.with_value(64, 0);
     s[0]  = 7;  s[1]  = 12; s[2]  = 17; s[3]  = 22;
     s[4]  = 7;  s[5]  = 12; s[6]  = 17; s[7]  = 22;
@@ -23,7 +23,7 @@ fn s_table() -> Vec[Int] {
     s
 }
 
-fn k_table() -> Vec[Int] {
+fn k_table() -> Vec[U32] {
     let k = Vec.with_value(64, 0);
     k[0]  = 0xd76aa478; k[1]  = 0xe8c7b756; k[2]  = 0x242070db; k[3]  = 0xc1bdceee;
     k[4]  = 0xf57c0faf; k[5]  = 0x4787c62a; k[6]  = 0xa8304613; k[7]  = 0xfd469501;
@@ -44,26 +44,21 @@ fn k_table() -> Vec[Int] {
     k
 }
 
-fn mask32(x: Int) -> Int {
-    x & 0xffffffff
+fn rotl32(x: U32, n: U32) -> U32 {
+    (x << n) | (x >> (32 - n))
 }
 
-fn rotl32(x: Int, n: Int) -> Int {
-    mask32((x << n) | (x >> (32 - n)))
-}
-
-fn read_u32_le(msg: Vec[U8], offset: Int) -> Int {
+fn read_u32_le(msg: Vec[U8], offset: Int) -> U32 {
     let b0 = msg[offset].as_int();
     let b1 = msg[offset + 1].as_int();
     let b2 = msg[offset + 2].as_int();
     let b3 = msg[offset + 3].as_int();
-    mask32(b0 | (b1 << 8) | (b2 << 16) | (b3 << 24))
+    (b0 | (b1 << 8) | (b2 << 16) | (b3 << 24)).as_u32()
 }
 
 pub fn compute(input: Vec[U8]) -> Vec[U8] {
     let msg_len = input.len();
-    let bit_len_lo = mask32(msg_len * 8);
-    let bit_len_hi = mask32((msg_len * 8) >> 32);
+    let bit_len = msg_len * 8;
 
     let r = (msg_len + 1) % 64;
     let padded_len = if r <= 56 {
@@ -72,19 +67,14 @@ pub fn compute(input: Vec[U8]) -> Vec[U8] {
         msg_len + 1 + (120 - r)
     };
 
-    let padded = Vec.with_value(padded_len + 8, 0.as_u8());
+    let padded = Vec.with_value(padded_len + 8, 0);
     for i in 0..msg_len {
         padded[i] = input[i];
     }
-    padded[msg_len] = 0x80.as_u8();
-    padded[padded_len + 0] = mask32(bit_len_lo).as_u8();
-    padded[padded_len + 1] = mask32(bit_len_lo >> 8).as_u8();
-    padded[padded_len + 2] = mask32(bit_len_lo >> 16).as_u8();
-    padded[padded_len + 3] = mask32(bit_len_lo >> 24).as_u8();
-    padded[padded_len + 4] = mask32(bit_len_hi).as_u8();
-    padded[padded_len + 5] = mask32(bit_len_hi >> 8).as_u8();
-    padded[padded_len + 6] = mask32(bit_len_hi >> 16).as_u8();
-    padded[padded_len + 7] = mask32(bit_len_hi >> 24).as_u8();
+    padded[msg_len] = 0x80;
+    for i in 0..8 {
+        padded[padded_len + i] = (bit_len >> (8 * i)).as_u8();
+    }
 
     let total_len = padded_len + 8;
 
@@ -114,37 +104,38 @@ pub fn compute(input: Vec[U8]) -> Vec[U8] {
             let f = 0;
             let g = 0;
             if i < 16 {
-                f = mask32((b & c) | (~b & d));
+                f = (b & c) | (~b & d);
                 g = i;
             } else if i < 32 {
-                f = mask32((d & b) | (~d & c));
+                f = (d & b) | (~d & c);
                 g = (5 * i + 1) % 16;
             } else if i < 48 {
-                f = mask32(b ^ c ^ d);
+                f = b ^ c ^ d;
                 g = (3 * i + 5) % 16;
             } else {
-                f = mask32(c ^ (b | ~d));
+                f = c ^ (b | ~d);
                 g = (7 * i) % 16;
             }
             let temp = d;
             d = c;
             c = b;
-            b = mask32(b + rotl32(mask32(a + f + k[i] + m[g]), s[i]));
+            b = b + rotl32(a + f + k[i] + m[g], s[i]);
             a = temp;
         }
 
-        a0 = mask32(a0 + a);
-        b0 = mask32(b0 + b);
-        c0 = mask32(c0 + c);
-        d0 = mask32(d0 + d);
+        a0 = a0 + a;
+        b0 = b0 + b;
+        c0 = c0 + c;
+        d0 = d0 + d;
     }
 
     let result: Vec[U8] = Vec.new();
     for w in [a0, b0, c0, d0] {
-        result.push(mask32(w).as_u8());
-        result.push(mask32(w >> 8).as_u8());
-        result.push(mask32(w >> 16).as_u8());
-        result.push(mask32(w >> 24).as_u8());
+        let wi = w.as_int();
+        result.push(wi.as_u8());
+        result.push((wi >> 8).as_u8());
+        result.push((wi >> 16).as_u8());
+        result.push((wi >> 24).as_u8());
     }
     result
 }

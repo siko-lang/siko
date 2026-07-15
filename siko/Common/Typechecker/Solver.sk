@@ -47,6 +47,30 @@ fn is_unify_constraint(kind: C.ConstraintKind) -> Bool {
     }
 }
 
+fn std_int_type() -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), Vec.new()))
+}
+
+fn is_builtin_int_type(ty: TypeDef) -> Bool {
+    match ty {
+        TypeDef.Named(NamedInfo(Name.Resolved(name: qname, ..), _)) => {
+            let base = qname.base_name();
+            base == B.get_int_type_qn() ||
+            base == B.get_i8_type_qn() ||
+            base == B.get_i16_type_qn() ||
+            base == B.get_i32_type_qn() ||
+            base == B.get_i64_type_qn() ||
+            base == B.get_u8_type_qn() ||
+            base == B.get_u16_type_qn() ||
+            base == B.get_u32_type_qn() ||
+            base == B.get_u64_type_qn()
+        }
+        // A literal in a divergent position can end up unified with Never.
+        TypeDef.Never(_) => True,
+        _ => False,
+    }
+}
+
 fn freshen_effect_assoc(
     ty: TypeDef,
     fresh_map: Map[I.String, TypeDef],
@@ -280,6 +304,20 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                 Ok(()) => ProcessResult.Satisfied(unifier.take_newly_bound(), Vec.new(), None, None),
                 Err(UnifyError.Mismatch(a, b)) =>
                     ProcessResult.Failed(TypeError.TypeMismatch(a, b, location)),
+            }
+        }
+
+        C.ConstraintKind.IntLiteral(ty) => {
+            let resolved = ctx.sub.apply(ty);
+            match resolved {
+                TypeDef.Var(TypeVar.Var(n)) => ProcessResult.Pending([n]),
+                other => {
+                    if is_builtin_int_type(other) {
+                        ok_satisfied(Vec.new())
+                    } else {
+                        ProcessResult.Failed(TypeError.IntLiteralTypeMismatch(other, location))
+                    }
+                }
             }
         }
 
@@ -1136,7 +1174,13 @@ pub struct Solver {
         loop {
             let id = match s.next_active() {
                 Some(id) => id,
-                None => break,
+                None => {
+                    // Everything left is stalled. Default the type of any still
+                    // unresolved integer literal to Int and resume: the bindings
+                    // wake the constraints subscribed to those vars.
+                    if s.default_int_literals() { continue; }
+                    break;
+                }
             };
 
             if s.constraints[id].state == C.ConstraintState.Satisfied {
@@ -1254,6 +1298,38 @@ pub struct Solver {
                 Ok(())
             }
         }
+    }
+
+    fn default_int_literals(s: Solver) -> Bool {
+        let defaulted = False;
+        let i = 0;
+        while i < s.constraints.len() {
+            if s.constraints[i].state != C.ConstraintState.Satisfied {
+                if let C.ConstraintKind.IntLiteral(ty) = s.constraints[i].kind {
+                    if let TypeDef.Var(TypeVar.Var(n)) = s.sub.apply(ty) {
+                        if s.enable_debug {
+                            println("[tc2] #${i.to_string()} defaulting $${n.to_string()} = Int");
+                        }
+                        s.sub.bind(n, std_int_type());
+                        defaulted = True;
+                        s.activate(i);
+                        match s.registry.remove(n) {
+                            Some(subscribers) => {
+                                for sub_id in subscribers {
+                                    if s.constraints[sub_id].state != C.ConstraintState.Satisfied {
+                                        stats.requeued_constraint();
+                                        s.activate(sub_id);
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+            }
+            i += 1;
+        }
+        defaulted
     }
 
     pub fn into_subst(s: Solver) -> Substitution {

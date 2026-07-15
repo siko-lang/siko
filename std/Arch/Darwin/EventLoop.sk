@@ -24,7 +24,7 @@ pub struct EventLoop {
     @safe
     pub fn new() -> EventLoop {
         let kq = kqueue();
-        if kq < 0.as_i32() {
+        if kq < 0 {
             panic("kqueue() failed");
         }
         EventLoop(kq, Map.new(), Map.new(), 0)
@@ -94,12 +94,12 @@ pub struct EventLoop {
             ident:  id.as_u64(),
             filter: EVFILT_TIMER,
             flags:  EV_ADD | EV_ONESHOT,
-            fflags: 0.as_u32(),
+            fflags: 0,
             data:   timeout.to_millis(),
             udata:  get_null_voidptr(),
         );
-        let ret = kevent(el.kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
-        if ret < 0.as_i32() {
+        let ret = kevent(el.kq_fd, &ev, 1, get_null_ptr(), 0, get_null_ptr());
+        if ret < 0 {
             panic("kevent add_timer failed");
         }
         id
@@ -114,11 +114,11 @@ pub struct EventLoop {
                     ident:  id.as_u64(),
                     filter: EVFILT_TIMER,
                     flags:  EV_DELETE,
-                    fflags: 0.as_u32(),
-                    data:   0.as_i64(),
+                    fflags: 0,
+                    data:   0,
                     udata:  get_null_voidptr(),
                 );
-                kevent(el.kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
+                kevent(el.kq_fd, &ev, 1, get_null_ptr(), 0, get_null_ptr());
             }
         }
     }
@@ -128,19 +128,19 @@ pub struct EventLoop {
         let ts = TimeSpec(timeout.seconds, timeout.nanoseconds);
         let batch_size = 64;
         let null_kevent = Kevent(
-            ident:  0.as_u64(),
-            filter: 0.as_i16(),
-            flags:  0.as_u16(),
-            fflags: 0.as_u32(),
-            data:   0.as_i64(),
+            ident:  0,
+            filter: 0,
+            flags:  0,
+            fflags: 0,
+            data:   0,
             udata:  get_null_voidptr(),
         );
         let events = Vec.with_value(batch_size, null_kevent);
-        let event_num = 0.as_i32();
+        let event_num = 0;
         loop {
-            event_num = kevent(el.kq_fd, get_null_ptr(), 0.as_i32(),
+            event_num = kevent(el.kq_fd, get_null_ptr(), 0,
                                events.as_ptr(), batch_size.as_i32(), &ts);
-            if event_num < 0.as_i32() {
+            if event_num < 0 {
                 let errno = Std.Arch.Errno.get_errno();
                 if errno == Std.Arch.Errno.Errno.EINTR {
                     continue;
@@ -151,7 +151,7 @@ pub struct EventLoop {
         }
         for i in 0..event_num.as_int() {
             let ev = events.get(i);
-            if (ev.flags & EV_ERROR) != 0.as_u16() {
+            if (ev.flags & EV_ERROR) != 0 {
                 continue;
             }
             if ev.filter == EVFILT_TIMER {
@@ -201,12 +201,12 @@ fn change_filter(kq_fd: I32, ident: U64, filter: I16, flags: U16) {
         ident:  ident,
         filter: filter,
         flags:  flags,
-        fflags: 0.as_u32(),
-        data:   0.as_i64(),
+        fflags: 0,
+        data:   0,
         udata:  get_null_voidptr(),
     );
-    let ret = kevent(kq_fd, &ev, 1.as_i32(), get_null_ptr(), 0.as_i32(), get_null_ptr());
-    if ret < 0.as_i32() {
+    let ret = kevent(kq_fd, &ev, 1, get_null_ptr(), 0, get_null_ptr());
+    if ret < 0 {
         panic("kevent change_filter failed");
     }
 }

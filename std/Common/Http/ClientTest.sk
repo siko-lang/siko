@@ -6,7 +6,7 @@ import Std.Mock.Network
 import Std.Mock.Wire
 
 fn drain(peer: MockPeer) -> String {
-    let buf: Vec[U8] = Vec.with_value(1024, 0.as_u8());
+    let buf: Vec[U8] = Vec.with_value(1024, 0);
     let out: Vec[U8] = Vec.new();
     loop {
         let n = peer.recv(buf.slice()).unwrap();
@@ -27,14 +27,14 @@ fn test_url_parse() {
     let url = Url.parse("http://127.0.0.1:8080/search?q=foo").unwrap();
     assert(url.scheme() == "http");
     assert(url.host() == "127.0.0.1");
-    assert(url.port() == 8080.as_u16());
+    assert(url.port() == 8080);
     assert(url.path() == "/search");
     assert(url.query() == "q=foo");
     assert(url.request_uri() == "/search?q=foo");
     assert(url.host_header() == "127.0.0.1:8080");
 
     let default_port = Url.parse("http://127.0.0.1").unwrap();
-    assert(default_port.port() == 80.as_u16());
+    assert(default_port.port() == 80);
     assert(default_port.path() == "/");
     assert(default_port.host_header() == "127.0.0.1");
 }
@@ -52,7 +52,7 @@ fn test_get() {
 
     let connection = gateway.connected().unwrap();
     assert(connection.host() == "127.0.0.1");
-    assert(connection.port() == 8080.as_u16());
+    assert(connection.port() == 8080);
     assert(response.proto() == "HTTP/1.1");
     assert(response.status() == "200 OK");
     assert(response.body() == "ok");
@@ -72,7 +72,7 @@ fn test_post() {
 
     let connection = gateway.connected().unwrap();
     assert(connection.host() == "127.0.0.1");
-    assert(connection.port() == 80.as_u16());
+    assert(connection.port() == 80);
     assert(response.status() == "200 OK");
     assert(response.body() == "created");
     assert(drain(connection.peer()) == "POST /api HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{\"ok\": true}");

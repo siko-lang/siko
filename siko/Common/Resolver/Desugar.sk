@@ -259,6 +259,14 @@ pub fn desugar_binary_op(op: BinaryOp, lhs: Expr, rhs: Expr) -> ExprKind {
 }
 
 pub fn desugar_unary_op(op: UnaryOp, operand: Expr) -> ExprKind {
+    // -<literal> is a single constant, not Neg applied to a literal: fold the
+    // sign into the literal so its type is inferred as one (Neg's associated
+    // Output would otherwise hide the expected type from the literal).
+    if let UnaryOp.Neg = op {
+        if let ExprKind.IntLiteral(s) = operand.kind {
+            return ExprKind.IntLiteral("-" + s);
+        }
+    }
     let fn_qn = match op {
         UnaryOp.Neg => B.get_op_neg_qn(),
         UnaryOp.Not => B.get_op_not_qn(),

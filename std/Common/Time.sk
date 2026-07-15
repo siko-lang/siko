@@ -8,11 +8,11 @@ pub struct Duration {
     pub nanoseconds: I64,
 
     pub fn zero() -> Duration {
-        Duration(0.as_i64(), 0.as_i64())
+        Duration(0, 0)
     }
 
     pub fn to_millis(d: Duration) -> I64 {
-        d.seconds * 1000.as_i64() + d.nanoseconds / 1000000.as_i64()
+        d.seconds * 1000 + d.nanoseconds / 1000000
     }
 
     pub fn to_seconds(d: Duration) -> I64 {
@@ -20,15 +20,15 @@ pub struct Duration {
     }
 
     pub fn to_minutes(d: Duration) -> I64 {
-        d.seconds / 60.as_i64()
+        d.seconds / 60
     }
 
     pub fn to_hours(d: Duration) -> I64 {
-        d.seconds / 3600.as_i64()
+        d.seconds / 3600
     }
 
     pub fn to_microseconds(d: Duration) -> I64 {
-        d.seconds * 1000000.as_i64() + d.nanoseconds / 1000.as_i64()
+        d.seconds * 1000000 + d.nanoseconds / 1000
     }
 }
 
@@ -45,8 +45,8 @@ pub struct Instant {
         let now = Instant.now();
         let sec = now.seconds - instant.seconds;
         let nsec = now.nanoseconds - instant.nanoseconds;
-        if nsec < 0.as_i64() {
-            Duration(sec - 1.as_i64(), nsec + 1000000000.as_i64())
+        if nsec < 0 {
+            Duration(sec - 1, nsec + 1000000000)
         } else {
             Duration(sec, nsec)
         }
@@ -59,15 +59,15 @@ pub fn sleep(d: Duration) {
 }
 
 pub fn minutes(m: Int) -> Duration {
-    Duration((m * 60).as_i64(), 0.as_i64())
+    Duration((m * 60).as_i64(), 0)
 }
 
 pub fn seconds(s: Int) -> Duration {
-    Duration(s.as_i64(), 0.as_i64())
+    Duration(s.as_i64(), 0)
 }
 
 pub fn milliseconds(s: Int) -> Duration {
-    Duration(s.as_i64() / 1000.as_i64(), (s.as_i64() % 1000.as_i64()) * 1000000.as_i64())
+    Duration(s.as_i64() / 1000, (s.as_i64() % 1000) * 1000000)
 }
 
 instance Add[Duration] {
@@ -75,8 +75,8 @@ instance Add[Duration] {
     fn add(a: Duration, b: Duration) -> Duration {
         let sec = a.seconds + b.seconds;
         let nsec = a.nanoseconds + b.nanoseconds;
-        if nsec >= 1000000000.as_i64() {
-            Duration(sec + 1.as_i64(), nsec - 1000000000.as_i64())
+        if nsec >= 1000000000 {
+            Duration(sec + 1, nsec - 1000000000)
         } else {
             Duration(sec, nsec)
         }
@@ -88,8 +88,8 @@ instance Sub[Duration] {
     fn sub(a: Duration, b: Duration) -> Duration {
         let sec = a.seconds - b.seconds;
         let nsec = a.nanoseconds - b.nanoseconds;
-        if nsec < 0.as_i64() {
-            Duration(sec - 1.as_i64(), nsec + 1000000000.as_i64())
+        if nsec < 0 {
+            Duration(sec - 1, nsec + 1000000000)
         } else {
             Duration(sec, nsec)
         }

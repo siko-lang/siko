@@ -64,7 +64,14 @@ pub struct BuiltinNameCache {
     index_assign_index_assign_qn: QualifiedName,
     convert_into_qn: QualifiedName,
     int_eq_qn: QualifiedName,
+    i8_eq_qn: QualifiedName,
+    i16_eq_qn: QualifiedName,
+    i32_eq_qn: QualifiedName,
+    i64_eq_qn: QualifiedName,
     u8_eq_qn: QualifiedName,
+    u16_eq_qn: QualifiedName,
+    u32_eq_qn: QualifiedName,
+    u64_eq_qn: QualifiedName,
     string_eq_qn: QualifiedName,
     string_from_literal_qn: QualifiedName,
     vec_new_qn: QualifiedName,
@@ -187,7 +194,14 @@ pub fn build_cache() -> BuiltinNameCache {
         index_assign_index_assign_qn: QualifiedName.new_method(m("Std.Ops.IndexAssign"), m("index_assign")),
         convert_into_qn: QualifiedName.new_method(m("Std.Convert.Into"), m("into")),
         int_eq_qn: QualifiedName.new_method(n_int, m("eq")),
+        i8_eq_qn: QualifiedName.new_method(m("Std.Int.I8.I8"), m("eq")),
+        i16_eq_qn: QualifiedName.new_method(m("Std.Int.I16.I16"), m("eq")),
+        i32_eq_qn: QualifiedName.new_method(m("Std.Int.I32.I32"), m("eq")),
+        i64_eq_qn: QualifiedName.new_method(m("Std.Int.I64.I64"), m("eq")),
         u8_eq_qn: QualifiedName.new_method(n_u8, m("eq")),
+        u16_eq_qn: QualifiedName.new_method(m("Std.Int.U16.U16"), m("eq")),
+        u32_eq_qn: QualifiedName.new_method(m("Std.Int.U32.U32"), m("eq")),
+        u64_eq_qn: QualifiedName.new_method(m("Std.Int.U64.U64"), m("eq")),
         string_eq_qn: QualifiedName.new_method(n_string, m("eq")),
         string_from_literal_qn: QualifiedName.new_method(n_string, m("from_literal")),
         vec_new_qn: QualifiedName.new_method(n_vec, m("new")),
@@ -320,6 +334,20 @@ pub fn get_convert_into_qn() -> QualifiedName { name_cache.convert_into_qn }
 // Struct methods
 pub fn get_int_eq_qn() -> QualifiedName { name_cache.int_eq_qn }
 pub fn get_u8_eq_qn() -> QualifiedName { name_cache.u8_eq_qn }
+
+// The builtin eq method for a builtin integer type, if `qn` is one.
+pub fn get_eq_qn_for_int_type(qn: QualifiedName) -> Option[QualifiedName] {
+    if qn == name_cache.int_type_qn { return Some(name_cache.int_eq_qn); }
+    if qn == name_cache.i8_type_qn { return Some(name_cache.i8_eq_qn); }
+    if qn == name_cache.i16_type_qn { return Some(name_cache.i16_eq_qn); }
+    if qn == name_cache.i32_type_qn { return Some(name_cache.i32_eq_qn); }
+    if qn == name_cache.i64_type_qn { return Some(name_cache.i64_eq_qn); }
+    if qn == name_cache.u8_type_qn { return Some(name_cache.u8_eq_qn); }
+    if qn == name_cache.u16_type_qn { return Some(name_cache.u16_eq_qn); }
+    if qn == name_cache.u32_type_qn { return Some(name_cache.u32_eq_qn); }
+    if qn == name_cache.u64_type_qn { return Some(name_cache.u64_eq_qn); }
+    None
+}
 pub fn get_string_eq_qn() -> QualifiedName { name_cache.string_eq_qn }
 pub fn get_string_from_literal_qn() -> QualifiedName { name_cache.string_from_literal_qn }
 pub fn get_vec_new_qn() -> QualifiedName { name_cache.vec_new_qn }

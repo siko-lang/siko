@@ -14,7 +14,7 @@ import Siko.Typechecker.Error
 import Std.Sys.Process as Sys
 
 pub fn exit_with_error() -> ! {
-    Sys.exit(1.as_i32())
+    Sys.exit(1)
 }
 
 pub fn report_parse_error(e: ParserError) {
@@ -175,6 +175,8 @@ pub fn report_type_error(e: TypeError) {
             report("Cannot downcast non-trait-object value of type `${format_type(ty)}`", Some(location)),
         TypeError.NotACoroutine(location) =>
             report("yield used outside of a coroutine function", Some(location)),
+        TypeError.IntLiteralTypeMismatch(ty, location) =>
+            report("Integer literal cannot have type `${format_type(ty)}`", Some(location)),
     }
 }
 

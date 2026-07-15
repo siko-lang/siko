@@ -14,7 +14,7 @@ import Std.Mock.Wire
 
 // Drain everything the server wrote back to the peer into a String.
 fn drain(peer: MockPeer) -> String {
-    let buf: Vec[U8] = Vec.with_value(1024, 0.as_u8());
+    let buf: Vec[U8] = Vec.with_value(1024, 0);
     let out: Vec[U8] = Vec.new();
     loop {
         let n = peer.recv(buf.slice()).unwrap();
@@ -36,7 +36,7 @@ fn request(files: MockFiles, log: ConsoleLog, root: String, line: String) -> Res
     peer.send(line.as_slice()).unwrap();
 
     with mock_gateway = gateway, mock_files = files, mock_console = log, TcpNetwork = MockNet, FileSystem = MockFs, Console = MockConsole {
-        let listener = TcpNetwork.listen(8080.as_u16()).unwrap();
+        let listener = TcpNetwork.listen(8080).unwrap();
         let socket = TcpNetwork.accept(listener).unwrap();
         serve(socket, file_server(root));
     }

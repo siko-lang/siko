@@ -18,27 +18,27 @@ pub struct TcpListener {
 
     @safe
     pub fn bind(port: U16) -> Result[TcpListener, Error] {
-        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
-        if sock < 0.as_i32() {
+        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
+        if sock < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         let fd = FileDescriptor.new(sock);
-        let opt = 1.as_i32();
-        let setsockopt_result = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, 4.as_i32());
-        if setsockopt_result < 0.as_i32() {
+        let opt = 1;
+        let setsockopt_result = setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &opt, 4);
+        if setsockopt_result < 0 {
             let errno = Std.Arch.Errno.get_errno();
             defer fd.close();
             return Err(Error.with_message(errno, "setsockopt SO_REUSEADDR"));
         }
-        let addr = SockaddrIn.new(Domain.AF_INET, port, 0.as_u32());
+        let addr = SockaddrIn.new(Domain.AF_INET, port, 0);
         let bind_result = Std.Libc.Socket.bind(sock, &addr, addr.len().as_int().as_i32());
-        if bind_result < 0.as_i32() {
+        if bind_result < 0 {
             let errno = Std.Arch.Errno.get_errno();
             defer fd.close();
             return Err(Error.with_message(errno, "bind :${port}"));
         }
-        let listen_result = Std.Libc.Socket.listen(sock, 128.as_i32());
-        if listen_result < 0.as_i32() {
+        let listen_result = Std.Libc.Socket.listen(sock, 128);
+        if listen_result < 0 {
             let errno = Std.Arch.Errno.get_errno();
             defer fd.close();
             return Err(Error.new(errno));
@@ -49,7 +49,7 @@ pub struct TcpListener {
     @safe
     pub fn accept(l: TcpListener) -> Result[TcpStream, Error] {
         let client = Std.Libc.Socket.accept(l.fd.get_fd(), get_null_voidptr(), get_null_voidptr());
-        if client < 0.as_i32() {
+        if client < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(TcpStream.new(client))

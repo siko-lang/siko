@@ -200,7 +200,17 @@ pub struct MatchLowerer {
         let scrutinee_ty = path_ty_env.get(switch.data_path);
         let scrutinee_expr = Expr(ExprKind.Var(scrutinee_var), loc.clone(), scrutinee_ty);
 
-        let int_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), []));
+        // Literal patterns follow the scrutinee's integer type, so compare with
+        // that type's builtin eq (falling back to Int when the type is unknown).
+        let (int_ty, eq_qn) = match scrutinee_ty {
+            Some(TypeDef.Named(NamedInfo(name, _))) => {
+                match B.get_eq_qn_for_int_type(name.resolved().base_name()) {
+                    Some(eq_qn) => (TypeDef.Named(NamedInfo(name, [])), eq_qn),
+                    None => panic("lower-match: integer switch on non-integer scrutinee"),
+                }
+            }
+            _ => (TypeDef.Named(NamedInfo(Name.inner(B.get_int_type_qn()), [])), B.get_int_eq_qn()),
+        };
         let bool_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_bool_type_qn()), []));
 
         let int_cases: Vec[(I.String, Expr)] = [];
@@ -224,7 +234,7 @@ pub struct MatchLowerer {
             let literal = Expr(ExprKind.IntLiteral(I.resolve(s)), loc.clone(), Some(int_ty.clone()));
             let cond = Expr(
                 ExprKind.FunctionCall(FunctionCallInfo(
-                    qname: B.get_int_eq_qn(),
+                    qname: eq_qn,
                     kind: FunctionKind.Builtin,
                     args: [scrutinee_expr.clone(), literal],
                 )),

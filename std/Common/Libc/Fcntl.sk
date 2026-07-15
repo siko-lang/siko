@@ -16,7 +16,7 @@ pub fn fcntl(fd: I32, cmd: I32, ...) -> I32
 pub fn open_file(path: String, flags: I32, mode: I32) -> Result[FileDescriptor, Error] {
     let c_path = CString.from_string(path.clone());
     let fd = open(c_path.as_ptr(), flags | Std.Arch.Fs.O_CLOEXEC, mode);
-    if fd < 0.as_i32() {
+    if fd < 0 {
         return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
     }
     Ok(FileDescriptor.new(fd))

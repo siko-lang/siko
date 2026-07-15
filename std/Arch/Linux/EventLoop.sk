@@ -27,7 +27,7 @@ pub struct EventLoop {
     @safe
     pub fn new() -> EventLoop {
         let efd = epoll_create1(EPOLL_CLOEXEC);
-        if efd < 0.as_i32() {
+        if efd < 0 {
             panic("epoll_create1() failed");
         }
         EventLoop(efd, Map.new(), Map.new(), Map.new(), Map.new(), 0)
@@ -73,16 +73,16 @@ pub struct EventLoop {
         if !r.armed_read && !r.armed_write {
             let ev = EpollEvent(events: flags_for(want_read, want_write), data: fd.as_int().as_u64());
             let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, fd, &ev);
-            if ret < 0.as_i32() {
+            if ret < 0 {
                 panic("epoll_ctl register failed");
             }
         } else if !want_read && !want_write {
-            let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+            let dummy = EpollEvent(events: 0, data: 0);
             epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
         } else {
             let ev = EpollEvent(events: flags_for(want_read, want_write), data: fd.as_int().as_u64());
             let ret = epoll_ctl(el.epoll_fd, EPOLL_CTL_MOD, fd, &ev);
-            if ret < 0.as_i32() {
+            if ret < 0 {
                 panic("epoll_ctl modify failed");
             }
         }
@@ -98,15 +98,15 @@ pub struct EventLoop {
         let id = el.next_timer_id;
         el.next_timer_id = id + 1;
         let tfd = timerfd_create(CLOCK_MONOTONIC, TFD_CLOEXEC);
-        if tfd < 0.as_i32() {
+        if tfd < 0 {
             panic("timerfd_create failed");
         }
         let spec = ItimerSpec(
-            it_interval: T.TimeSpec(0.as_i64(), 0.as_i64()),
+            it_interval: T.TimeSpec(0, 0),
             it_value:    T.TimeSpec(timeout.seconds, timeout.nanoseconds),
         );
-        let ret = timerfd_settime(tfd, 0.as_i32(), &spec, get_null_ptr());
-        if ret < 0.as_i32() {
+        let ret = timerfd_settime(tfd, 0, &spec, get_null_ptr());
+        if ret < 0 {
             panic("timerfd_settime failed");
         }
         let ev = EpollEvent(
@@ -114,7 +114,7 @@ pub struct EventLoop {
             data:   tfd.as_int().as_u64(),
         );
         let ret2 = epoll_ctl(el.epoll_fd, EPOLL_CTL_ADD, tfd, &ev);
-        if ret2 < 0.as_i32() {
+        if ret2 < 0 {
             panic("epoll_ctl add_timer failed");
         }
         el.timer_callbacks.insert(id, callback);
@@ -131,7 +131,7 @@ pub struct EventLoop {
                 el.fd_to_timer.remove(tfd);
                 el.timer_callbacks.remove(id);
                 defer Std.Libc.Unistd.close(tfd);
-                let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+                let dummy = EpollEvent(events: 0, data: 0);
                 epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, tfd, &dummy);
             }
         }
@@ -141,12 +141,12 @@ pub struct EventLoop {
     pub fn run_once(el: EventLoop, timeout: Duration) {
         let timeout_ms = timeout.to_millis().as_int().as_i32();
         let batch_size = 64;
-        let null_ev = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+        let null_ev = EpollEvent(events: 0, data: 0);
         let events = Vec.with_value(batch_size, null_ev);
-        let event_num = 0.as_i32();
+        let event_num = 0;
         loop {
             event_num = epoll_wait(el.epoll_fd, events.as_ptr(), batch_size.as_i32(), timeout_ms);
-            if event_num < 0.as_i32() {
+            if event_num < 0 {
                 let errno = Std.Arch.Errno.get_errno();
                 if errno == Std.Arch.Errno.Errno.EINTR {
                     continue;
@@ -161,11 +161,11 @@ pub struct EventLoop {
             match el.fd_to_timer.get(fd) {
                 Some(id) => {
                     // drain the timerfd (must read 8 bytes to re-arm)
-                    let buf = Vec.with_value(8, 0.as_u8());
-                    Std.Libc.Unistd.read(fd, buf.as_ptr(), 8.as_u64());
+                    let buf = Vec.with_value(8, 0);
+                    Std.Libc.Unistd.read(fd, buf.as_ptr(), 8);
                     el.fd_to_timer.remove(fd);
                     el.timer_to_fd.remove(id);
-                    let dummy = EpollEvent(events: 0.as_u32(), data: 0.as_u64());
+                    let dummy = EpollEvent(events: 0, data: 0);
                     epoll_ctl(el.epoll_fd, EPOLL_CTL_DEL, fd, &dummy);
                     {
                         defer Std.Libc.Unistd.close(fd);
@@ -183,9 +183,9 @@ pub struct EventLoop {
                             // requested mask, so a dropped/reset peer must wake
                             // whichever waiter is present, not just the one whose
                             // bit literally fired.
-                            let hup = (ev.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) != 0.as_u32();
-                            let readable = ((ev.events & EPOLLIN) != 0.as_u32()) || hup;
-                            let writable = ((ev.events & EPOLLOUT) != 0.as_u32()) || hup;
+                            let hup = (ev.events & (EPOLLHUP | EPOLLERR | EPOLLRDHUP)) != 0;
+                            let readable = ((ev.events & EPOLLIN) != 0) || hup;
+                            let writable = ((ev.events & EPOLLOUT) != 0) || hup;
                             let read_cb = if readable { r.read_waiter } else { None };
                             let write_cb = if writable { r.write_waiter } else { None };
                             if read_cb.is_some() {
@@ -212,7 +212,7 @@ pub struct EventLoop {
 }
 
 fn flags_for(want_read: Bool, want_write: Bool) -> U32 {
-    let flags = 0.as_u32();
+    let flags = 0;
     if want_read {
         flags = flags | EPOLLIN;
     }

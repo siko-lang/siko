@@ -23,7 +23,7 @@ pub struct FileDescriptor {
     @safe
     pub fn close(f: FileDescriptor) -> Result[(), Error] {
         let result = Std.Libc.Unistd.close(f.fd);
-        if result < 0.as_i32() {
+        if result < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(())
@@ -32,16 +32,16 @@ pub struct FileDescriptor {
     @safe
     pub fn is_terminal(f: FileDescriptor) -> Result[Bool, Error] {
         let result = Std.Libc.Unistd.isatty(f.fd);
-        if result < 0.as_i32() {
+        if result < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
-        Ok(result != 0.as_i32())
+        Ok(result != 0)
     }
 
     @safe
     pub fn set_nonblocking(f: FileDescriptor, nonblocking: Bool) -> Result[(), Error] {
         let flags = Std.Libc.Fcntl.fcntl(f.fd, Std.Arch.Fs.F_GETFL);
-        if flags < 0.as_i32() {
+        if flags < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         let new_flags = if nonblocking {
@@ -50,7 +50,7 @@ pub struct FileDescriptor {
             flags & ~(Std.Arch.Fs.O_NONBLOCK)
         };
         let result = Std.Libc.Fcntl.fcntl(f.fd, Std.Arch.Fs.F_SETFL, new_flags);
-        if result < 0.as_i32() {
+        if result < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(())
@@ -80,15 +80,15 @@ instance Writer[FileDescriptor] {
 }
 
 pub fn get_stdin() -> FileDescriptor {
-    FileDescriptor(0.as_i32())
+    FileDescriptor(0)
 }
 
 pub fn get_stdout() -> FileDescriptor {
-    FileDescriptor(1.as_i32())
+    FileDescriptor(1)
 }
 
 pub fn get_stderr() -> FileDescriptor {
-    FileDescriptor(2.as_i32())
+    FileDescriptor(2)
 }
 
 }

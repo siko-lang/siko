@@ -448,12 +448,12 @@ pub enum Linkage {
     // Codes from LLVMLinkage in llvm-c/Core.h.
     fn code(l: Linkage) -> I32 {
         match l {
-            Linkage.External => 0.as_i32(),
-            Linkage.LinkOnceODR => 3.as_i32(),
-            Linkage.WeakODR => 6.as_i32(),
-            Linkage.Appending => 7.as_i32(),
-            Linkage.Internal => 8.as_i32(),
-            Linkage.Private => 9.as_i32(),
+            Linkage.External => 0,
+            Linkage.LinkOnceODR => 3,
+            Linkage.WeakODR => 6,
+            Linkage.Appending => 7,
+            Linkage.Internal => 8,
+            Linkage.Private => 9,
         }
     }
 }
@@ -466,9 +466,9 @@ pub enum UnnamedAddr {
     // Codes from LLVMUnnamedAddr in llvm-c/Core.h.
     fn code(ua: UnnamedAddr) -> I32 {
         match ua {
-            UnnamedAddr.NoUnnamedAddr => 0.as_i32(),
-            UnnamedAddr.LocalUnnamedAddr => 1.as_i32(),
-            UnnamedAddr.GlobalUnnamedAddr => 2.as_i32(),
+            UnnamedAddr.NoUnnamedAddr => 0,
+            UnnamedAddr.LocalUnnamedAddr => 1,
+            UnnamedAddr.GlobalUnnamedAddr => 2,
         }
     }
 }
@@ -488,16 +488,16 @@ pub enum IntPredicate {
     // Codes from LLVMIntPredicate in llvm-c/Core.h (LLVMIntEQ = 32, ...).
     fn code(p: IntPredicate) -> I32 {
         match p {
-            IntPredicate.Eq => 32.as_i32(),
-            IntPredicate.Ne => 33.as_i32(),
-            IntPredicate.Ugt => 34.as_i32(),
-            IntPredicate.Uge => 35.as_i32(),
-            IntPredicate.Ult => 36.as_i32(),
-            IntPredicate.Ule => 37.as_i32(),
-            IntPredicate.Sgt => 38.as_i32(),
-            IntPredicate.Sge => 39.as_i32(),
-            IntPredicate.Slt => 40.as_i32(),
-            IntPredicate.Sle => 41.as_i32(),
+            IntPredicate.Eq => 32,
+            IntPredicate.Ne => 33,
+            IntPredicate.Ugt => 34,
+            IntPredicate.Uge => 35,
+            IntPredicate.Ult => 36,
+            IntPredicate.Ule => 37,
+            IntPredicate.Sgt => 38,
+            IntPredicate.Sge => 39,
+            IntPredicate.Slt => 40,
+            IntPredicate.Sle => 41,
         }
     }
 }
@@ -571,7 +571,7 @@ fn block_handles(blocks: Vec[BasicBlock]) -> Vec[void*] {
 }
 
 fn bool_flag(b: Bool) -> I32 {
-    if b { 1.as_i32() } else { 0.as_i32() }
+    if b { 1 } else { 0 }
 }
 
 @unsafe
@@ -616,7 +616,7 @@ pub struct TypeRef {
     @safe
     pub fn const_int_text(ty: TypeRef, text: String) -> Value {
         let c_text = CString.from_string(text);
-        Value(llvm_const_int_of_string(ty.handle, c_text.as_ptr(), 10.as_u8()))
+        Value(llvm_const_int_of_string(ty.handle, c_text.as_ptr(), 10))
     }
 
     // Also produces zeroinitializer for aggregate types.
@@ -685,7 +685,7 @@ pub struct Value {
     @safe
     pub fn add_fn_attribute(f: Value, attr: Attribute) {
         // LLVMAttributeFunctionIndex is -1; the C API takes it as unsigned.
-        llvm_add_attribute_at_index(f.handle, 4294967295.as_u32(), attr.handle);
+        llvm_add_attribute_at_index(f.handle, 4294967295, attr.handle);
     }
 
     @safe
@@ -753,7 +753,7 @@ pub struct Context {
 
     @safe
     pub fn ptr_type(ctx: Context) -> TypeRef {
-        TypeRef(llvm_pointer_type_in_context(ctx.handle, 0.as_u32()))
+        TypeRef(llvm_pointer_type_in_context(ctx.handle, 0))
     }
 
     @safe
@@ -771,7 +771,7 @@ pub struct Context {
     // The bytes are used verbatim (embedded NULs allowed), no NUL is appended.
     @safe
     pub fn const_string(ctx: Context, s: String) -> Value {
-        Value(llvm_const_string_in_context(ctx.handle, s.as_ptr(), s.len().as_u32(), 1.as_i32()))
+        Value(llvm_const_string_in_context(ctx.handle, s.as_ptr(), s.len().as_u32(), 1))
     }
 
     @safe
@@ -783,10 +783,10 @@ pub struct Context {
     @safe
     pub fn enum_attr(ctx: Context, name: String) -> Attribute {
         let kind = llvm_get_enum_attribute_kind_for_name(name.as_ptr(), name.len().as_u64());
-        if kind == 0.as_u32() {
+        if kind == 0 {
             panic("llvm capi: unknown enum attribute: ${name}");
         }
-        Attribute(llvm_create_enum_attribute(ctx.handle, kind, 0.as_u64()))
+        Attribute(llvm_create_enum_attribute(ctx.handle, kind, 0))
     }
 
     @safe
@@ -864,8 +864,8 @@ pub struct Module {
     pub fn verify(m: Module) -> Option[String] {
         let msg = get_null_ptr();
         // 2 = LLVMReturnStatusAction.
-        let failed = llvm_verify_module(m.handle, 2.as_i32(), &msg);
-        if failed == 0.as_i32() {
+        let failed = llvm_verify_module(m.handle, 2, &msg);
+        if failed == 0 {
             if !is_null_ptr(msg) {
                 llvm_dispose_message(msg);
             }
@@ -922,7 +922,7 @@ pub struct Target {
         let target = get_null_voidptr();
         let msg = get_null_ptr();
         let failed = llvm_get_target_from_triple(c_triple.as_ptr(), &target, &msg);
-        if failed != 0.as_i32() {
+        if failed != 0 {
             let text = from_cstring(msg);
             llvm_dispose_message(msg);
             panic("llvm capi: no target for triple ${triple}: ${text}");
@@ -937,8 +937,8 @@ pub struct Target {
         let c_features = CString.from_string("");
         // Codes from llvm-c/TargetMachine.h: codegen level None = 0,
         // Aggressive = 3; reloc PIC = 2; code model default = 0.
-        let level = if optimize { 3.as_i32() } else { 0.as_i32() };
-        TargetMachine(llvm_create_target_machine(t.handle, c_triple.as_ptr(), c_cpu.as_ptr(), c_features.as_ptr(), level, 2.as_i32(), 0.as_i32()))
+        let level = if optimize { 3 } else { 0 };
+        TargetMachine(llvm_create_target_machine(t.handle, c_triple.as_ptr(), c_cpu.as_ptr(), c_features.as_ptr(), level, 2, 0))
     }
 }
 
@@ -960,8 +960,8 @@ pub struct TargetMachine {
         let c_path = CString.from_string(path);
         let msg = get_null_ptr();
         // 1 = LLVMObjectFile.
-        let failed = llvm_target_machine_emit_to_file(tm.handle, m.handle, c_path.as_ptr(), 1.as_i32(), &msg);
-        if failed != 0.as_i32() {
+        let failed = llvm_target_machine_emit_to_file(tm.handle, m.handle, c_path.as_ptr(), 1, &msg);
+        if failed != 0 {
             let text = from_cstring(msg);
             llvm_dispose_message(msg);
             panic("llvm capi: emitting object file ${path} failed: ${text}");

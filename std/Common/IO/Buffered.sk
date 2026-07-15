@@ -22,7 +22,7 @@ pub struct Reader[T] {
     // Pull up to chunk_size bytes from the inner reader into the buffer.
     // Returns how many bytes were received (0 means the inner reader is empty for now).
     pub fn fill[T: R.Reader[T]](r: Reader[T]) -> Result[Int, Error] {
-        let chunk: Vec[U8] = Vec.with_value(r.chunk_size, 0.as_u8());
+        let chunk: Vec[U8] = Vec.with_value(r.chunk_size, 0);
         let n = r.inner.read(chunk.slice())?;
         if n > 0 {
             r.data.extend_from_slice(chunk.slice().sub(0, n));
@@ -77,7 +77,7 @@ pub struct Reader[T] {
     // pending data; a final unterminated line is returned as-is.
     pub fn read_line[T: R.Reader[T]](r: Reader[T]) -> Result[Option[String], Error] {
         loop {
-            match r.data.iter().position(|b| b == 10.as_u8()) {
+            match r.data.iter().position(|b| b == 10) {
                 Some(i) => {
                     let line = line_string(r.data.slice().sub(0, i));
                     let remaining = r.data.slice().sub(i + 1, r.data.len());

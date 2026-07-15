@@ -1,35 +1,35 @@
 module Std.Arch.Wait {
 
-pub let WNOHANG:    I32 = 1.as_i32();
-pub let WEXITED:    I32 = 0x00000004.as_i32();
-pub let WSTOPPED:   I32 = 0x00000002.as_i32(); // = WUNTRACED on Linux
-pub let WCONTINUED: I32 = 0x00000008.as_i32();
-pub let WNOWAIT:    I32 = 0x01000000.as_i32();
+pub let WNOHANG:    I32 = 1;
+pub let WEXITED:    I32 = 0x00000004;
+pub let WSTOPPED:   I32 = 0x00000002; // = WUNTRACED on Linux
+pub let WCONTINUED: I32 = 0x00000008;
+pub let WNOWAIT:    I32 = 0x01000000;
 
 pub fn w_status(x: I32) -> I32 {
-    x & 0x7f.as_i32()
+    x & 0x7f
 }
 
 pub fn w_exit_status(x: I32) -> I32 {
-    (x >> 8.as_i32()) & 0xff.as_i32()
+    (x >> 8) & 0xff
 }
 
 pub fn w_exited(x: I32) -> Bool {
-    w_status(x) == 0.as_i32()
+    w_status(x) == 0
 }
 
 pub fn w_signaled(x: I32) -> Bool {
     let status = w_status(x);
-    status != WSTOPPED && status != 0.as_i32()
+    status != WSTOPPED && status != 0
 }
 
 pub fn w_stop_sig(x: I32) -> I32 {
-    x >> 8.as_i32()
+    x >> 8
 }
 
 pub fn w_stopped(x: I32) -> Bool {
     let status = w_status(x);
-    status == WSTOPPED && w_stop_sig(x) != 0x13.as_i32()
+    status == WSTOPPED && w_stop_sig(x) != 0x13
 }
 
 }

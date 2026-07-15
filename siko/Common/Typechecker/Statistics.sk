@@ -6,8 +6,8 @@ import Siko.Typechecker.Constraints as C
 pub implicit stats: Statistics
 
 fn format_microseconds_as_millis(us: I64) -> String {
-    let ms = us / 1000.as_i64();
-    let frac = (us % 1000.as_i64()).as_int().to_string();
+    let ms = us / 1000;
+    let frac = (us % 1000).as_int().to_string();
     while frac.len() < 3 {
         frac = "0" + frac;
     }
@@ -51,6 +51,7 @@ fn print_count_stat(name: String, count: Int) {
 
 pub struct ConstraintKindStats {
     pub unify: Int,
+    pub int_literal: Int,
     pub has_field: Int,
     pub has_tuple_index: Int,
     pub call_method: Int,
@@ -71,6 +72,7 @@ pub struct ConstraintKindStats {
     pub fn new() -> ConstraintKindStats {
         ConstraintKindStats(
             unify: 0,
+            int_literal: 0,
             has_field: 0,
             has_tuple_index: 0,
             call_method: 0,
@@ -93,6 +95,7 @@ pub struct ConstraintKindStats {
     pub fn record(k: ConstraintKindStats, kind: C.ConstraintKind) {
         match kind {
             C.ConstraintKind.Unify(_, _) => { k.unify += 1; }
+            C.ConstraintKind.IntLiteral(_) => { k.int_literal += 1; }
             C.ConstraintKind.HasField(_, _, _) => { k.has_field += 1; }
             C.ConstraintKind.HasTupleIndex(_, _, _) => { k.has_tuple_index += 1; }
             C.ConstraintKind.CallMethod(_, _, _, _, _) => { k.call_method += 1; }
@@ -115,6 +118,7 @@ pub struct ConstraintKindStats {
     pub fn dump(k: ConstraintKindStats, label: String) {
         println("  ${label}:");
         print_count_stat("    Unify", k.unify);
+        print_count_stat("    IntLiteral", k.int_literal);
         print_count_stat("    HasField", k.has_field);
         print_count_stat("    HasTupleIndex", k.has_tuple_index);
         print_count_stat("    CallMethod", k.call_method);

@@ -9,8 +9,8 @@ import Siko.Interner as I
 pub implicit stats: Statistics
 
 fn format_microseconds_as_millis(us: I64) -> String {
-    let ms = us / 1000.as_i64();
-    let frac = (us % 1000.as_i64()).as_int().to_string();
+    let ms = us / 1000;
+    let frac = (us % 1000).as_int().to_string();
     while frac.len() < 3 {
         frac = "0" + frac;
     }
@@ -62,8 +62,8 @@ fn print_time_stat(name: String, count: Int, total: Duration) {
 }
 
 fn print_time_sample_stat(name: String, count: Int, total: Duration, min_us: I64, max_us: I64) {
-    let actual_min = if count == 0 { 0.as_i64() } else { min_us };
-    let actual_max = if count == 0 { 0.as_i64() } else { max_us };
+    let actual_min = if count == 0 { 0 } else { min_us };
+    let actual_max = if count == 0 { 0 } else { max_us };
     println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}, min=${format_microseconds_as_millis(actual_min)}, max=${format_microseconds_as_millis(actual_max)}");
 }
 
@@ -88,8 +88,8 @@ pub struct TimedStat {
         TimedStat(
             calls: 0,
             total: Duration.zero(),
-            min_us: 0.as_i64(),
-            max_us: 0.as_i64(),
+            min_us: 0,
+            max_us: 0,
             starts: Vec.new(),
         )
     }
@@ -299,8 +299,8 @@ pub struct Statistics {
             profile_build_starts: Vec.new(),
             profile_scc_calls: 0,
             profile_scc_time: Duration.zero(),
-            profile_scc_time_min_us: 0.as_i64(),
-            profile_scc_time_max_us: 0.as_i64(),
+            profile_scc_time_min_us: 0,
+            profile_scc_time_max_us: 0,
             profile_scc_starts: Vec.new(),
             profile_flow_calls: 0,
             profile_flow_time: Duration.zero(),
@@ -322,8 +322,8 @@ pub struct Statistics {
             rewrite_starts: Vec.new(),
             rewrite_function_calls: 0,
             rewrite_function_time: Duration.zero(),
-            rewrite_function_time_min_us: 0.as_i64(),
-            rewrite_function_time_max_us: 0.as_i64(),
+            rewrite_function_time_min_us: 0,
+            rewrite_function_time_max_us: 0,
             rewrite_function_starts: Vec.new(),
             generate_handler_calls: 0,
             generate_handler_time: Duration.zero(),

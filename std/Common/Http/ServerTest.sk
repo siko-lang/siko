@@ -10,7 +10,7 @@ import Std.Mock.Console
 import Std.Mock.Wire
 
 fn drain(peer: MockPeer) -> String {
-    let buf: Vec[U8] = Vec.with_value(1024, 0.as_u8());
+    let buf: Vec[U8] = Vec.with_value(1024, 0);
     let out: Vec[U8] = Vec.new();
     loop {
         let n = peer.recv(buf.slice()).unwrap();
@@ -28,7 +28,7 @@ fn request(log: ConsoleLog, handler: fn(Request) -> Response, line: String) -> R
     peer.send(line.as_slice()).unwrap();
 
     with mock_gateway = gateway, mock_console = log, TcpNetwork = MockNet, Console = MockConsole {
-        let listener = TcpNetwork.listen(8080.as_u16()).unwrap();
+        let listener = TcpNetwork.listen(8080).unwrap();
         let socket = TcpNetwork.accept(listener).unwrap();
         serve(socket, handler);
     }

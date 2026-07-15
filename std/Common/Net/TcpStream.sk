@@ -25,14 +25,14 @@ pub struct TcpStream {
     @safe
     pub fn connect(host: String, port: U16) -> Result[TcpStream, Error] {
         let addr = parse_address(host)?;
-        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
-        if sock < 0.as_i32() {
+        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
+        if sock < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         let fd = FileDescriptor.new(sock);
         let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
         let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
-        if ret < 0.as_i32() {
+        if ret < 0 {
             let errno = Std.Arch.Errno.get_errno();
             defer fd.close();
             return Err(Error.new(errno));
@@ -43,15 +43,15 @@ pub struct TcpStream {
     @safe
     pub fn connect_async(host: String, port: U16) -> Result[TcpStream, Error] {
         let addr = parse_address(host)?;
-        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0.as_i32());
-        if sock < 0.as_i32() {
+        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
+        if sock < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         let s = FileDescriptor.new(sock);
         s.set_nonblocking(True);
         let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
         let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
-        if ret < 0.as_i32() {
+        if ret < 0 {
             let errno = Std.Arch.Errno.get_errno();
             if errno != Std.Arch.Errno.Errno.EINPROGRESS {
                 defer s.close();
@@ -63,7 +63,7 @@ pub struct TcpStream {
 
     @safe
     pub fn check_connect_result(s: TcpStream) -> Result[(), Error] {
-        let error = 0.as_i32();
+        let error = 0;
         let error_len = sizeof(I32).as_int().as_u32();
         let ret = Std.Libc.Socket.getsockopt(
             s.fd.get_fd(),
@@ -72,10 +72,10 @@ pub struct TcpStream {
             &error,
             &error_len,
         );
-        if ret < 0.as_i32() {
+        if ret < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
-        if error != 0.as_i32() {
+        if error != 0 {
             let errno: Option[Std.Arch.Errno.Errno] = from_int(error.as_int());
             return Err(Error.new(errno.expect("Failed to parse socket error code ${error}")));
         }

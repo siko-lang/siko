@@ -8,10 +8,10 @@ import Std.Arch.Errno
 @safe
 pub fn parse_address(s: String) -> Result[U32, Error] {
     let c_str = CString.from_string(s.clone());
-    let addr = InAddr(s_addr: 0.as_u32());
+    let addr = InAddr(s_addr: 0);
     let ret = Std.Libc.Socket.inet_pton(Domain.code(Domain.AF_INET), c_str.as_ptr(), &addr);
-    if ret != 1.as_i32() {
-        let errno = if ret < 0.as_i32() {
+    if ret != 1 {
+        let errno = if ret < 0 {
             Std.Arch.Errno.get_errno()
         } else {
             Std.Arch.Errno.Errno.EINVAL

@@ -8,10 +8,10 @@ fn _NSGetExecutablePath(buf: *U8, size: *U32) -> I32
 
 @safe
 pub fn get_executable_path() -> Option[String] {
-    let size = 256.as_u32();
+    let size = 256;
     loop {
-        let buf: Vec[U8] = Vec.with_value(size.as_int(), 0.as_u8());
-        if _NSGetExecutablePath(buf.as_ptr(), &size) == 0.as_i32() {
+        let buf: Vec[U8] = Vec.with_value(size.as_int(), 0);
+        if _NSGetExecutablePath(buf.as_ptr(), &size) == 0 {
             let path = from_cstring(buf.as_ptr());
             return Some(match Std.Fs.Path.canonicalize(path.clone()) {
                 Ok(resolved) => resolved,

@@ -8,7 +8,7 @@ import Std.Fs.Path as Path
 import Std.Time
 import Std.Console
 
-let TIMEOUT_SECS: Int = 45;
+let TIMEOUT_SECS: I64 = 45;
 let GREEN: String = "\x1b[32m";
 let RED: String = "\x1b[31m";
 let RESET: String = "\x1b[0m";
@@ -24,7 +24,7 @@ pub enum Error {
 
     pub fn is_segfault(e: Error) -> Bool {
         match e {
-            Signal(signal: sig) => sig == 11.as_i32(),
+            Signal(signal: sig) => sig == 11,
             _ => False,
         }
     }
@@ -34,9 +34,10 @@ instance ToString[Error] {
     fn to_string(e: Error) -> String {
         match e {
             Signal(signal: sig) => {
-                if sig == 11.as_i32() {
+                if sig == 11 {
                     "SEGFAULT (signal 11)"
                 } else {
+                    // FIXME: String interpolation should support all integer types directly.
                     "killed by signal ${sig.as_int()}"
                 }
             }
@@ -449,7 +450,7 @@ pub struct TestRunner {
                 for name in r.stats.failed_names {
                     println("  ${name}");
                 }
-                Sys.exit(1.as_i32());
+                Sys.exit(1);
             }
         }
     }
@@ -475,13 +476,13 @@ fn any_filter_matches(path: String, filters: Vec[String]) -> Bool {
 }
 
 fn format_duration(ms: I64) -> String {
-    let mins = ms / 60000.as_i64();
-    let secs = (ms % 60000.as_i64()) / 1000.as_i64();
-    let millis = ms % 1000.as_i64();
-    if mins > 0.as_i64() {
+    let mins = ms / 60000;
+    let secs = (ms % 60000) / 1000;
+    let millis = ms % 1000;
+    if mins > 0 {
         "${mins}m ${secs}s ${millis}ms"
     } else {
-        if secs > 0.as_i64() {
+        if secs > 0 {
             "${secs}s ${millis}ms"
         } else {
             "${millis}ms"
@@ -627,8 +628,8 @@ fn wait_with_timeout(child: ChildProcess) -> Result[CommandResult, Error] {
         match child.try_wait() {
             Some(r) => return Ok(r),
             None => {
-                if start.elapsed().to_seconds() >= TIMEOUT_SECS.as_i64() {
-                    child.kill(9.as_i32());
+                if start.elapsed().to_seconds() >= TIMEOUT_SECS {
+                    child.kill(9);
                     child.wait();
                     return Err(Timeout);
                 }
@@ -686,7 +687,7 @@ fn main() {
         Ok(d) => d,
         Err(e) => {
             eprintln_str("cannot get working directory: ${e}");
-            Sys.exit(1.as_i32());
+            Sys.exit(1);
         }
     };
 

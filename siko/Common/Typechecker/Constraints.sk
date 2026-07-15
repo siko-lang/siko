@@ -20,6 +20,10 @@ pub enum WitnessKey {
 @derive(Clone)
 pub enum ConstraintKind {
     Unify(lhs: TypeDef, rhs: TypeDef),
+    // The type of an integer literal: must resolve to a builtin integer type.
+    // Left pending while the type is a flex var; the solver defaults any still
+    // unresolved literal type to Int once no other constraint makes progress.
+    IntLiteral(ty: TypeDef),
     HasField(receiver: TypeDef, field: I.String, result: TypeDef),
     HasTupleIndex(receiver: TypeDef, index: Int, result: TypeDef),
     CallMethod(receiver: TypeDef, method: I.String, args: Vec[TypeDef], result: TypeDef, named_args: Vec[E.NamedArgument]),
@@ -41,6 +45,8 @@ pub enum ConstraintKind {
         match kind {
             ConstraintKind.Unify(lhs, rhs) =>
                 ConstraintKind.Unify(lhs: sub.apply(lhs), rhs: sub.apply(rhs)),
+            ConstraintKind.IntLiteral(ty) =>
+                ConstraintKind.IntLiteral(ty: sub.apply(ty)),
             ConstraintKind.HasField(receiver, field, result) =>
                 ConstraintKind.HasField(receiver: sub.apply(receiver), field: field, result: sub.apply(result)),
             ConstraintKind.HasTupleIndex(receiver, index, result) =>
@@ -121,6 +127,8 @@ pub enum ConstraintKind {
         match kind {
             ConstraintKind.Unify(t1, t2) =>
                 "Unify(${format_type(t1)} = ${format_type(t2)})",
+            ConstraintKind.IntLiteral(ty) =>
+                "IntLiteral(${format_type(ty)})",
             ConstraintKind.HasField(receiver, field, result) =>
                 "HasField(${format_type(receiver)}.${field} -> ${format_type(result)})",
             ConstraintKind.HasTupleIndex(receiver, index, result) =>

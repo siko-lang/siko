@@ -503,7 +503,7 @@ struct FunctionLowerer {
     fn lower_unary_op(fl: FunctionLowerer, op: UnaryOp, operand: Expr) -> TypedValue {
         let value = fl.lower_expr(operand);
         let constant = match op {
-            UnaryOp.Neg => value.ty.handle.const_int(0.as_u64(), False),
+            UnaryOp.Neg => value.ty.handle.const_int(0, False),
             UnaryOp.Not | UnaryOp.BNot => value.ty.handle.const_int_text("-1"),
         };
         let binary_op = match op {
@@ -632,7 +632,7 @@ struct FunctionLowerer {
                 let ptr = fl.builder.build_gep(
                     fl.ml.lower_type(owner_ty).handle,
                     base_ptr,
-                    [i32_ty.const_int(0.as_u64(), False), i32_ty.const_int(field_info.index.as_u64(), False)],
+                    [i32_ty.const_int(0, False), i32_ty.const_int(field_info.index.as_u64(), False)],
                     True,
                 );
                 Address(fl.ml.lower_type(field_info.ty), ptr)
@@ -897,9 +897,9 @@ fn add_global(
 fn add_runtime_globals(ml: ModuleLowerer) {
     let i32_ty = ml.ctx.int_type(32);
     let ptr_ty = ml.ctx.ptr_type();
-    add_global(ml, "_siko_argc", i32_ty, LLVM.Linkage.Internal, LLVM.UnnamedAddr.NoUnnamedAddr, False, Some(i32_ty.const_int(0.as_u64(), False)), None);
+    add_global(ml, "_siko_argc", i32_ty, LLVM.Linkage.Internal, LLVM.UnnamedAddr.NoUnnamedAddr, False, Some(i32_ty.const_int(0, False)), None);
     add_global(ml, "_siko_argv", ptr_ty, LLVM.Linkage.Internal, LLVM.UnnamedAddr.NoUnnamedAddr, False, Some(ptr_ty.const_null()), None);
-    add_global(ml, "_siko_result", i32_ty, LLVM.Linkage.Internal, LLVM.UnnamedAddr.NoUnnamedAddr, False, Some(i32_ty.const_int(0.as_u64(), False)), None);
+    add_global(ml, "_siko_result", i32_ty, LLVM.Linkage.Internal, LLVM.UnnamedAddr.NoUnnamedAddr, False, Some(i32_ty.const_int(0, False)), None);
     add_global(ml, "environ", ptr_ty, LLVM.Linkage.External, LLVM.UnnamedAddr.NoUnnamedAddr, False, None, None);
 }
 

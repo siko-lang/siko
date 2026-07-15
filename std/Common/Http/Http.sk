@@ -76,7 +76,7 @@ pub fn read_message(source: TcpNetwork.Socket) -> Result[String, Error] {
     let headers = join(lines, "\r\n");
     let body_len = content_length(parse_headers(lines, 1));
     if body_len > 0 {
-        let buf: Vec[U8] = Vec.with_value(body_len, 0.as_u8());
+        let buf: Vec[U8] = Vec.with_value(body_len, 0);
         reader.read_full(buf.slice())?;
         Ok(headers + "\r\n\r\n" + String.from_slice(buf.slice()))
     } else {

@@ -33,15 +33,15 @@ pub struct StatResult {
     pub blocks: I64,
 
     pub fn is_directory(s: StatResult) -> Bool {
-        (s.mode & 0xF000.as_u32()) == 0x4000.as_u32()  // S_IFDIR
+        (s.mode & 0xF000) == 0x4000  // S_IFDIR
     }
 
     pub fn is_file(s: StatResult) -> Bool {
-        (s.mode & 0xF000.as_u32()) == 0x8000.as_u32()  // S_IFREG
+        (s.mode & 0xF000) == 0x8000  // S_IFREG
     }
 
     pub fn is_symlink(s: StatResult) -> Bool {
-        (s.mode & 0xF000.as_u32()) == 0xA000.as_u32()  // S_IFLNK
+        (s.mode & 0xF000) == 0xA000  // S_IFLNK
     }
 }
 
@@ -72,7 +72,7 @@ pub fn stat(path: String) -> Result[StatResult, Error] {
     let cpath = CString.from_string(path);
     let buf = StatBuf.new();
     let ret = Libc.stat(cpath.as_ptr(), &buf);
-    if ret < 0.as_i32() {
+    if ret < 0 {
         Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
     } else {
         Ok(build_result(buf))
@@ -83,7 +83,7 @@ pub fn stat(path: String) -> Result[StatResult, Error] {
 pub fn fstat(fd: I32) -> Result[StatResult, Error] {
     let buf = StatBuf.new();
     let ret = Libc.fstat(fd, &buf);
-    if ret < 0.as_i32() {
+    if ret < 0 {
         Err(Error.new(Std.Arch.Errno.get_errno()))
     } else {
         Ok(build_result(buf))
@@ -95,7 +95,7 @@ pub fn lstat(path: String) -> Result[StatResult, Error] {
     let cpath = CString.from_string(path);
     let buf = StatBuf.new();
     let ret = Libc.lstat(cpath.as_ptr(), &buf);
-    if ret < 0.as_i32() {
+    if ret < 0 {
         Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
     } else {
         Ok(build_result(buf))

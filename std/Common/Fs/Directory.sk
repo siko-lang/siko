@@ -49,7 +49,7 @@ pub struct Directory {
         }
         let res = Std.Libc.Dir.closedir(d.dir);
         d.dir = get_null_voidptr();
-        if res < 0.as_i32() {
+        if res < 0 {
             return Err(Error.new(Std.Arch.Errno.get_errno()));
         }
         Ok(())
@@ -174,7 +174,7 @@ pub fn create_dir(path: String) -> Result[(), Error] {
     let c_path = CString.from_string(path.clone());
     let mode = 0o755.as_i32();
     let result = Std.Libc.Unistd.mkdir(c_path.as_ptr(), mode);
-    if result < 0.as_i32() {
+    if result < 0 {
         let errno = Std.Arch.Errno.get_errno();
         if errno == Std.Arch.Errno.Errno.EEXIST {
             return Ok(());
@@ -201,7 +201,7 @@ pub fn list_dir(path: String) -> Result[DirEntryIterator, Error] {
 @safe
 pub fn get_current_dir() -> Result[String, Error] {
     let buf: [U8; 4096] = uninitialized();
-    let ptr = Std.Libc.Unistd.getcwd(Std.Array.as_ptr(&buf), 4096.as_u64());
+    let ptr = Std.Libc.Unistd.getcwd(Std.Array.as_ptr(&buf), 4096);
     if is_null_ptr(ptr) {
         return Err(Error.new(Std.Arch.Errno.get_errno()));
     }

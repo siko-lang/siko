@@ -34,7 +34,7 @@ pub struct File {
 
     pub fn open(path: String) -> Result[File, Error] {
         let flags = O_RDWR;
-        let mode = 0.as_i32();
+        let mode = 0;
         let fd = Std.Libc.Fcntl.open_file(path, flags, mode)?;
         Ok(File(fd))
     }
@@ -63,7 +63,7 @@ instance Writer[File] {
 @safe
 pub fn remove_file(path: String) -> Result[(), Error] {
     let c_path = CString.from_string(path.clone());
-    if unlink(c_path.as_ptr()) < 0.as_i32() {
+    if unlink(c_path.as_ptr()) < 0 {
         return Err(Error.with_message(get_errno(), path));
     }
     Ok(())
@@ -80,11 +80,11 @@ pub fn read_file(path: String) -> Result[String, Error] {
     let file = File.open(path)?;
     defer file.close();
     let file_size = match file.stat() {
-        Ok(s) if s.size > 0.as_i64() => s.size.as_int(),
+        Ok(s) if s.size > 0 => s.size.as_int(),
         _ => 8192,
     };
     let sb = StringBuilder.new();
-    let buf: Vec[U8] = Vec.with_value(file_size, 0.as_u8());
+    let buf: Vec[U8] = Vec.with_value(file_size, 0);
     loop {
         let n = file.read(buf.slice())?;
         if n == 0 {
