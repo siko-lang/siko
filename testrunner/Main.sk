@@ -127,6 +127,11 @@ pub struct TestRunner {
         )
     }
 
+    fn print_case_start(r: TestRunner, test: TestCase, index: Int, total: Int) {
+        print("  ${format_case_index(index, total)} ${test.path} ...");
+        flush();
+    }
+
     fn compare_or_bless(r: TestRunner, snapshot: String, actual: String) -> Result[(), Error] {
         if r.bless {
             write_if_changed(snapshot, actual)
@@ -269,9 +274,8 @@ pub struct TestRunner {
         }
     }
 
-    fn bless_success_case(r: TestRunner, test: TestCase) {
-        print("  ${test.path} ...");
-        flush();
+    fn bless_success_case(r: TestRunner, test: TestCase, index: Int, total: Int) {
+        r.print_case_start(test, index, total);
         let result: Result[(), Error] = if test.has_snapshot || test.pass_tests.is_empty() {
             match r.build_and_run(test) {
                 Ok(_) => Ok(()),
@@ -301,9 +305,8 @@ pub struct TestRunner {
         }
     }
 
-    fn bless_failure_case(r: TestRunner, test: TestCase) {
-        print("  ${test.path} ...");
-        flush();
+    fn bless_failure_case(r: TestRunner, test: TestCase, index: Int, total: Int) {
+        r.print_case_start(test, index, total);
         let args: Vec[String] = Vec.new();
         args.push("build");
         args.push(test.input);
@@ -324,10 +327,9 @@ pub struct TestRunner {
         }
     }
 
-    fn run_success_case(r: TestRunner, test: TestCase) {
+    fn run_success_case(r: TestRunner, test: TestCase, index: Int, total: Int) {
         r.stats.total = r.stats.total + 1;
-        print("  ${test.path} ...");
-        flush();
+        r.print_case_start(test, index, total);
 
         if !Path.exists(r.compiler) {
             println(" ${RED}FAIL${RESET} (compiler not found)");
@@ -371,15 +373,17 @@ pub struct TestRunner {
     }
 
     fn run_success_cases(r: TestRunner, cases: Vec[TestCase]) {
-        for test in cases {
+        let total = cases.len();
+        for (i, test) in cases.iter().enumerate() {
+            let index = i + 1;
             if test.skipped {
-                r.skip_case(test);
+                r.skip_case(test, index, total);
                 continue;
             }
             if r.bless {
-                r.bless_success_case(test);
+                r.bless_success_case(test, index, total);
             } else {
-                r.run_success_case(test);
+                r.run_success_case(test, index, total);
             }
         }
     }
@@ -399,10 +403,9 @@ pub struct TestRunner {
         Ok(())
     }
 
-    fn run_failure_case(r: TestRunner, test: TestCase) {
+    fn run_failure_case(r: TestRunner, test: TestCase, index: Int, total: Int) {
         r.stats.total = r.stats.total + 1;
-        print("  ${test.path} ...");
-        flush();
+        r.print_case_start(test, index, total);
 
         let args: Vec[String] = Vec.new();
         args.push("build");
@@ -429,8 +432,8 @@ pub struct TestRunner {
         }
     }
 
-    fn skip_case(r: TestRunner, test: TestCase) {
-        println("  SKIP  ${test.path} (SKIP file present)");
+    fn skip_case(r: TestRunner, test: TestCase, index: Int, total: Int) {
+        println("  ${format_case_index(index, total)} ${test.path} ... SKIP (SKIP file present)");
         r.skipped = r.skipped + 1;
     }
 
@@ -450,6 +453,16 @@ pub struct TestRunner {
             }
         }
     }
+}
+
+fn format_case_index(index: Int, total: Int) -> String {
+    let index_string = index.to_string();
+    let width = total.to_string().len();
+    let padding = "";
+    for _ in index_string.len()..width {
+        padding = padding + " ";
+    }
+    "${padding}${index_string}/${total}"
 }
 
 fn any_filter_matches(path: String, filters: Vec[String]) -> Bool {
@@ -698,15 +711,17 @@ fn main() {
     if Path.exists("test/failure") {
         let failure_cases = discover_cases("test/failure", filters, False);
         println("\n=== failure (${failure_cases.len()} cases) ===");
-        for test in failure_cases {
+        let failure_total = failure_cases.len();
+        for (i, test) in failure_cases.iter().enumerate() {
+            let index = i + 1;
             if test.skipped {
-                runner.skip_case(test);
+                runner.skip_case(test, index, failure_total);
                 continue;
             }
             if runner.bless {
-                runner.bless_failure_case(test);
+                runner.bless_failure_case(test, index, failure_total);
             } else {
-                runner.run_failure_case(test);
+                runner.run_failure_case(test, index, failure_total);
             }
         }
     }
