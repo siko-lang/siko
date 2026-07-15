@@ -120,6 +120,13 @@ instance ExprParser[Parser] {
     fn parse_cmp_expr(parser: Parser) -> Result[Expr, ParseError] {
         let lhs = parser.parse_shift_expr()?;
         loop {
+            if parser.peek() == TokenKind.KwIs {
+                let location = lhs.location;
+                parser.advance();
+                let target = parser.parse_type_def()?;
+                lhs = Expr(ExprKind.Is(lhs, target), location, None);
+                continue;
+            }
             let op = match parser.peek() {
                 TokenKind.EqEq   => BinaryOp.Eq
                 TokenKind.BangEq => BinaryOp.NotEq

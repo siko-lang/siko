@@ -244,6 +244,23 @@ pub struct ExprResolver {
             }
             ExprKind.FunctionCall(_) => panic("Function call found in expr resolver"),
             ExprKind.If(cond, then, else_expr) => {
+                if let ExprKind.Is(inner, target) = cond.kind {
+                    if let ExprKind.Var(name) = inner.kind {
+                        if let VariableName.Unresolved(_) = name {
+                            let resolved = desugar_if_is(
+                                expr_resolver,
+                                name,
+                                inner,
+                                target,
+                                then,
+                                else_expr,
+                                cond.location,
+                                env,
+                            )?;
+                            return Ok(Expr(resolved.kind, expr.location, None));
+                        }
+                    }
+                }
                 let cond = expr_resolver.resolve_expr(cond, env)?;
                 let then = expr_resolver.resolve_expr(then, env)?;
                 let else_expr = match else_expr {
@@ -254,6 +271,10 @@ pub struct ExprResolver {
             }
             ExprKind.IfLet(pattern, cond, then, else_expr) => {
                 let resolved = desugar_if_let(expr_resolver, pattern, cond, then, else_expr, expr.location, env)?;
+                resolved.kind
+            }
+            ExprKind.Is(inner, target) => {
+                let resolved = desugar_is(expr_resolver, inner, target, expr.location, env)?;
                 resolved.kind
             }
             ExprKind.Range(lhs, rhs) => {

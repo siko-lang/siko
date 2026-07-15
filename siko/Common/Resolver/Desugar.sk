@@ -6,10 +6,118 @@ import Siko.Resolver.Error
 import Siko.Location
 import Siko.Resolver
 import Siko.AST.Expr
+import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Pattern
 import Siko.AST.Statement as S
+import Siko.AST.Type
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
+
+fn unresolved_option_type(target: TypeDef, loc: Location) -> TypeDef {
+    TypeDef.Named(NamedInfo(
+        Name.Unresolved(Identifier.new(I.intern("Option"), loc)),
+        [target],
+    ))
+}
+
+fn unresolved_downcast(inner: Expr, loc: Location) -> Expr {
+    Expr(
+        ExprKind.Call(CallInfo(
+            callee: Expr(
+                ExprKind.Var(VariableName.Unresolved(Identifier.new(I.intern("downcast"), loc))),
+                loc,
+                None,
+            ),
+            args: [inner],
+            named_args: Vec.new(),
+            is_coroutine_create: False,
+        )),
+        loc,
+        None,
+    )
+}
+
+pub fn desugar_is(
+    expr_resolver: ExprResolver,
+    inner: Expr,
+    target: TypeDef,
+    loc: Location,
+    env: Environment,
+) -> Result[Expr, ResolveError] {
+    let temp = expr_resolver.var_allocator.allocate_temp();
+    let binding = Pattern(PatternKind.Binding(temp), loc, None);
+    let is_some = Expr(
+        ExprKind.MethodCall(MethodCallInfo(
+            Expr(ExprKind.Var(temp), loc, None),
+            Identifier.new(I.intern("is_some"), loc),
+            Vec.new(),
+            Vec.new(),
+        )),
+        loc,
+        None,
+    );
+    let block = Expr(
+        ExprKind.Block(BlockInfo([
+            S.Statement.UnresolvedLet(
+                binding,
+                Some(unresolved_option_type(target, loc)),
+                unresolved_downcast(inner, loc),
+            ),
+            S.Statement.TrailingExpr(is_some),
+        ])),
+        loc,
+        None,
+    );
+    expr_resolver.resolve_expr(block, env)
+}
+
+pub fn desugar_if_is(
+    expr_resolver: ExprResolver,
+    name: VariableName,
+    inner: Expr,
+    target: TypeDef,
+    then: Expr,
+    else_expr: Option[Expr],
+    loc: Location,
+    env: Environment,
+) -> Result[Expr, ResolveError] {
+    let temp = expr_resolver.var_allocator.allocate_temp();
+    let temp_binding = Pattern(PatternKind.Binding(temp), loc, None);
+    let some_pattern = Pattern(
+        PatternKind.Named(NamedPatternInfo(
+            name: Name.Unresolved(Identifier.new(I.intern("Some"), loc)),
+            args: [Pattern(PatternKind.Binding(name), loc, None)],
+            named_args: Vec.new(),
+            has_rest: False,
+        )),
+        loc,
+        None,
+    );
+    let conditional = Expr(
+        ExprKind.IfLet(
+            some_pattern,
+            Expr(ExprKind.Var(temp), loc, None),
+            then,
+            else_expr,
+        ),
+        loc,
+        None,
+    );
+    let block = Expr(
+        ExprKind.Block(BlockInfo([
+            S.Statement.UnresolvedLet(
+                temp_binding,
+                Some(unresolved_option_type(target, loc)),
+                unresolved_downcast(inner, loc),
+            ),
+            S.Statement.TrailingExpr(conditional),
+        ])),
+        loc,
+        None,
+    );
+    expr_resolver.resolve_expr(block, env)
+}
 
 pub fn desugar_try(expr_resolver: ExprResolver, resolved_inner: Expr, loc: Location) -> ExprKind {
     let ok_var = expr_resolver.var_allocator.allocate_temp();
