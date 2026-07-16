@@ -1,0 +1,90 @@
+module Std.IO.Memory {
+
+import Std.IO.Error
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+import Std.Slice
+import Std.Vec
+
+// Exposes an existing byte vector through the Reader trait. max_chunk is
+// useful for callers that need deterministic short reads; zero means no cap.
+pub struct Reader {
+    data: Vec[U8],
+    position: Int,
+    max_chunk: Int,
+
+    pub fn new(data: Vec[U8], max_chunk: Int = 0) -> Reader {
+        Reader(data, 0, if max_chunk > 0 { max_chunk } else { 0 })
+    }
+
+    pub fn position(reader: Reader) -> Int {
+        reader.position
+    }
+
+    pub fn remaining(reader: Reader) -> Int {
+        reader.data.len() - reader.position
+    }
+
+    pub fn rewind(reader: Reader) {
+        reader.position = 0;
+    }
+}
+
+instance IO.Reader[Reader] {
+    fn read(reader: Reader, buffer: Slice[U8]) -> Result[Int, Error] {
+        let count = if buffer.len() < reader.remaining() {
+            buffer.len()
+        } else {
+            reader.remaining()
+        };
+        if reader.max_chunk != 0 && reader.max_chunk < count {
+            count = reader.max_chunk;
+        }
+        if count == 0 {
+            return Ok(0);
+        }
+        buffer.copy(reader.data.slice(), reader.position, 0, count);
+        reader.position = reader.position + count;
+        Ok(count)
+    }
+}
+
+// A growable in-memory Writer. bytes() returns its accumulated storage.
+// max_chunk provides deterministic short writes; zero means no cap.
+pub struct Writer {
+    data: Vec[U8],
+    max_chunk: Int,
+
+    pub fn new(max_chunk: Int = 0) -> Writer {
+        Writer(Vec.new(), if max_chunk > 0 { max_chunk } else { 0 })
+    }
+
+    pub fn bytes(writer: Writer) -> Vec[U8] {
+        writer.data
+    }
+
+    pub fn len(writer: Writer) -> Int {
+        writer.data.len()
+    }
+
+    pub fn is_empty(writer: Writer) -> Bool {
+        writer.data.is_empty()
+    }
+
+    pub fn clear(writer: Writer) {
+        writer.data.clear();
+    }
+}
+
+instance IO.Writer[Writer] {
+    fn write(writer: Writer, buffer: Slice[U8]) -> Result[Int, Error] {
+        let count = buffer.len();
+        if writer.max_chunk != 0 && writer.max_chunk < count {
+            count = writer.max_chunk;
+        }
+        writer.data.extend_from_slice(buffer.sub(0, count));
+        Ok(count)
+    }
+}
+
+}

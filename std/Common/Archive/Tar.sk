@@ -1,0 +1,837 @@
+module Std.Archive.Tar {
+
+import Std.Arch.Errno
+import Std.Array
+import Std.IO.Closer as IO
+import Std.IO.Error as IO
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+import Std.Slice
+import Std.Vec
+
+pub enum TarError {
+    Invalid(String),
+    Truncated,
+    ChecksumMismatch,
+    Io(IO.Error),
+}
+
+instance ToString[TarError] {
+    fn to_string(error: TarError) -> String {
+        match error {
+            TarError.Invalid(message) => "invalid tar archive: ${message}",
+            TarError.Truncated => "truncated tar archive",
+            TarError.ChecksumMismatch => "tar header checksum mismatch",
+            TarError.Io(error) => "tar I/O error: ${error}",
+        }
+    }
+}
+
+instance Into[IO.Error, TarError] {
+    fn into(error: IO.Error) -> TarError {
+        TarError.Io(error)
+    }
+}
+
+@derive(PartialEq, Eq, Clone)
+pub enum EntryType {
+    Regular,
+    HardLink,
+    SymbolicLink,
+    CharacterDevice,
+    BlockDevice,
+    Directory,
+    Fifo,
+    Other(U8),
+}
+
+pub struct Header {
+    pub name: String,
+    pub mode: Int,
+    pub uid: Int,
+    pub gid: Int,
+    pub size: Int,
+    pub mtime: Int,
+    pub entry_type: EntryType,
+    pub link_name: String,
+    pub user_name: String,
+    pub group_name: String,
+    pub device_major: Int,
+    pub device_minor: Int,
+
+    pub fn file(name: String, size: Int) -> Header {
+        Header(
+            name: name,
+            mode: 0o644,
+            uid: 0,
+            gid: 0,
+            size: size,
+            mtime: 0,
+            entry_type: EntryType.Regular,
+            link_name: "",
+            user_name: "",
+            group_name: "",
+            device_major: 0,
+            device_minor: 0,
+        )
+    }
+
+    pub fn directory(name: String) -> Header {
+        Header(
+            name: name,
+            mode: 0o755,
+            uid: 0,
+            gid: 0,
+            size: 0,
+            mtime: 0,
+            entry_type: EntryType.Directory,
+            link_name: "",
+            user_name: "",
+            group_name: "",
+            device_major: 0,
+            device_minor: 0,
+        )
+    }
+
+    pub fn symbolic_link(name: String, target: String) -> Header {
+        Header(
+            name: name,
+            mode: 0o777,
+            uid: 0,
+            gid: 0,
+            size: 0,
+            mtime: 0,
+            entry_type: EntryType.SymbolicLink,
+            link_name: target,
+            user_name: "",
+            group_name: "",
+            device_major: 0,
+            device_minor: 0,
+        )
+    }
+}
+
+fn entry_flag(entry_type: EntryType) -> U8 {
+    match entry_type {
+        EntryType.Regular => '0',
+        EntryType.HardLink => '1',
+        EntryType.SymbolicLink => '2',
+        EntryType.CharacterDevice => '3',
+        EntryType.BlockDevice => '4',
+        EntryType.Directory => '5',
+        EntryType.Fifo => '6',
+        EntryType.Other(flag) => flag,
+    }
+}
+
+fn entry_type(flag: U8) -> EntryType {
+    if flag == 0 || flag == '0' {
+        EntryType.Regular
+    } else if flag == '1' {
+        EntryType.HardLink
+    } else if flag == '2' {
+        EntryType.SymbolicLink
+    } else if flag == '3' {
+        EntryType.CharacterDevice
+    } else if flag == '4' {
+        EntryType.BlockDevice
+    } else if flag == '5' {
+        EntryType.Directory
+    } else if flag == '6' {
+        EntryType.Fifo
+    } else {
+        EntryType.Other(flag)
+    }
+}
+
+fn field_string(block: Slice[U8], offset: Int, width: Int) -> String {
+    let length = 0;
+    while length < width && block[offset + length] != 0 {
+        length = length + 1;
+    }
+    String.from_slice(block.sub(offset, offset + length))
+}
+
+fn parse_number(block: Slice[U8], offset: Int, width: Int) -> Result[Int, TarError] {
+    if (block[offset].as_int() & 0x80) != 0 {
+        // GNU/POSIX base-256 form. The high bit is the format marker and the
+        // next bit is the sign bit of the remaining big-endian integer.
+        let value = block[offset].as_int() & 0x7f;
+        if (value & 0x40) != 0 {
+            value = value - 0x80;
+        }
+        for i in 1..width {
+            value = (value << 8) | block[offset + i].as_int();
+        }
+        return Ok(value);
+    }
+
+    let start = offset;
+    let end = offset + width;
+    while start < end && (block[start] == 0 || block[start] == ' ') {
+        start = start + 1;
+    }
+    while end > start && (block[end - 1] == 0 || block[end - 1] == ' ') {
+        end = end - 1;
+    }
+    let value = 0;
+    for i in start..end {
+        let byte = block[i];
+        if byte < '0' || byte > '7' {
+            return Err(TarError.Invalid("non-octal numeric field"));
+        }
+        value = value * 8 + byte.as_int() - '0'.as_int();
+    }
+    Ok(value)
+}
+
+fn checksum(block: Slice[U8]) -> Int {
+    let sum = 0;
+    for i in 0..512 {
+        if i >= 148 && i < 156 {
+            sum = sum + 32;
+        } else {
+            sum = sum + block[i].as_int();
+        }
+    }
+    sum
+}
+
+fn is_zero_block(block: Slice[U8]) -> Bool {
+    for i in 0..512 {
+        if block[i] != 0 {
+            return False;
+        }
+    }
+    True
+}
+
+fn copy_field(block: Slice[U8], offset: Int, width: Int, value: String) {
+    let bytes = value.as_slice();
+    let count = if bytes.len() < width { bytes.len() } else { width };
+    block.copy(bytes, 0, offset, count);
+}
+
+fn write_octal(block: Slice[U8], offset: Int, width: Int, value: Int) {
+    for i in 0..width {
+        block[offset + i] = '0';
+    }
+    block[offset + width - 1] = 0;
+    let current = value;
+    let pos = offset + width - 2;
+    while current > 0 && pos >= offset {
+        block[pos] = ('0'.as_int() + (current % 8)).as_u8();
+        current = current / 8;
+        pos = pos - 1;
+    }
+}
+
+fn write_checksum(block: Slice[U8], value: Int) {
+    for i in 148..154 {
+        block[i] = '0';
+    }
+    block[154] = 0;
+    block[155] = ' ';
+    let current = value;
+    let pos = 153;
+    while current > 0 && pos >= 148 {
+        block[pos] = ('0'.as_int() + (current % 8)).as_u8();
+        current = current / 8;
+        pos = pos - 1;
+    }
+}
+
+fn fits_octal(value: Int, width: Int) -> Bool {
+    if value < 0 {
+        return False;
+    }
+    let max = (1 << (3 * (width - 1))) - 1;
+    value <= max
+}
+
+fn split_name(path: String) -> Option[(String, String)] {
+    if path.len() <= 100 {
+        return Some(("", path));
+    }
+    let bytes = path.as_slice();
+    let i = path.len() - 1;
+    while i > 0 {
+        if bytes[i] == '/' && i <= 155 && path.len() - i - 1 <= 100 {
+            return Some((path.substring(0, i), path.substring(i + 1, path.len())));
+        }
+        i = i - 1;
+    }
+    None
+}
+
+fn pax_record(key: String, value: String) -> String {
+    let body = " ${key}=${value}\n";
+    let length = body.len() + 1;
+    loop {
+        let text = length.to_string();
+        let actual = text.len() + body.len();
+        if actual == length {
+            return text + body;
+        }
+        length = actual;
+    }
+}
+
+fn write_all_tar[W: IO.Writer[W]](
+    destination: W,
+    data: Slice[U8]
+) -> Result[(), TarError] {
+    let position = 0;
+    while position < data.len() {
+        let count = destination.write(data.sub(position, data.len()))?;
+        if count <= 0 || count > data.len() - position {
+            return Err(TarError.Invalid("writer made no progress"));
+        }
+        position = position + count;
+    }
+    Ok(())
+}
+
+fn write_all_io[W: IO.Writer[W]](
+    destination: W,
+    data: Slice[U8]
+) -> Result[(), IO.Error] {
+    let position = 0;
+    while position < data.len() {
+        let count = destination.write(data.sub(position, data.len()))?;
+        if count <= 0 || count > data.len() - position {
+            return Err(IO.Error.with_message(Errno.EIO, "tar destination made no progress"));
+        }
+        position = position + count;
+    }
+    Ok(())
+}
+
+@safe
+fn write_zeroes_tar[W: IO.Writer[W]](
+    destination: W,
+    count: Int
+) -> Result[(), TarError] {
+    let zeroes: [U8; 1024] = uninitialized();
+    Std.Array.fill(&zeroes, 0, 1024);
+    let slice = Slice.from_raw(Std.Array.as_ptr(&zeroes), 1024);
+    write_all_tar(destination, slice.sub(0, count))
+}
+
+@safe
+fn write_zeroes_io[W: IO.Writer[W]](
+    destination: W,
+    count: Int
+) -> Result[(), IO.Error] {
+    let zeroes: [U8; 1024] = uninitialized();
+    Std.Array.fill(&zeroes, 0, 1024);
+    let slice = Slice.from_raw(Std.Array.as_ptr(&zeroes), 1024);
+    write_all_io(destination, slice.sub(0, count))
+}
+
+@safe
+fn write_raw_header[W: IO.Writer[W]](
+    destination: W,
+    header: Header,
+    stored_name: String,
+    prefix: String,
+    type_flag: U8,
+    stored_size: Int,
+    stored_uid: Int,
+    stored_gid: Int,
+    stored_mtime: Int,
+    stored_link: String,
+    stored_user: String,
+    stored_group: String
+) -> Result[(), TarError] {
+    let storage: [U8; 512] = uninitialized();
+    Std.Array.fill(&storage, 0, 512);
+    let block = Slice.from_raw(Std.Array.as_ptr(&storage), 512);
+
+    copy_field(block, 0, 100, stored_name);
+    write_octal(block, 100, 8, header.mode);
+    write_octal(block, 108, 8, stored_uid);
+    write_octal(block, 116, 8, stored_gid);
+    write_octal(block, 124, 12, stored_size);
+    write_octal(block, 136, 12, stored_mtime);
+    for i in 148..156 { block[i] = ' '; }
+    block[156] = type_flag;
+    copy_field(block, 157, 100, stored_link);
+    copy_field(block, 257, 6, "ustar");
+    copy_field(block, 263, 2, "00");
+    copy_field(block, 265, 32, stored_user);
+    copy_field(block, 297, 32, stored_group);
+    write_octal(block, 329, 8, header.device_major);
+    write_octal(block, 337, 8, header.device_minor);
+    copy_field(block, 345, 155, prefix);
+    write_checksum(block, checksum(block));
+    write_all_tar(destination, block)
+}
+
+pub struct Writer[W] {
+    destination: W,
+    remaining: Int,
+    padding: Int,
+    active: Bool,
+    closed: Bool,
+
+    pub fn new[W](destination: W) -> Writer[W] {
+        Writer(destination, 0, 0, False, False)
+    }
+
+    fn finish_previous[W: IO.Writer[W]](writer: Writer[W]) -> Result[(), TarError] {
+        if !writer.active {
+            return Ok(());
+        }
+        if writer.remaining != 0 {
+            return Err(TarError.Invalid("entry closed before its declared size was written"));
+        }
+        if writer.padding != 0 {
+            write_zeroes_tar(writer.destination, writer.padding)?;
+        }
+        writer.padding = 0;
+        writer.active = False;
+        Ok(())
+    }
+
+    pub fn write_header[W: IO.Writer[W]](
+        writer: Writer[W],
+        header: Header
+    ) -> Result[(), TarError] {
+        if writer.closed {
+            return Err(TarError.Invalid("writer is closed"));
+        }
+        if header.name.len() == 0 {
+            return Err(TarError.Invalid("entry name is empty"));
+        }
+        if header.size < 0 {
+            return Err(TarError.Invalid("entry size is negative"));
+        }
+        writer.finish_previous()?;
+
+        let pax = "";
+        let stored_name = "";
+        let prefix = "";
+        match split_name(header.name) {
+            Some((p, n)) => {
+                prefix = p;
+                stored_name = n;
+            }
+            None => {
+                pax = pax + pax_record("path", header.name);
+                stored_name = "PaxEntry";
+            }
+        }
+
+        let stored_link = header.link_name;
+        if stored_link.len() > 100 {
+            pax = pax + pax_record("linkpath", stored_link);
+            stored_link = "PaxLink";
+        }
+        let stored_size = header.size;
+        if !fits_octal(stored_size, 12) {
+            pax = pax + pax_record("size", stored_size.to_string());
+            stored_size = 0;
+        }
+        let stored_uid = header.uid;
+        if !fits_octal(stored_uid, 8) {
+            pax = pax + pax_record("uid", stored_uid.to_string());
+            stored_uid = 0;
+        }
+        let stored_gid = header.gid;
+        if !fits_octal(stored_gid, 8) {
+            pax = pax + pax_record("gid", stored_gid.to_string());
+            stored_gid = 0;
+        }
+        let stored_mtime = header.mtime;
+        if !fits_octal(stored_mtime, 12) {
+            pax = pax + pax_record("mtime", stored_mtime.to_string());
+            stored_mtime = 0;
+        }
+        let stored_user = header.user_name;
+        if stored_user.len() > 32 {
+            pax = pax + pax_record("uname", stored_user);
+            stored_user = "";
+        }
+        let stored_group = header.group_name;
+        if stored_group.len() > 32 {
+            pax = pax + pax_record("gname", stored_group);
+            stored_group = "";
+        }
+
+        if pax.len() != 0 {
+            let pax_header = Header.file("PaxHeaders.X/entry", pax.len());
+            write_raw_header(
+                writer.destination,
+                pax_header,
+                "PaxHeaders.X/entry",
+                "",
+                'x',
+                pax.len(),
+                0,
+                0,
+                0,
+                "",
+                "",
+                "",
+            )?;
+            write_all_tar(writer.destination, pax.as_slice())?;
+            let pax_padding = (512 - (pax.len() % 512)) % 512;
+            if pax_padding != 0 {
+                write_zeroes_tar(writer.destination, pax_padding)?;
+            }
+        }
+
+        write_raw_header(
+            writer.destination,
+            header,
+            stored_name,
+            prefix,
+            entry_flag(header.entry_type),
+            stored_size,
+            stored_uid,
+            stored_gid,
+            stored_mtime,
+            stored_link,
+            stored_user,
+            stored_group,
+        )?;
+        writer.remaining = header.size;
+        writer.padding = (512 - (header.size % 512)) % 512;
+        writer.active = True;
+        Ok(())
+    }
+}
+
+instance[W: IO.Writer[W]] IO.Writer[Writer[W]] {
+    fn write(writer: Writer[W], data: Slice[U8]) -> Result[Int, IO.Error] {
+        if writer.closed {
+            return Err(IO.Error.with_message(Errno.EINVAL, "tar writer is closed"));
+        }
+        if !writer.active {
+            return Err(IO.Error.with_message(Errno.EINVAL, "tar entry header is required"));
+        }
+        if data.len() > writer.remaining {
+            return Err(IO.Error.with_message(Errno.EFBIG, "write exceeds tar entry size"));
+        }
+        if data.len() == 0 {
+            return Ok(0);
+        }
+        let count = writer.destination.write(data)?;
+        if count < 0 || count > data.len() {
+            return Err(IO.Error.with_message(Errno.EIO, "tar destination returned invalid count"));
+        }
+        writer.remaining = writer.remaining - count;
+        Ok(count)
+    }
+}
+
+instance[W: IO.Writer[W]] IO.Closer[Writer[W]] {
+    fn close(writer: Writer[W]) -> Result[(), IO.Error] {
+        if writer.closed {
+            return Ok(());
+        }
+        if writer.active && writer.remaining != 0 {
+            return Err(IO.Error.with_message(Errno.EINVAL, "tar entry is shorter than declared size"));
+        }
+        if writer.active && writer.padding != 0 {
+            write_zeroes_io(writer.destination, writer.padding)?;
+        }
+        write_zeroes_io(writer.destination, 1024)?;
+        writer.active = False;
+        writer.closed = True;
+        Ok(())
+    }
+}
+
+struct Pax {
+    path: Option[String],
+    link_path: Option[String],
+    size: Option[Int],
+    uid: Option[Int],
+    gid: Option[Int],
+    mtime: Option[Int],
+    user_name: Option[String],
+    group_name: Option[String],
+
+    fn new() -> Pax {
+        Pax(None, None, None, None, None, None, None, None)
+    }
+}
+
+fn merge_pax(target: Pax, source: Pax) {
+    match source.path { Some(value) => { target.path = Some(value); }, None => {} }
+    match source.link_path { Some(value) => { target.link_path = Some(value); }, None => {} }
+    match source.size { Some(value) => { target.size = Some(value); }, None => {} }
+    match source.uid { Some(value) => { target.uid = Some(value); }, None => {} }
+    match source.gid { Some(value) => { target.gid = Some(value); }, None => {} }
+    match source.mtime { Some(value) => { target.mtime = Some(value); }, None => {} }
+    match source.user_name { Some(value) => { target.user_name = Some(value); }, None => {} }
+    match source.group_name { Some(value) => { target.group_name = Some(value); }, None => {} }
+}
+
+fn decimal(value: String, key: String) -> Result[Int, TarError] {
+    let integer = match value.find(".") {
+        Some(index) => value.substring(0, index),
+        None => value,
+    };
+    match integer.parse_int(10) {
+        Ok(number) => Ok(number),
+        Err(_) => Err(TarError.Invalid("invalid PAX ${key} value")),
+    }
+}
+
+fn parse_pax(data: Vec[U8]) -> Result[Pax, TarError] {
+    let result = Pax.new();
+    let position = 0;
+    while position < data.len() {
+        let space = position;
+        while space < data.len() && data[space] != ' ' {
+            if data[space] < '0' || data[space] > '9' {
+                return Err(TarError.Invalid("invalid PAX record length"));
+            }
+            space = space + 1;
+        }
+        if space == data.len() || space == position {
+            return Err(TarError.Invalid("invalid PAX record"));
+        }
+        let length_text = String.from_slice(data.sub_slice(position, space));
+        let length = match length_text.parse_int(10) {
+            Ok(value) => value,
+            Err(_) => return Err(TarError.Invalid("invalid PAX record length")),
+        };
+        if length <= 0 || position + length > data.len() || data[position + length - 1] != '\n' {
+            return Err(TarError.Invalid("invalid PAX record boundary"));
+        }
+        let equals = space + 1;
+        while equals < position + length - 1 && data[equals] != '=' {
+            equals = equals + 1;
+        }
+        if equals >= position + length - 1 {
+            return Err(TarError.Invalid("invalid PAX key/value record"));
+        }
+        let key = String.from_slice(data.sub_slice(space + 1, equals));
+        let value = String.from_slice(data.sub_slice(equals + 1, position + length - 1));
+        if key == "path" {
+            result.path = Some(value);
+        } else if key == "linkpath" {
+            result.link_path = Some(value);
+        } else if key == "size" {
+            result.size = Some(decimal(value, key)?);
+        } else if key == "uid" {
+            result.uid = Some(decimal(value, key)?);
+        } else if key == "gid" {
+            result.gid = Some(decimal(value, key)?);
+        } else if key == "mtime" {
+            result.mtime = Some(decimal(value, key)?);
+        } else if key == "uname" {
+            result.user_name = Some(value);
+        } else if key == "gname" {
+            result.group_name = Some(value);
+        }
+        position = position + length;
+    }
+    Ok(result)
+}
+
+fn apply_pax(header: Header, pax: Pax) {
+    match pax.path { Some(value) => { header.name = value; }, None => {} }
+    match pax.link_path { Some(value) => { header.link_name = value; }, None => {} }
+    match pax.size { Some(value) => { header.size = value; }, None => {} }
+    match pax.uid { Some(value) => { header.uid = value; }, None => {} }
+    match pax.gid { Some(value) => { header.gid = value; }, None => {} }
+    match pax.mtime { Some(value) => { header.mtime = value; }, None => {} }
+    match pax.user_name { Some(value) => { header.user_name = value; }, None => {} }
+    match pax.group_name { Some(value) => { header.group_name = value; }, None => {} }
+}
+
+fn long_string(data: Vec[U8]) -> String {
+    let end = data.len();
+    while end > 0 && (data[end - 1] == 0 || data[end - 1] == '\n') {
+        end = end - 1;
+    }
+    String.from_slice(data.sub_slice(0, end))
+}
+
+fn parse_header(block: Slice[U8]) -> Result[(Header, U8), TarError] {
+    let expected = parse_number(block, 148, 8)?;
+    if checksum(block) != expected {
+        return Err(TarError.ChecksumMismatch);
+    }
+    let name = field_string(block, 0, 100);
+    let prefix = field_string(block, 345, 155);
+    let full_name = if prefix.len() == 0 { name } else { prefix + "/" + name };
+    let flag = block[156];
+    let header = Header(
+        name: full_name,
+        mode: parse_number(block, 100, 8)?,
+        uid: parse_number(block, 108, 8)?,
+        gid: parse_number(block, 116, 8)?,
+        size: parse_number(block, 124, 12)?,
+        mtime: parse_number(block, 136, 12)?,
+        entry_type: entry_type(flag),
+        link_name: field_string(block, 157, 100),
+        user_name: field_string(block, 265, 32),
+        group_name: field_string(block, 297, 32),
+        device_major: parse_number(block, 329, 8)?,
+        device_minor: parse_number(block, 337, 8)?,
+    );
+    if header.size < 0 {
+        return Err(TarError.Invalid("negative entry size"));
+    }
+    Ok((header, flag))
+}
+
+pub struct Reader[R] {
+    source: R,
+    remaining: Int,
+    padding: Int,
+    done: Bool,
+    closed: Bool,
+    global_pax: Pax,
+
+    pub fn new[R](source: R) -> Reader[R] {
+        Reader(source, 0, 0, False, False, Pax.new())
+    }
+
+    fn read_exact[R: IO.Reader[R]](
+        reader: Reader[R],
+        buffer: Slice[U8],
+        allow_eof: Bool
+    ) -> Result[Bool, TarError] {
+        let position = 0;
+        while position < buffer.len() {
+            let count = reader.source.read(buffer.sub(position, buffer.len()))?;
+            if count == 0 {
+                if position == 0 && allow_eof {
+                    return Ok(False);
+                }
+                return Err(TarError.Truncated);
+            }
+            if count < 0 || count > buffer.len() - position {
+                return Err(TarError.Invalid("reader returned invalid byte count"));
+            }
+            position = position + count;
+        }
+        Ok(True)
+    }
+
+    @safe
+    fn discard[R: IO.Reader[R]](reader: Reader[R], count: Int) -> Result[(), TarError] {
+        let storage: [U8; 512] = uninitialized();
+        let buffer = Slice.from_raw(Std.Array.as_ptr(&storage), 512);
+        let remaining = count;
+        while remaining > 0 {
+            let chunk = if remaining < 512 { remaining } else { 512 };
+            reader.read_exact(buffer.sub(0, chunk), False)?;
+            remaining = remaining - chunk;
+        }
+        Ok(())
+    }
+
+    fn skip_current[R: IO.Reader[R]](reader: Reader[R]) -> Result[(), TarError] {
+        if reader.remaining != 0 {
+            reader.discard(reader.remaining)?;
+            reader.remaining = 0;
+        }
+        if reader.padding != 0 {
+            reader.discard(reader.padding)?;
+            reader.padding = 0;
+        }
+        Ok(())
+    }
+
+    fn read_payload[R: IO.Reader[R]](reader: Reader[R]) -> Result[Vec[U8], TarError] {
+        let output: Vec[U8] = Vec.with_value(reader.remaining, 0);
+        if reader.remaining != 0 {
+            reader.read_exact(output.slice(), False)?;
+        }
+        reader.remaining = 0;
+        if reader.padding != 0 {
+            reader.discard(reader.padding)?;
+            reader.padding = 0;
+        }
+        Ok(output)
+    }
+
+    @safe
+    pub fn next[R: IO.Reader[R]](reader: Reader[R]) -> Result[Option[Header], TarError] {
+        if reader.closed {
+            return Err(TarError.Invalid("reader is closed"));
+        }
+        if reader.done {
+            return Ok(None);
+        }
+        reader.skip_current()?;
+        let pending = Pax.new();
+
+        loop {
+            let storage: [U8; 512] = uninitialized();
+            let block = Slice.from_raw(Std.Array.as_ptr(&storage), 512);
+            if !reader.read_exact(block, True)? {
+                reader.done = True;
+                return Ok(None);
+            }
+            if is_zero_block(block) {
+                reader.done = True;
+                return Ok(None);
+            }
+
+            let (header, flag) = parse_header(block)?;
+            reader.remaining = header.size;
+            reader.padding = (512 - (header.size % 512)) % 512;
+
+            if flag == 'x' || flag == 'g' {
+                let values = parse_pax(reader.read_payload()?)?;
+                if flag == 'g' {
+                    merge_pax(reader.global_pax, values);
+                } else {
+                    merge_pax(pending, values);
+                }
+            } else if flag == 'L' {
+                pending.path = Some(long_string(reader.read_payload()?));
+            } else if flag == 'K' {
+                pending.link_path = Some(long_string(reader.read_payload()?));
+            } else {
+                apply_pax(header, reader.global_pax);
+                apply_pax(header, pending);
+                if header.size < 0 {
+                    return Err(TarError.Invalid("negative PAX entry size"));
+                }
+                reader.remaining = header.size;
+                reader.padding = (512 - (header.size % 512)) % 512;
+                return Ok(Some(header));
+            }
+        }
+    }
+}
+
+instance[R: IO.Reader[R]] IO.Reader[Reader[R]] {
+    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+        if reader.closed {
+            return Err(IO.Error.with_message(Errno.EINVAL, "tar reader is closed"));
+        }
+        let count = if buffer.len() < reader.remaining { buffer.len() } else { reader.remaining };
+        if count == 0 {
+            return Ok(0);
+        }
+        let actual = reader.source.read(buffer.sub(0, count))?;
+        if actual == 0 {
+            return Err(IO.Error.with_message(Errno.EIO, "unexpected end of tar entry"));
+        }
+        if actual < 0 || actual > count {
+            return Err(IO.Error.with_message(Errno.EIO, "tar source returned invalid count"));
+        }
+        reader.remaining = reader.remaining - actual;
+        Ok(actual)
+    }
+}
+
+instance[R] IO.Closer[Reader[R]] {
+    fn close(reader: Reader[R]) -> Result[(), IO.Error] {
+        reader.closed = True;
+        Ok(())
+    }
+}
+
+}

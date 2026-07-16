@@ -1,0 +1,307 @@
+module Std.Compression.Gzip {
+
+import Std.Arch.Errno
+import Std.Compression.Deflate
+import Std.IO.Closer as IO
+import Std.IO.Error as IO
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+import Std.Slice
+import Std.Vec
+import Std.Array
+
+// RFC 1952 gzip wrapper. Reader and Writer deliberately follow the shape of
+// Go's compress/gzip package: they wrap Siko's I/O traits and do not close the
+// underlying stream.
+
+pub enum GzipError {
+    Invalid(String),
+    Truncated,
+    ChecksumMismatch,
+    SizeMismatch,
+    Io(IO.Error),
+    Deflate(Deflate.DeflateError),
+}
+
+instance ToString[GzipError] {
+    fn to_string(error: GzipError) -> String {
+        match error {
+            GzipError.Invalid(message) => "invalid gzip stream: ${message}",
+            GzipError.Truncated => "truncated gzip stream",
+            GzipError.ChecksumMismatch => "gzip CRC-32 mismatch",
+            GzipError.SizeMismatch => "gzip uncompressed size mismatch",
+            GzipError.Io(error) => "gzip I/O error: ${error}",
+            GzipError.Deflate(error) => error.to_string(),
+        }
+    }
+}
+
+instance Into[IO.Error, GzipError] {
+    fn into(error: IO.Error) -> GzipError {
+        GzipError.Io(error)
+    }
+}
+
+instance Into[Deflate.DeflateError, GzipError] {
+    fn into(error: Deflate.DeflateError) -> GzipError {
+        GzipError.Deflate(error)
+    }
+}
+
+fn ensure(data: Vec[U8], offset: Int, count: Int) -> Result[(), GzipError] {
+    if offset < 0 || count < 0 || offset > data.len() || count > data.len() - offset {
+        Err(GzipError.Truncated)
+    } else {
+        Ok(())
+    }
+}
+
+fn read_u16(data: Vec[U8], offset: Int) -> Result[Int, GzipError] {
+    ensure(data, offset, 2)?;
+    Ok(data[offset].as_int() | (data[offset + 1].as_int() << 8))
+}
+
+fn read_u32(data: Vec[U8], offset: Int) -> Result[Int, GzipError] {
+    ensure(data, offset, 4)?;
+    Ok(
+        data[offset].as_int() |
+        (data[offset + 1].as_int() << 8) |
+        (data[offset + 2].as_int() << 16) |
+        (data[offset + 3].as_int() << 24)
+    )
+}
+
+fn write_u32(output: Vec[U8], value: Int) {
+    output.push(value.as_u8());
+    output.push((value >> 8).as_u8());
+    output.push((value >> 16).as_u8());
+    output.push((value >> 24).as_u8());
+}
+
+fn crc32_update(initial: U32, data: Slice[U8]) -> U32 {
+    let crc = initial;
+    for i in 0..data.len() {
+        let byte = data[i];
+        crc = crc ^ byte.as_int().as_u32();
+        for _ in 0..8 {
+            if (crc & 1) == 1 {
+                crc = (crc >> 1) ^ 0xedb88320;
+            } else {
+                crc = crc >> 1;
+            }
+        }
+    }
+    crc
+}
+
+pub fn crc32(data: Vec[U8]) -> U32 {
+    ~crc32_update(0xffffffff, data.slice())
+}
+
+fn header_end(data: Vec[U8], start: Int) -> Result[Int, GzipError] {
+    ensure(data, start, 10)?;
+    if data[start] != 0x1f || data[start + 1] != 0x8b {
+        return Err(GzipError.Invalid("bad magic bytes"));
+    }
+    if data[start + 2] != 8 {
+        return Err(GzipError.Invalid("unsupported compression method"));
+    }
+    let flags = data[start + 3].as_int();
+    if (flags & 0xe0) != 0 {
+        return Err(GzipError.Invalid("reserved header flags are set"));
+    }
+
+    let pos = start + 10;
+    if (flags & 4) != 0 {
+        let extra_length = read_u16(data, pos)?;
+        pos = pos + 2;
+        ensure(data, pos, extra_length)?;
+        pos = pos + extra_length;
+    }
+    if (flags & 8) != 0 {
+        loop {
+            ensure(data, pos, 1)?;
+            let byte = data[pos];
+            pos = pos + 1;
+            if byte == 0 { break; }
+        }
+    }
+    if (flags & 16) != 0 {
+        loop {
+            ensure(data, pos, 1)?;
+            let byte = data[pos];
+            pos = pos + 1;
+            if byte == 0 { break; }
+        }
+    }
+    if (flags & 2) != 0 {
+        let expected = read_u16(data, pos)?;
+        let header = data.sub(start, pos);
+        let actual = crc32(header).as_int() & 0xffff;
+        if actual != expected {
+            return Err(GzipError.Invalid("header CRC mismatch"));
+        }
+        pos = pos + 2;
+    }
+    Ok(pos)
+}
+
+pub fn encode(data: Vec[U8]) -> Vec[U8] {
+    let output: Vec[U8] = Vec.new();
+    output.push(0x1f);
+    output.push(0x8b);
+    output.push(8);       // DEFLATE
+    output.push(0);       // flags
+    write_u32(output, 0); // modification time unavailable
+    output.push(0);       // extra flags
+    output.push(255);     // unknown operating system
+    output.extend(Deflate.encode(data));
+    write_u32(output, crc32(data).as_int());
+    write_u32(output, data.len() & 0xffffffff);
+    output
+}
+
+// Decodes all concatenated gzip members and accepts the zero padding commonly
+// permitted after the last member.
+pub fn decode(data: Vec[U8]) -> Result[Vec[U8], GzipError] {
+    if data.len() == 0 {
+        return Err(GzipError.Truncated);
+    }
+    let output: Vec[U8] = Vec.new();
+    let member_start = 0;
+    while member_start < data.len() {
+        while member_start < data.len() && data[member_start] == 0 {
+            member_start = member_start + 1;
+        }
+        if member_start == data.len() {
+            break;
+        }
+
+        let compressed_start = header_end(data, member_start)?;
+        let compressed_and_rest = data.sub(compressed_start, data.len());
+        let (member, compressed_size) = Deflate.decode_with_size(compressed_and_rest)?;
+        let trailer = compressed_start + compressed_size;
+        ensure(data, trailer, 8)?;
+        let expected_crc = read_u32(data, trailer)?.as_u32();
+        let expected_size = read_u32(data, trailer + 4)?;
+        if crc32(member) != expected_crc {
+            return Err(GzipError.ChecksumMismatch);
+        }
+        if (member.len() & 0xffffffff) != expected_size {
+            return Err(GzipError.SizeMismatch);
+        }
+        output.extend(member);
+        member_start = trailer + 8;
+    }
+    Ok(output)
+}
+
+@safe
+fn read_all[R: IO.Reader[R]](source: R) -> Result[Vec[U8], GzipError] {
+    let output: Vec[U8] = Vec.new();
+    let chunk: [U8; 8192] = uninitialized();
+    let chunk_slice = Slice.from_raw(Std.Array.as_ptr(&chunk), 8192);
+    loop {
+        let count = source.read(chunk_slice)?;
+        if count == 0 {
+            break;
+        }
+        if count < 0 || count > chunk_slice.len() {
+            return Err(GzipError.Invalid("reader returned an invalid byte count"));
+        }
+        output.extend_from_slice(chunk_slice.sub(0, count));
+    }
+    Ok(output)
+}
+
+pub struct Reader[R] {
+    source: R,
+    data: Vec[U8],
+    position: Int,
+    closed: Bool,
+
+    // Header parsing, decompression, and integrity validation happen here, so
+    // later Reader.read calls can report only ordinary I/O errors.
+    pub fn new[R: IO.Reader[R]](source: R) -> Result[Reader[R], GzipError] {
+        let compressed = read_all(source)?;
+        let data = decode(compressed)?;
+        Ok(Reader(source, data, 0, False))
+    }
+}
+
+instance[R] IO.Reader[Reader[R]] {
+    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+        if reader.closed {
+            return Err(IO.Error.with_message(Errno.EINVAL, "gzip reader is closed"));
+        }
+        let remaining = reader.data.len() - reader.position;
+        let count = if buffer.len() < remaining { buffer.len() } else { remaining };
+        if count == 0 {
+            return Ok(0);
+        }
+        buffer.copy(reader.data.slice(), reader.position, 0, count);
+        reader.position = reader.position + count;
+        Ok(count)
+    }
+}
+
+instance[R] IO.Closer[Reader[R]] {
+    fn close(reader: Reader[R]) -> Result[(), IO.Error] {
+        reader.closed = True;
+        reader.data.clear();
+        Ok(())
+    }
+}
+
+pub struct Writer[W] {
+    destination: W,
+    data: Vec[U8],
+    encoded: Option[Vec[U8]],
+    encoded_position: Int,
+    closed: Bool,
+
+    pub fn new[W](destination: W) -> Writer[W] {
+        Writer(destination, Vec.new(), None, 0, False)
+    }
+}
+
+instance[W] IO.Writer[Writer[W]] {
+    fn write(writer: Writer[W], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+        if writer.closed || writer.encoded.is_some() {
+            return Err(IO.Error.with_message(Errno.EINVAL, "gzip writer is closed"));
+        }
+        writer.data.extend_from_slice(buffer);
+        Ok(buffer.len())
+    }
+}
+
+instance[W: IO.Writer[W]] IO.Closer[Writer[W]] {
+    fn close(writer: Writer[W]) -> Result[(), IO.Error] {
+        if writer.closed {
+            return Ok(());
+        }
+        if writer.encoded.is_none() {
+            writer.encoded = Some(encode(writer.data));
+        }
+        match writer.encoded {
+            None => {}
+            Some(encoded) => {
+                while writer.encoded_position < encoded.len() {
+                    let count = writer.destination.write(
+                        encoded.sub_slice(writer.encoded_position, encoded.len())
+                    )?;
+                    if count <= 0 || count > encoded.len() - writer.encoded_position {
+                        return Err(IO.Error.with_message(Errno.EIO, "gzip destination made no progress"));
+                    }
+                    writer.encoded_position = writer.encoded_position + count;
+                }
+            }
+        }
+        writer.closed = True;
+        writer.data.clear();
+        writer.encoded = None;
+        Ok(())
+    }
+}
+
+}

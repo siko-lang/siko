@@ -1,0 +1,71 @@
+module Main {
+
+import Std.Compression.Gzip
+import Std.IO.Buffered
+import Std.IO.Closer
+import Std.IO.Memory
+import Std.IO.Writer
+
+fn external_dynamic_gzip() -> Vec[U8] {
+    let data: Vec[U8] = Vec.new();
+    for byte in [
+        31, 139, 8, 0, 0, 0, 0, 0, 0, 255, 37, 144, 11, 146, 194, 32,
+        16, 68, 175, 228, 103, 93, 227, 113, 198, 208, 10, 187, 145, 49, 76,
+        171, 209, 211, 111, 147, 45, 170, 2, 161, 152, 215, 31, 220, 26, 236,
+        93, 231, 9, 119, 20, 52, 160, 228, 86, 253, 3, 44, 8, 199, 17, 184,
+        129, 96, 189, 184, 251, 84, 96, 0, 42, 48, 148, 153, 30, 150, 44,
+        63, 252, 161, 75, 222, 143, 96, 78, 9, 123, 44, 137, 212, 155, 79,
+        213, 181, 3, 116, 125, 222, 103, 216, 200, 198, 208, 191, 0, 175, 12,
+        56, 159, 58, 26, 13, 102, 37, 108, 115, 105, 184, 6, 125, 1, 11, 130,
+        77, 179, 19, 97, 231, 241, 71, 70, 102, 43, 118, 178, 59, 43, 70,
+        156, 132, 157, 11, 111, 47, 118, 89, 187, 80, 4, 36, 8, 189, 151,
+        77, 156, 202, 78, 124, 218, 160, 44, 176, 29, 82, 233, 130, 25, 156,
+        244, 120, 131, 171, 141, 82, 14, 22, 91, 156, 158, 188, 59, 68, 253,
+        141, 210, 115, 31, 86, 93, 140, 125, 2, 33, 3, 107, 212, 32, 14,
+        200, 217, 241, 236, 225, 115, 93, 43, 80, 128, 158, 164, 206, 66, 72,
+        246, 154, 85, 85, 93, 231, 254, 251, 137, 168, 221, 141, 217, 214, 71,
+        154, 142, 210, 81, 205, 50, 10, 43, 239, 93, 182, 5, 191, 14, 155,
+        149, 216, 75, 231, 241, 134, 213, 12, 173, 81, 214, 15, 217, 190, 193,
+        148, 21, 88, 52, 151, 94, 194, 151, 132, 187, 246, 80, 169, 106, 144,
+        34, 119, 166, 22, 83, 87, 221, 162, 156, 133, 124, 185, 53, 109, 209,
+        113, 105, 26, 162, 98, 211, 51, 70, 141, 50, 174, 158, 31, 10, 244,
+        7, 236, 158, 156, 198, 244, 1, 0, 0,
+    ] {
+        data.push(byte.as_u8());
+    }
+    data
+}
+
+fn main() {
+    let original = (
+        "native gzip through Siko Reader and Writer traits\n" +
+        "native gzip through Siko Reader and Writer traits\n"
+    ).to_bytes();
+
+    // Exercise partial destination writes and close-driven finalization.
+    let sink = Memory.Writer.new(max_chunk: 7);
+    let gzip_writer = Gzip.Writer.new(sink);
+    gzip_writer.write(original.sub_slice(0, 13)).unwrap();
+    gzip_writer.write(original.sub_slice(13, original.len())).unwrap();
+    gzip_writer.close().unwrap();
+    gzip_writer.close().unwrap();
+    assert(sink.bytes()[0] == 0x1f && sink.bytes()[1] == 0x8b);
+
+    // Exercise partial source reads and the wrapped Reader implementation.
+    let source = Memory.Reader.new(sink.bytes(), max_chunk: 5);
+    let gzip_reader = Gzip.Reader.new(source).unwrap();
+    let buffered = Buffered.Reader.new(gzip_reader, chunk_size: 9);
+    let decoded = buffered.read_all().unwrap();
+    assert(decoded == original);
+    gzip_reader.close().unwrap();
+
+    // Produced independently by Python's gzip/zlib implementation. Its raw
+    // DEFLATE member uses a dynamic Huffman block.
+    let external = Gzip.decode(external_dynamic_gzip()).unwrap();
+    assert(external.len() == 500);
+
+    assert(Gzip.crc32("123456789".to_bytes()) == 0xcbf43926);
+    println("gzip ok");
+}
+
+}

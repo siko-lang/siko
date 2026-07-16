@@ -1,0 +1,480 @@
+module Std.Compression.Deflate {
+
+import Std.Vec
+import Std.Array
+import Std.Slice
+// Native RFC 1951 DEFLATE. The decoder accepts stored, fixed-Huffman, and
+// dynamic-Huffman blocks. The intentionally simple encoder writes fixed
+// Huffman blocks and uses a bounded hash-chain LZ77 matcher.
+
+pub enum DeflateError {
+    Invalid(String),
+    Truncated,
+}
+
+instance ToString[DeflateError] {
+    fn to_string(e: DeflateError) -> String {
+        match e {
+            DeflateError.Invalid(message) => "invalid DEFLATE stream: ${message}",
+            DeflateError.Truncated => "truncated DEFLATE stream",
+        }
+    }
+}
+
+// -------------------------------------------------------------------------
+// DEFLATE bit and Huffman support
+// -------------------------------------------------------------------------
+
+struct BitReader {
+    data: Vec[U8],
+    byte_pos: Int,
+    bit_pos: Int,
+
+    fn new(data: Vec[U8]) -> BitReader {
+        BitReader(data, 0, 0)
+    }
+
+    // Non-Huffman DEFLATE fields are stored least-significant bit first.
+    fn read_bits(r: BitReader, count: Int) -> Result[Int, DeflateError] {
+        let value = 0;
+        for i in 0..count {
+            if r.byte_pos >= r.data.len() {
+                return Err(DeflateError.Truncated);
+            }
+            let bit = (r.data[r.byte_pos].as_int() >> r.bit_pos) & 1;
+            value = value | (bit << i);
+            r.bit_pos = r.bit_pos + 1;
+            if r.bit_pos == 8 {
+                r.bit_pos = 0;
+                r.byte_pos = r.byte_pos + 1;
+            }
+        }
+        Ok(value)
+    }
+
+    fn align_byte(r: BitReader) {
+        if r.bit_pos != 0 {
+            r.bit_pos = 0;
+            r.byte_pos = r.byte_pos + 1;
+        }
+    }
+}
+
+struct BitWriter {
+    data: Vec[U8],
+    current: Int,
+    bit_count: Int,
+
+    fn new() -> BitWriter {
+        BitWriter(Vec.new(), 0, 0)
+    }
+
+    fn write_bit(w: BitWriter, bit: Int) {
+        w.current = w.current | ((bit & 1) << w.bit_count);
+        w.bit_count = w.bit_count + 1;
+        if w.bit_count == 8 {
+            w.data.push(w.current.as_u8());
+            w.current = 0;
+            w.bit_count = 0;
+        }
+    }
+
+    fn write_bits(w: BitWriter, value: Int, count: Int) {
+        for i in 0..count {
+            w.write_bit((value >> i) & 1);
+        }
+    }
+
+    // Huffman codes are the one exception in DEFLATE: their most-significant
+    // code bit is emitted first.
+    fn write_huffman(w: BitWriter, code: Int, count: Int) {
+        let i = count - 1;
+        while i >= 0 {
+            w.write_bit((code >> i) & 1);
+            i = i - 1;
+        }
+    }
+
+    fn finish(w: BitWriter) -> Vec[U8] {
+        if w.bit_count != 0 {
+            w.data.push(w.current.as_u8());
+            w.current = 0;
+            w.bit_count = 0;
+        }
+        w.data
+    }
+}
+
+struct Huffman {
+    codes: Vec[Int],
+    lengths: Vec[Int],
+    max_length: Int,
+
+    @safe
+    fn build(lengths: Vec[Int]) -> Result[Huffman, DeflateError] {
+        let counts: [Int; 16] = uninitialized();
+        Std.Array.fill(&counts, 0, 16);
+        let nonzero = 0;
+        let max_length = 0;
+        for length in lengths {
+            if length < 0 || length > 15 {
+                return Err(DeflateError.Invalid("invalid Huffman code length"));
+            }
+            if length != 0 {
+                counts[length] = counts[length] + 1;
+                nonzero = nonzero + 1;
+                if length > max_length {
+                    max_length = length;
+                }
+            }
+        }
+        if nonzero == 0 {
+            return Err(DeflateError.Invalid("empty Huffman tree"));
+        }
+
+        let left = 1;
+        for bits in 1..16 {
+            left = left * 2 - counts[bits];
+            if left < 0 {
+                return Err(DeflateError.Invalid("oversubscribed Huffman tree"));
+            }
+        }
+
+        let next_code: [Int; 16] = uninitialized();
+        Std.Array.fill(&next_code, 0, 16);
+        let code = 0;
+        for bits in 1..16 {
+            code = (code + counts[bits - 1]) << 1;
+            next_code[bits] = code;
+        }
+
+        let codes: Vec[Int] = Vec.with_value(lengths.len(), 0);
+        for symbol in 0..lengths.len() {
+            let length = lengths[symbol];
+            if length != 0 {
+                codes[symbol] = next_code[length];
+                next_code[length] = next_code[length] + 1;
+            }
+        }
+        Ok(Huffman(codes, lengths, max_length))
+    }
+
+    fn decode(h: Huffman, reader: BitReader) -> Result[Int, DeflateError] {
+        let code = 0;
+        for length in 1..(h.max_length + 1) {
+            code = (code << 1) | reader.read_bits(1)?;
+            for symbol in 0..h.lengths.len() {
+                if h.lengths[symbol] == length && h.codes[symbol] == code {
+                    return Ok(symbol);
+                }
+            }
+        }
+        Err(DeflateError.Invalid("invalid Huffman code"))
+    }
+}
+
+fn fixed_trees() -> Result[(Huffman, Huffman), DeflateError] {
+    let literal_lengths: Vec[Int] = Vec.with_value(288, 0);
+    for i in 0..144 { literal_lengths[i] = 8; }
+    for i in 144..256 { literal_lengths[i] = 9; }
+    for i in 256..280 { literal_lengths[i] = 7; }
+    for i in 280..288 { literal_lengths[i] = 8; }
+    let distance_lengths: Vec[Int] = Vec.with_value(32, 5);
+    Ok((Huffman.build(literal_lengths)?, Huffman.build(distance_lengths)?))
+}
+
+fn dynamic_trees(reader: BitReader) -> Result[(Huffman, Huffman), DeflateError] {
+    let literal_count = reader.read_bits(5)? + 257;
+    let distance_count = reader.read_bits(5)? + 1;
+    let code_count = reader.read_bits(4)? + 4;
+    if literal_count > 286 || distance_count > 32 {
+        return Err(DeflateError.Invalid("invalid dynamic Huffman counts"));
+    }
+
+    let order: Vec[Int] = [16, 17, 18, 0, 8, 7, 9, 6, 10, 5, 11, 4, 12, 3, 13, 2, 14, 1, 15]
+        .into_iter().collect();
+    let code_lengths: Vec[Int] = Vec.with_value(19, 0);
+    for i in 0..code_count {
+        code_lengths[order[i]] = reader.read_bits(3)?;
+    }
+    let code_tree = Huffman.build(code_lengths)?;
+
+    let total = literal_count + distance_count;
+    let lengths: Vec[Int] = Vec.new();
+    while lengths.len() < total {
+        let symbol = code_tree.decode(reader)?;
+        if symbol <= 15 {
+            lengths.push(symbol);
+        } else if symbol == 16 {
+            if lengths.len() == 0 {
+                return Err(DeflateError.Invalid("Huffman repeat has no previous length"));
+            }
+            let repeat = reader.read_bits(2)? + 3;
+            if lengths.len() + repeat > total {
+                return Err(DeflateError.Invalid("Huffman repeat exceeds tree"));
+            }
+            let previous = lengths[lengths.len() - 1];
+            for _ in 0..repeat { lengths.push(previous); }
+        } else if symbol == 17 {
+            let repeat = reader.read_bits(3)? + 3;
+            if lengths.len() + repeat > total {
+                return Err(DeflateError.Invalid("zero repeat exceeds Huffman tree"));
+            }
+            for _ in 0..repeat { lengths.push(0); }
+        } else if symbol == 18 {
+            let repeat = reader.read_bits(7)? + 11;
+            if lengths.len() + repeat > total {
+                return Err(DeflateError.Invalid("long zero repeat exceeds Huffman tree"));
+            }
+            for _ in 0..repeat { lengths.push(0); }
+        } else {
+            return Err(DeflateError.Invalid("invalid code-length symbol"));
+        }
+    }
+
+    let literal_lengths = lengths.sub(0, literal_count);
+    if literal_lengths.len() <= 256 || literal_lengths[256] == 0 {
+        return Err(DeflateError.Invalid("DEFLATE tree has no end-of-block code"));
+    }
+    let distance_lengths = lengths.sub(literal_count, total);
+
+    // RFC 1951 permits a block with no distance codes when it contains no
+    // matches. Represent that as an unusable one-symbol tree; it will only be
+    // observed if a malformed stream later tries to decode a distance.
+    let has_distance = False;
+    for length in distance_lengths {
+        if length != 0 { has_distance = True; }
+    }
+    if !has_distance {
+        distance_lengths[0] = 1;
+    }
+    Ok((Huffman.build(literal_lengths)?, Huffman.build(distance_lengths)?))
+}
+
+fn length_bases() -> Vec[Int] {
+    [3, 4, 5, 6, 7, 8, 9, 10, 11, 13, 15, 17, 19, 23, 27,
+     31, 35, 43, 51, 59, 67, 83, 99, 115, 131, 163, 195, 227, 258]
+        .into_iter().collect()
+}
+
+fn length_extras() -> Vec[Int] {
+    [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2,
+     2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5, 0]
+        .into_iter().collect()
+}
+
+fn distance_bases() -> Vec[Int] {
+    [1, 2, 3, 4, 5, 7, 9, 13, 17, 25, 33, 49, 65, 97, 129,
+     193, 257, 385, 513, 769, 1025, 1537, 2049, 3073, 4097,
+     6145, 8193, 12289, 16385, 24577]
+        .into_iter().collect()
+}
+
+fn distance_extras() -> Vec[Int] {
+    [0, 0, 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6,
+     6, 7, 7, 8, 8, 9, 9, 10, 10, 11, 11, 12, 12, 13, 13]
+        .into_iter().collect()
+}
+
+fn inflate_codes(
+    reader: BitReader,
+    literal_tree: Huffman,
+    distance_tree: Huffman,
+    output: Vec[U8]
+) -> Result[(), DeflateError] {
+    let lb = length_bases();
+    let le = length_extras();
+    let db = distance_bases();
+    let de = distance_extras();
+    loop {
+        let symbol = literal_tree.decode(reader)?;
+        if symbol < 256 {
+            output.push(symbol.as_u8());
+        } else if symbol == 256 {
+            break;
+        } else if symbol <= 285 {
+            let length_index = symbol - 257;
+            let length = lb[length_index] + reader.read_bits(le[length_index])?;
+            let distance_symbol = distance_tree.decode(reader)?;
+            if distance_symbol >= 30 {
+                return Err(DeflateError.Invalid("reserved DEFLATE distance code"));
+            }
+            let distance = db[distance_symbol] + reader.read_bits(de[distance_symbol])?;
+            if distance <= 0 || distance > output.len() {
+                return Err(DeflateError.Invalid("DEFLATE distance exceeds output"));
+            }
+            for _ in 0..length {
+                output.push(output[output.len() - distance]);
+            }
+        } else {
+            return Err(DeflateError.Invalid("reserved DEFLATE length code"));
+        }
+    }
+    Ok(())
+}
+
+fn inflate_data(data: Vec[U8]) -> Result[(Vec[U8], Int), DeflateError] {
+    let reader = BitReader.new(data);
+    let output: Vec[U8] = Vec.new();
+    let final_block = 0;
+    while final_block == 0 {
+        final_block = reader.read_bits(1)?;
+        let block_type = reader.read_bits(2)?;
+        if block_type == 0 {
+            reader.align_byte();
+            let length = reader.read_bits(8)? | (reader.read_bits(8)? << 8);
+            let complement = reader.read_bits(8)? | (reader.read_bits(8)? << 8);
+            if (length ^ 0xffff) != complement {
+                return Err(DeflateError.Invalid("stored DEFLATE length check failed"));
+            }
+            for _ in 0..length {
+                output.push(reader.read_bits(8)?.as_u8());
+            }
+        } else if block_type == 1 {
+            let (literal_tree, distance_tree) = fixed_trees()?;
+            inflate_codes(reader, literal_tree, distance_tree, output)?;
+        } else if block_type == 2 {
+            let (literal_tree, distance_tree) = dynamic_trees(reader)?;
+            inflate_codes(reader, literal_tree, distance_tree, output)?;
+        } else {
+            return Err(DeflateError.Invalid("reserved DEFLATE block type"));
+        }
+    }
+    let consumed = reader.byte_pos;
+    if reader.bit_pos != 0 {
+        consumed = consumed + 1;
+    }
+    Ok((output, consumed))
+}
+
+// -------------------------------------------------------------------------
+// A simple fixed-Huffman DEFLATE encoder
+// -------------------------------------------------------------------------
+
+fn write_fixed_symbol(writer: BitWriter, symbol: Int) {
+    if symbol <= 143 {
+        writer.write_huffman(0x30 + symbol, 8);
+    } else if symbol <= 255 {
+        writer.write_huffman(0x190 + symbol - 144, 9);
+    } else if symbol <= 279 {
+        writer.write_huffman(symbol - 256, 7);
+    } else {
+        writer.write_huffman(0xc0 + symbol - 280, 8);
+    }
+}
+
+fn hash_at(data: Vec[U8], pos: Int) -> Int {
+    ((data[pos].as_int() * 251 + data[pos + 1].as_int()) * 251 +
+        data[pos + 2].as_int()) & 0xffff
+}
+
+fn insert_position(data: Vec[U8], pos: Int, head: Slice[Int], previous: Vec[Int]) {
+    if pos + 2 >= data.len() {
+        return;
+    }
+    let hash = hash_at(data, pos);
+    previous[pos] = head[hash];
+    head[hash] = pos;
+}
+
+fn find_match(data: Vec[U8], pos: Int, head: Slice[Int], previous: Vec[Int]) -> (Int, Int) {
+    if pos + 2 >= data.len() {
+        return (0, 0);
+    }
+    let candidate = head[hash_at(data, pos)];
+    let best_length = 0;
+    let best_distance = 0;
+    let checked = 0;
+    while candidate >= 0 && pos - candidate <= 32768 && checked < 256 {
+        let length = 0;
+        while length < 258 && pos + length < data.len() &&
+            data[candidate + length] == data[pos + length] {
+            length = length + 1;
+        }
+        if length >= 3 && length > best_length {
+            best_length = length;
+            best_distance = pos - candidate;
+            if length == 258 {
+                break;
+            }
+        }
+        candidate = previous[candidate];
+        checked = checked + 1;
+    }
+    (best_length, best_distance)
+}
+
+fn write_length(writer: BitWriter, length: Int) {
+    let bases = length_bases();
+    let extras = length_extras();
+    for i in 0..bases.len() {
+        let max = bases[i] + ((1 << extras[i]) - 1);
+        if length <= max || i == bases.len() - 1 {
+            write_fixed_symbol(writer, 257 + i);
+            writer.write_bits(length - bases[i], extras[i]);
+            return;
+        }
+    }
+}
+
+fn write_distance(writer: BitWriter, distance: Int) {
+    let bases = distance_bases();
+    let extras = distance_extras();
+    for i in 0..bases.len() {
+        let max = bases[i] + ((1 << extras[i]) - 1);
+        if distance <= max {
+            // Fixed distance codes are five-bit canonical codes.
+            writer.write_huffman(i, 5);
+            writer.write_bits(distance - bases[i], extras[i]);
+            return;
+        }
+    }
+}
+
+@safe
+fn deflate_data(data: Vec[U8]) -> Vec[U8] {
+    let writer = BitWriter.new();
+    // BFINAL=1, BTYPE=01 (fixed Huffman).
+    writer.write_bits(1, 1);
+    writer.write_bits(1, 2);
+
+    let head_storage: [Int; 65536] = uninitialized();
+    Std.Array.fill(&head_storage, -1, 65536);
+    let head = Slice.from_raw(Std.Array.as_ptr(&head_storage), 65536);
+    let previous: Vec[Int] = Vec.with_value(data.len(), -1);
+    let pos = 0;
+    while pos < data.len() {
+        let (length, distance) = find_match(data, pos, head, previous);
+        if length >= 3 {
+            write_length(writer, length);
+            write_distance(writer, distance);
+            for i in pos..(pos + length) {
+                insert_position(data, i, head, previous);
+            }
+            pos = pos + length;
+        } else {
+            write_fixed_symbol(writer, data[pos].as_int());
+            insert_position(data, pos, head, previous);
+            pos = pos + 1;
+        }
+    }
+    write_fixed_symbol(writer, 256);
+    writer.finish()
+}
+
+pub fn encode(data: Vec[U8]) -> Vec[U8] {
+    deflate_data(data)
+}
+
+pub fn decode(data: Vec[U8]) -> Result[Vec[U8], DeflateError] {
+    let (output, _) = inflate_data(data)?;
+    Ok(output)
+}
+
+// Returns the decompressed bytes and the number of input bytes occupied by
+// the DEFLATE stream. Container formats use this to locate their trailers.
+pub fn decode_with_size(data: Vec[U8]) -> Result[(Vec[U8], Int), DeflateError] {
+    inflate_data(data)
+}
+
+}

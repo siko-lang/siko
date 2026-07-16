@@ -1,0 +1,141 @@
+module Std.Hash.SHA256 {
+
+import Std.Vec
+
+@safe
+fn k_table() -> [U32; 64] {
+    let k: [U32; 64] = uninitialized();
+    k[0]  = 0x428a2f98; k[1]  = 0x71374491; k[2]  = 0xb5c0fbcf; k[3]  = 0xe9b5dba5;
+    k[4]  = 0x3956c25b; k[5]  = 0x59f111f1; k[6]  = 0x923f82a4; k[7]  = 0xab1c5ed5;
+    k[8]  = 0xd807aa98; k[9]  = 0x12835b01; k[10] = 0x243185be; k[11] = 0x550c7dc3;
+    k[12] = 0x72be5d74; k[13] = 0x80deb1fe; k[14] = 0x9bdc06a7; k[15] = 0xc19bf174;
+    k[16] = 0xe49b69c1; k[17] = 0xefbe4786; k[18] = 0x0fc19dc6; k[19] = 0x240ca1cc;
+    k[20] = 0x2de92c6f; k[21] = 0x4a7484aa; k[22] = 0x5cb0a9dc; k[23] = 0x76f988da;
+    k[24] = 0x983e5152; k[25] = 0xa831c66d; k[26] = 0xb00327c8; k[27] = 0xbf597fc7;
+    k[28] = 0xc6e00bf3; k[29] = 0xd5a79147; k[30] = 0x06ca6351; k[31] = 0x14292967;
+    k[32] = 0x27b70a85; k[33] = 0x2e1b2138; k[34] = 0x4d2c6dfc; k[35] = 0x53380d13;
+    k[36] = 0x650a7354; k[37] = 0x766a0abb; k[38] = 0x81c2c92e; k[39] = 0x92722c85;
+    k[40] = 0xa2bfe8a1; k[41] = 0xa81a664b; k[42] = 0xc24b8b70; k[43] = 0xc76c51a3;
+    k[44] = 0xd192e819; k[45] = 0xd6990624; k[46] = 0xf40e3585; k[47] = 0x106aa070;
+    k[48] = 0x19a4c116; k[49] = 0x1e376c08; k[50] = 0x2748774c; k[51] = 0x34b0bcb5;
+    k[52] = 0x391c0cb3; k[53] = 0x4ed8aa4a; k[54] = 0x5b9cca4f; k[55] = 0x682e6ff3;
+    k[56] = 0x748f82ee; k[57] = 0x78a5636f; k[58] = 0x84c87814; k[59] = 0x8cc70208;
+    k[60] = 0x90befffa; k[61] = 0xa4506ceb; k[62] = 0xbef9a3f7; k[63] = 0xc67178f2;
+    k
+}
+
+fn rotr32(x: U32, n: U32) -> U32 {
+    (x >> n) | (x << (32 - n))
+}
+
+fn read_u32_be(msg: Vec[U8], offset: Int) -> U32 {
+    let b0 = msg[offset].as_int();
+    let b1 = msg[offset + 1].as_int();
+    let b2 = msg[offset + 2].as_int();
+    let b3 = msg[offset + 3].as_int();
+    ((b0 << 24) | (b1 << 16) | (b2 << 8) | b3).as_u32()
+}
+
+fn push_u32_be(result: Vec[U8], word: U32) {
+    let value = word.as_int();
+    result.push((value >> 24).as_u8());
+    result.push((value >> 16).as_u8());
+    result.push((value >> 8).as_u8());
+    result.push(value.as_u8());
+}
+
+@safe
+pub fn compute(input: Vec[U8]) -> Vec[U8] {
+    let msg_len = input.len();
+    let bit_len = msg_len * 8;
+
+    let r = (msg_len + 1) % 64;
+    let padded_len = if r <= 56 {
+        msg_len + 1 + (56 - r)
+    } else {
+        msg_len + 1 + (120 - r)
+    };
+
+    let padded = Vec.with_value(padded_len + 8, 0);
+    for i in 0..msg_len {
+        padded[i] = input[i];
+    }
+    padded[msg_len] = 0x80;
+    for i in 0..8 {
+        padded[padded_len + i] = (bit_len >> (8 * (7 - i))).as_u8();
+    }
+
+    let h0 = 0x6a09e667;
+    let h1 = 0xbb67ae85;
+    let h2 = 0x3c6ef372;
+    let h3 = 0xa54ff53a;
+    let h4 = 0x510e527f;
+    let h5 = 0x9b05688c;
+    let h6 = 0x1f83d9ab;
+    let h7 = 0x5be0cd19;
+
+    let k = k_table();
+    let num_chunks = (padded_len + 8) / 64;
+    for chunk in 0..num_chunks {
+        let offset = chunk * 64;
+        let w: [U32; 64] = uninitialized();
+
+        for i in 0..16 {
+            w[i] = read_u32_be(padded, offset + i * 4);
+        }
+        for i in 16..64 {
+            let s0 = rotr32(w[i - 15], 7) ^ rotr32(w[i - 15], 18) ^ (w[i - 15] >> 3);
+            let s1 = rotr32(w[i - 2], 17) ^ rotr32(w[i - 2], 19) ^ (w[i - 2] >> 10);
+            w[i] = w[i - 16] + s0 + w[i - 7] + s1;
+        }
+
+        let a = h0;
+        let b = h1;
+        let c = h2;
+        let d = h3;
+        let e = h4;
+        let f = h5;
+        let g = h6;
+        let h = h7;
+
+        for i in 0..64 {
+            let s1 = rotr32(e, 6) ^ rotr32(e, 11) ^ rotr32(e, 25);
+            let ch = (e & f) ^ (~e & g);
+            let temp1 = h + s1 + ch + k[i] + w[i];
+            let s0 = rotr32(a, 2) ^ rotr32(a, 13) ^ rotr32(a, 22);
+            let maj = (a & b) ^ (a & c) ^ (b & c);
+            let temp2 = s0 + maj;
+
+            h = g;
+            g = f;
+            f = e;
+            e = d + temp1;
+            d = c;
+            c = b;
+            b = a;
+            a = temp1 + temp2;
+        }
+
+        h0 = h0 + a;
+        h1 = h1 + b;
+        h2 = h2 + c;
+        h3 = h3 + d;
+        h4 = h4 + e;
+        h5 = h5 + f;
+        h6 = h6 + g;
+        h7 = h7 + h;
+    }
+
+    let result: Vec[U8] = Vec.new(32);
+    push_u32_be(result, h0);
+    push_u32_be(result, h1);
+    push_u32_be(result, h2);
+    push_u32_be(result, h3);
+    push_u32_be(result, h4);
+    push_u32_be(result, h5);
+    push_u32_be(result, h6);
+    push_u32_be(result, h7);
+    result
+}
+
+}

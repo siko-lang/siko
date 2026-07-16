@@ -33,58 +33,56 @@ pub fn create_module_groups(modules: Vec[M.Module]) -> Result[Vec[Vec[I.String]]
     Ok(compute(graph))
 }
 
-fn two_name_items(
+fn name_items(
     public: Bool,
     full_name: Identifier,
-    short_name: Identifier,
+    module_name: Identifier,
     qn: QualifiedName,
     kind: ModuleItemKind,
 ) -> Vec[ModuleItem] {
-    [
-        ModuleItem(
+    let items = Vec.new();
+    let name = I.resolve(full_name.name());
+    let module_name_len = I.resolve(module_name.name()).len();
+    let bytes = name.as_slice();
+    let start = 0;
+    while start < name.len() {
+        items.push(ModuleItem(
             public: public,
-            aliasable: False,
-            name: full_name,
+            aliasable: start > module_name_len,
+            name: Identifier.new(I.intern(name.substring(start, name.len())), full_name.location),
             qualified_name: qn,
             kind: kind,
             import_def: None,
-        ),
-        ModuleItem(
-            public: public,
-            aliasable: True,
-            name: short_name,
-            qualified_name: qn,
-            kind: kind,
-            import_def: None,
-        ),
-    ]
+        ));
+        let next = start;
+        while next < name.len() && bytes[next] != '.' {
+            next = next + 1;
+        }
+        if next == name.len() {
+            break;
+        }
+        start = next + 1;
+    }
+    items
 }
 
 fn push_method_items(
     items: Vec[ModuleItem],
     public: Bool,
     parent_qn: QualifiedName,
+    module_name: Identifier,
     type_full: Identifier,
-    type_short: Identifier,
     mdef: FunctionDef,
     def_kind: FunctionDefKind,
 ) {
     let qualified_name = QualifiedName.new_method(parent_qn.name(), mdef.name.name());
-    let named_items = [
-        (type_full.merge(mdef.name), False),
-        (type_short.merge(mdef.name), True),
-        (mdef.name, True),
-    ];
-    for (name, aliasable) in named_items {
-        items.push(ModuleItem(
-            public: public,
-            aliasable: aliasable,
-            name: name,
-            qualified_name: qualified_name,
-            kind: ModuleItemKind.Function(mdef.name, mdef.get_kind(), def_kind),
-            import_def: None,
-        ));
-    }
+    items.extend(name_items(
+        public: public,
+        full_name: type_full.merge(mdef.name),
+        module_name: module_name,
+        qn: qualified_name,
+        kind: ModuleItemKind.Function(mdef.name, mdef.get_kind(), def_kind),
+    ));
 }
 
 pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem] {
@@ -94,16 +92,16 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
             let kind =
                 ModuleItemKind.Struct(def.name, get_type_arg_count(def.type_arg_defs), def.fields.len());
             let items =
-                two_name_items(
+                name_items(
                     public: def.public,
                     full_name: struct_name,
-                    short_name: def.name,
+                    module_name: module_name,
                     qn: QualifiedName.new_struct(module_name.name(), def.name.name()),
                     kind: kind,
                 );
             for mdef in def.methods {
                 let def_kind = mdef.kind.clone();
-                push_method_items(items, mdef.public, QualifiedName.new_struct(module_name.name(), def.name.name()), struct_name, def.name, mdef, def_kind);
+                push_method_items(items, mdef.public, QualifiedName.new_struct(module_name.name(), def.name.name()), module_name, struct_name, mdef, def_kind);
             }
             items
         }
@@ -117,44 +115,36 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                     variant.name,
                     variant.items.len(),
                 );
-                let names = [
-                    (True, variant.name),
-                    (True, def.name.merge(variant.name)),
-                    (False, enum_name.merge(variant.name)),
-                ];
-                for (aliasable, name) in names {
-                    items.push(ModuleItem(
-                        public: def.public,
-                        aliasable: aliasable,
-                        name: name,
-                        qualified_name: qualified_name,
-                        kind: kind,
-                        import_def: None,
-                    ));
-                }
+                items.extend(name_items(
+                    public: def.public,
+                    full_name: enum_name.merge(variant.name),
+                    module_name: module_name,
+                    qn: qualified_name,
+                    kind: kind,
+                ));
             }
             let enum_kind =
                 ModuleItemKind.Enum(def.name, get_type_arg_count(def.type_arg_defs));
-            items.extend(two_name_items(
+            items.extend(name_items(
                 public: def.public,
                 full_name: enum_name,
-                short_name: def.name,
+                module_name: module_name,
                 qn: QualifiedName.new_enum(module_name.name(), def.name.name()),
                 kind: enum_kind,
             ));
             for mdef in def.methods {
                 let def_kind = mdef.kind.clone();
-                push_method_items(items, mdef.public, QualifiedName.new_enum(module_name.name(), def.name.name()), enum_name, def.name, mdef, def_kind);
+                push_method_items(items, mdef.public, QualifiedName.new_enum(module_name.name(), def.name.name()), module_name, enum_name, mdef, def_kind);
             }
             items
         }
         M.ModuleItem.Function(def) => {
             let function_name = module_name.merge(def.name);
             let kind = ModuleItemKind.Function(def.name, def.get_kind(), def.kind);
-            two_name_items(
+            name_items(
                 public: def.public,
                 full_name: function_name,
-                short_name: def.name,
+                module_name: module_name,
                 qn: QualifiedName.new_function(module_name.name(), def.name.name()),
                 kind: kind,
             )
@@ -170,15 +160,15 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                 def.object_safe,
             );
             let items =
-                two_name_items(
+                name_items(
                     public: def.public,
                     full_name: trait_name,
-                    short_name: def.name,
+                    module_name: module_name,
                     qn: QualifiedName.new_trait(module_name.name(), def.name.name()),
                     kind: kind,
                 );
             for mdef in def.methods {
-                push_method_items(items, def.public, QualifiedName.new_trait(module_name.name(), def.name.name()), trait_name, def.name, mdef, FunctionDefKind.TraitMethod);
+                push_method_items(items, def.public, QualifiedName.new_trait(module_name.name(), def.name.name()), module_name, trait_name, mdef, FunctionDefKind.TraitMethod);
             }
             items
         }
@@ -190,10 +180,10 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                 def.associated_types.iter().map(|a| a.name).collect();
             let kind = ModuleItemKind.Effect(def.name, associated_types_string);
             let items =
-                two_name_items(
+                name_items(
                     public: def.public,
                     full_name: effect_name,
-                    short_name: def.name,
+                    module_name: module_name,
                     qn: QualifiedName.new_effect(module_name.name(), def.name.name()),
                     kind: kind,
                 );
@@ -202,34 +192,26 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
                 let kind = ModuleItemKind.EffectAssociatedType(
                     ty_id,
                 );
-                let names = [
-                    (True, ty_id),
-                    (True, def.name.merge(ty_id)),
-                    (False, effect_name.merge(ty_id)),
-                ];
-                for (aliasable, name) in names {
-                    items.push(ModuleItem(
-                        public: def.public,
-                        aliasable: aliasable,
-                        name: name,
-                        qualified_name: qualified_name,
-                        kind: kind,
-                        import_def: None,
-                    ));
-                }
+                items.extend(name_items(
+                    public: def.public,
+                    full_name: effect_name.merge(ty_id),
+                    module_name: module_name,
+                    qn: qualified_name,
+                    kind: kind,
+                ));
             }
             for mdef in def.methods {
-                push_method_items(items, def.public, QualifiedName.new_effect(module_name.name(), def.name.name()), effect_name, def.name, mdef, FunctionDefKind.EffectMethod);
+                push_method_items(items, def.public, QualifiedName.new_effect(module_name.name(), def.name.name()), module_name, effect_name, mdef, FunctionDefKind.EffectMethod);
             }
             items
         }
         M.ModuleItem.Implicit(def) => {
             let implicit_name = module_name.merge(def.name);
             let kind = ModuleItemKind.Implicit(def.name);
-            two_name_items(
+            name_items(
                 public: def.public,
                 full_name: implicit_name,
-                short_name: def.name,
+                module_name: module_name,
                 qn: QualifiedName.new_implicit(module_name.name(), def.name.name()),
                 kind: kind,
             )
@@ -237,10 +219,10 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
         M.ModuleItem.Global(def) => {
             let global_name = module_name.merge(def.name);
             let kind = ModuleItemKind.Global(def.name);
-            two_name_items(
+            name_items(
                 public: def.public,
                 full_name: global_name,
-                short_name: def.name,
+                module_name: module_name,
                 qn: QualifiedName.new_global(module_name.name(), def.name.name()),
                 kind: kind,
             )
@@ -249,10 +231,10 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
             Some(name) => {
                 let instance_name = module_name.merge(name);
                 let kind = ModuleItemKind.Instance(name);
-                two_name_items(
+                name_items(
                     public: def.public,
                     full_name: instance_name,
-                    short_name: name,
+                    module_name: module_name,
                     qn: QualifiedName.new_named_instance(module_name.name(), name.name()),
                     kind: kind,
                 )
@@ -286,7 +268,6 @@ fn get_type_arg_count(d: Option[TypeArgDefs]) -> Int {
 }
 
 }
-
 
 
 

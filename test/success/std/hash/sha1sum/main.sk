@@ -1,0 +1,35 @@
+module Main {
+
+import Std.Hash.SHA1
+import Std.Util
+
+fn check(input: String, expected: String) {
+    let digest = SHA1.compute(input.to_bytes());
+    assert(bytes_to_hex(digest) == expected);
+}
+
+fn main() {
+    check("", "da39a3ee5e6b4b0d3255bfef95601890afd80709");
+    check("abc", "a9993e364706816aba3e25717850c26c9cd0d89d");
+    check(
+        "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq",
+        "84983e441c3bd26ebaae4aa1f95129e5e54670f1",
+    );
+    check(
+        "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmn" +
+        "hijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu",
+        "a49b2446a02c645bf419f995b67091253a04a259",
+    );
+    check(
+        "The quick brown fox jumps over the lazy dog",
+        "2fd4e1c67a2d28fced849ee1bb76e7391b93eb12",
+    );
+
+    let input = "this is a good day to die\n".to_bytes();
+    let digest = SHA1.compute(input);
+    let hex = bytes_to_hex(digest);
+    assert(hex == "8b9dcea80b7b3985dbbae378c99f33c875cba7f0");
+    println(hex);
+}
+
+}

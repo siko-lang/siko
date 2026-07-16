@@ -1,0 +1,73 @@
+module Main {
+
+import Std.Archive.Tar
+import Std.Compression.Gzip
+import Std.IO.Buffered
+import Std.IO.Closer
+import Std.IO.Memory
+import Std.IO.Writer as IO
+
+fn write_all[W: IO.Writer[W]](writer: W, data: Vec[U8]) {
+    let position = 0;
+    while position < data.len() {
+        position = position + writer.write(data.sub_slice(position, data.len())).unwrap();
+    }
+}
+
+fn main() {
+    let long_name =
+        "a-very-long-directory-name/a-very-long-directory-name/" +
+        "a-very-long-directory-name/a-very-long-directory-name/" +
+        "a-very-long-directory-name/a-very-long-directory-name/" +
+        "a-very-long-directory-name/a-very-long-directory-name/" +
+        "a-very-long-directory-name/a-very-long-directory-name/file.txt";
+    assert(long_name.len() > 255);
+    let contents = "tar and gzip compose through Reader and Writer".to_bytes();
+
+    // tar -> gzip -> a deliberately partial destination writer.
+    let destination = Memory.Writer.new(max_chunk: 17);
+    let gzip_writer = Gzip.Writer.new(destination);
+    let tar_writer = Tar.Writer.new(gzip_writer);
+
+    let file_header = Tar.Header.file(long_name, contents.len());
+    file_header.uid = 123;
+    file_header.gid = 456;
+    file_header.mtime = 1700000000;
+    file_header.user_name = "siko";
+    file_header.group_name = "tests";
+    tar_writer.write_header(file_header).unwrap();
+    write_all(tar_writer, contents);
+
+    tar_writer.write_header(Tar.Header.directory("folder/")).unwrap();
+    tar_writer.write_header(Tar.Header.symbolic_link("latest", long_name)).unwrap();
+    tar_writer.close().unwrap();
+    gzip_writer.close().unwrap();
+
+    // partial source -> gzip -> tar. Tar.Reader itself reads the current entry.
+    let source = Memory.Reader.new(destination.bytes(), max_chunk: 13);
+    let gzip_reader = Gzip.Reader.new(source).unwrap();
+    let tar_reader = Tar.Reader.new(gzip_reader);
+
+    let first = tar_reader.next().unwrap().unwrap();
+    assert(first.name == long_name);
+    assert(first.entry_type == Tar.EntryType.Regular);
+    assert(first.uid == 123 && first.gid == 456);
+    assert(first.user_name == "siko" && first.group_name == "tests");
+    let buffered = Buffered.Reader.new(tar_reader, chunk_size: 7);
+    assert(buffered.read_all().unwrap() == contents);
+
+    let directory = tar_reader.next().unwrap().unwrap();
+    assert(directory.name == "folder/");
+    assert(directory.entry_type == Tar.EntryType.Directory);
+
+    let link = tar_reader.next().unwrap().unwrap();
+    assert(link.name == "latest");
+    assert(link.entry_type == Tar.EntryType.SymbolicLink);
+    assert(link.link_name == long_name);
+    assert(tar_reader.next().unwrap().is_none());
+    tar_reader.close().unwrap();
+
+    println("tar ok");
+}
+
+}
