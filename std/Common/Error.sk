@@ -13,6 +13,12 @@ pub trait Error[E] {
     }
 }
 
+instance ToString[Error] {
+    fn to_string(error: Error) -> String {
+        format_error(error)
+    }
+}
+
 
 pub fn error_chain(error: Error) -> ErrorChain {
     ErrorChain(Some(error))
@@ -76,7 +82,7 @@ pub fn with_context[E: IntoError[E]](error: E, description: String) -> Error {
 pub trait ResultErrorContext[R] {
     type Value
 
-    fn context(result: R, description: String) -> Result[Value, Error]
+    fn context(result: R, description: String = "") -> Result[Value, Error]
 }
 
 instance[T, E: IntoError[E]] ResultErrorContext[Result[T, E]] {
@@ -85,7 +91,14 @@ instance[T, E: IntoError[E]] ResultErrorContext[Result[T, E]] {
     fn context(result: Result[T, E], description: String) -> Result[T, Error] {
         match result {
             Ok(value) => Ok(value),
-            Err(error) => Err(with_context(error, description))
+            Err(error) => {
+                let error = error.into_error();
+                if description.is_empty() {
+                    Err(error)
+                } else {
+                    Err(with_context(error, description))
+                }
+            }
         }
     }
 }

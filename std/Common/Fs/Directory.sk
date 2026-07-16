@@ -4,7 +4,7 @@ import Std.Arch.Dirent
 import Std.Arch.Errno
 import Std.Array
 import Std.Fs.Path
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Libc.Dir
 import Std.Libc.String
 import Std.Libc.Unistd
@@ -19,7 +19,7 @@ pub struct Directory {
         let c_path = CString.from_string(path.clone());
         let dir_ptr = Std.Libc.Dir.opendir(c_path.as_ptr());
         if is_null_voidptr(dir_ptr) {
-            return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
+            return Err(IO.Error.with_message(Std.Arch.Errno.get_errno(), path)).context();
         }
         let dir = Std.Fs.Directory.Directory(dir_ptr);
         Ok(dir)
@@ -34,7 +34,7 @@ pub struct Directory {
             if errno == Std.Arch.Errno.Errno.OK {
                 return Ok(None);
             }
-            return Err(Error.new(errno));
+            return Err(IO.Error.new(errno)).context();
         }
         // DirEnt is a struct with reference semantics,
         // so internally a ptr, transmute works here
@@ -50,7 +50,7 @@ pub struct Directory {
         let res = Std.Libc.Dir.closedir(d.dir);
         d.dir = get_null_voidptr();
         if res < 0 {
-            return Err(Error.new(Std.Arch.Errno.get_errno()));
+            return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
         }
         Ok(())
     }
@@ -179,7 +179,7 @@ pub fn create_dir(path: String) -> Result[(), Error] {
         if errno == Std.Arch.Errno.Errno.EEXIST {
             return Ok(());
         }
-        return Err(Error.with_message(errno, path));
+        return Err(IO.Error.with_message(errno, path)).context();
     }
     Ok(())
 }
@@ -203,7 +203,7 @@ pub fn get_current_dir() -> Result[String, Error] {
     let buf: [U8; 4096] = uninitialized();
     let ptr = Std.Libc.Unistd.getcwd(Std.Array.as_ptr(&buf), 4096);
     if is_null_ptr(ptr) {
-        return Err(Error.new(Std.Arch.Errno.get_errno()));
+        return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
     }
     Ok(Std.Libc.String.from_cstring(ptr))
 }

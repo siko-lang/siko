@@ -1,6 +1,6 @@
 module Std.Net.Async.TcpListener {
 
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.IO.Closer
 import Std.IO.Async.Scheduler as Async
 import Std.Net.TcpListener as Base
@@ -23,11 +23,13 @@ pub struct TcpListener {
                     return Ok(TcpStream.new(stream));
                 }
                 Err(e) => {
-                    if e.is_eagain() {
-                        Async.await_readable(l.inner.get_fd().get_fd());
-                    } else {
-                        return Err(e);
+                    if e is IO.Error {
+                        if e.is_eagain() {
+                            Async.await_readable(l.inner.get_fd().get_fd());
+                            continue;
+                        }
                     }
+                    return Err(e);
                 }
             }
         }

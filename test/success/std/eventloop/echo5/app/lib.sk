@@ -1,6 +1,7 @@
 module App {
 
 import Std.IO.Buffered
+import Std.IO.Error as IO
 import Std.Effects.Network
 import Std.Effects.Spawn
 import Std.Effects.Sleep
@@ -50,11 +51,13 @@ fn connect_with_retry(host: String, port: U16) -> Socket {
         match connect(host, port) {
             Ok(s) => return s,
             Err(e) => {
-                if e.is_econnrefused() {
-                    sleep(Time.milliseconds(10));
-                } else {
-                    panic("connect error: ${e}");
+                if e is IO.Error {
+                    if e.is_econnrefused() {
+                        sleep(Time.milliseconds(10));
+                        continue;
+                    }
                 }
+                panic("connect error: ${e}");
             }
         }
     }

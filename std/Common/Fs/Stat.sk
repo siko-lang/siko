@@ -2,7 +2,7 @@ module Std.Fs.Stat {
 
 import Std.Arch.Stat
 import Std.Arch.Errno
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Libc.Stat as Libc
 import Std.Libc.String
 
@@ -73,7 +73,7 @@ pub fn stat(path: String) -> Result[StatResult, Error] {
     let buf = StatBuf.new();
     let ret = Libc.stat(cpath.as_ptr(), &buf);
     if ret < 0 {
-        Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
+        Err(IO.Error.with_message(Std.Arch.Errno.get_errno(), path)).context()
     } else {
         Ok(build_result(buf))
     }
@@ -84,7 +84,7 @@ pub fn fstat(fd: I32) -> Result[StatResult, Error] {
     let buf = StatBuf.new();
     let ret = Libc.fstat(fd, &buf);
     if ret < 0 {
-        Err(Error.new(Std.Arch.Errno.get_errno()))
+        Err(IO.Error.new(Std.Arch.Errno.get_errno())).context()
     } else {
         Ok(build_result(buf))
     }
@@ -96,7 +96,7 @@ pub fn lstat(path: String) -> Result[StatResult, Error] {
     let buf = StatBuf.new();
     let ret = Libc.lstat(cpath.as_ptr(), &buf);
     if ret < 0 {
-        Err(Error.with_message(Std.Arch.Errno.get_errno(), path))
+        Err(IO.Error.with_message(Std.Arch.Errno.get_errno(), path)).context()
     } else {
         Ok(build_result(buf))
     }

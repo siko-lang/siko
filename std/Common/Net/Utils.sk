@@ -2,7 +2,7 @@ module Std.Net.Utils {
 
 import Std.Libc.Socket
 import Std.Libc.String
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Arch.Errno
 
 @safe
@@ -16,7 +16,7 @@ pub fn parse_address(s: String) -> Result[U32, Error] {
         } else {
             Std.Arch.Errno.Errno.EINVAL
         };
-        return Err(Error.with_message(errno, s));
+        return Err(IO.Error.with_message(errno, s)).context();
     }
     Ok(addr.s_addr)
 }

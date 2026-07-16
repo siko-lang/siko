@@ -1,6 +1,6 @@
 module Std.Net.Async.TcpStream {
 
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
@@ -39,11 +39,13 @@ instance Reader[TcpStream] {
             match s.inner.read(buf) {
                 Ok(n) => return Ok(n),
                 Err(e) => {
-                    if e.is_eagain() {
-                        Async.await_readable(s.inner.get_fd().get_fd());
-                    } else {
-                        return Err(e);
+                    if e is IO.Error {
+                        if e.is_eagain() {
+                            Async.await_readable(s.inner.get_fd().get_fd());
+                            continue;
+                        }
                     }
+                    return Err(e);
                 }
             }
         }
@@ -56,11 +58,13 @@ instance Writer[TcpStream] {
             match s.inner.write(buf) {
                 Ok(n) => return Ok(n),
                 Err(e) => {
-                    if e.is_eagain() {
-                        Async.await_writable(s.inner.get_fd().get_fd());
-                    } else {
-                        return Err(e);
+                    if e is IO.Error {
+                        if e.is_eagain() {
+                            Async.await_writable(s.inner.get_fd().get_fd());
+                            continue;
+                        }
                     }
+                    return Err(e);
                 }
             }
         }

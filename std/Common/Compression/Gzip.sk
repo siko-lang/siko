@@ -1,9 +1,7 @@
 module Std.Compression.Gzip {
 
-import Std.Arch.Errno
 import Std.Compression.Deflate
 import Std.IO.Closer as IO
-import Std.IO.Error as IO
 import Std.IO.Reader as IO
 import Std.IO.Writer as IO
 import Std.Slice
@@ -19,7 +17,7 @@ pub enum GzipError {
     Truncated,
     ChecksumMismatch,
     SizeMismatch,
-    Io(IO.Error),
+    Io(Error),
     Deflate(Deflate.DeflateError),
 }
 
@@ -36,8 +34,8 @@ instance ToString[GzipError] {
     }
 }
 
-instance Into[IO.Error, GzipError] {
-    fn into(error: IO.Error) -> GzipError {
+instance Into[Error, GzipError] {
+    fn into(error: Error) -> GzipError {
         GzipError.Io(error)
     }
 }
@@ -45,6 +43,19 @@ instance Into[IO.Error, GzipError] {
 instance Into[Deflate.DeflateError, GzipError] {
     fn into(error: Deflate.DeflateError) -> GzipError {
         GzipError.Deflate(error)
+    }
+}
+
+instance Error[GzipError] {
+    fn message(error: GzipError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: GzipError) -> Option[Error] {
+        match error {
+            GzipError.Io(error) => Some(error),
+            _ => None
+        }
     }
 }
 
@@ -230,9 +241,9 @@ pub struct Reader[R] {
 }
 
 instance[R] IO.Reader[Reader[R]] {
-    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, Error] {
         if reader.closed {
-            return Err(IO.Error.with_message(Errno.EINVAL, "gzip reader is closed"));
+            return Err(GzipError.Invalid("reader is closed")).context();
         }
         let remaining = reader.data.len() - reader.position;
         let count = if buffer.len() < remaining { buffer.len() } else { remaining };
@@ -246,7 +257,7 @@ instance[R] IO.Reader[Reader[R]] {
 }
 
 instance[R] IO.Closer[Reader[R]] {
-    fn close(reader: Reader[R]) -> Result[(), IO.Error] {
+    fn close(reader: Reader[R]) -> Result[(), Error] {
         reader.closed = True;
         reader.data.clear();
         Ok(())
@@ -266,9 +277,9 @@ pub struct Writer[W] {
 }
 
 instance[W] IO.Writer[Writer[W]] {
-    fn write(writer: Writer[W], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+    fn write(writer: Writer[W], buffer: Slice[U8]) -> Result[Int, Error] {
         if writer.closed || writer.encoded.is_some() {
-            return Err(IO.Error.with_message(Errno.EINVAL, "gzip writer is closed"));
+            return Err(GzipError.Invalid("writer is closed")).context();
         }
         writer.data.extend_from_slice(buffer);
         Ok(buffer.len())
@@ -276,7 +287,7 @@ instance[W] IO.Writer[Writer[W]] {
 }
 
 instance[W: IO.Writer[W]] IO.Closer[Writer[W]] {
-    fn close(writer: Writer[W]) -> Result[(), IO.Error] {
+    fn close(writer: Writer[W]) -> Result[(), Error] {
         if writer.closed {
             return Ok(());
         }
@@ -291,7 +302,7 @@ instance[W: IO.Writer[W]] IO.Closer[Writer[W]] {
                         encoded.sub_slice(writer.encoded_position, encoded.len())
                     )?;
                     if count <= 0 || count > encoded.len() - writer.encoded_position {
-                        return Err(IO.Error.with_message(Errno.EIO, "gzip destination made no progress"));
+                        return Err(GzipError.Invalid("destination made no progress")).context();
                     }
                     writer.encoded_position = writer.encoded_position + count;
                 }

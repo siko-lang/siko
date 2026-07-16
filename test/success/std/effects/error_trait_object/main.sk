@@ -1,0 +1,60 @@
+module Main {
+
+effect Fallible {
+    fn fail() -> Result[(), Error]
+}
+
+enum FirstError {
+    Failed
+}
+
+instance Error[FirstError] {
+    fn message(error: FirstError) -> String {
+        match error {
+            FirstError.Failed => "first error"
+        }
+    }
+}
+
+enum SecondError {
+    Failed
+}
+
+instance Error[SecondError] {
+    fn message(error: SecondError) -> String {
+        match error {
+            SecondError.Failed => "second error"
+        }
+    }
+}
+
+instance FirstHandler Fallible {
+    fn fail() -> Result[(), Error] {
+        Err(FirstError.Failed).context()
+    }
+}
+
+instance SecondHandler Fallible {
+    fn fail() -> Result[(), Error] {
+        Err(SecondError.Failed).context()
+    }
+}
+
+fn call() {
+    match Fallible.fail() {
+        Ok(_) => println("ok"),
+        Err(error) => println(error.message())
+    }
+}
+
+fn main() {
+    with Fallible = FirstHandler {
+        call()
+    }
+
+    with Fallible = SecondHandler {
+        call()
+    }
+}
+
+}

@@ -1,6 +1,6 @@
 module Std.Libc.Time {
 
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Arch.Errno
 
 @value_type
@@ -22,7 +22,7 @@ pub fn get_time_spec(clock_id: I32) -> Result[TimeSpec, Error] {
     if res == 0 {
         Ok(ts)
     } else {
-        Err(Error.new(Std.Arch.Errno.get_errno()))
+        Err(IO.Error.new(Std.Arch.Errno.get_errno())).context()
     }
 }
 

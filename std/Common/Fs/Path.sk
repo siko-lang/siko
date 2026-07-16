@@ -1,7 +1,7 @@
 module Std.Fs.Path {
 
 import Std.Arch.Errno
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Libc.Stdlib
 import Std.Libc.String
 import Std.Ptr
@@ -69,7 +69,7 @@ pub fn canonicalize(path: String) -> Result[String, Error] {
     let c_path = CString.from_string(path.clone());
     let resolved: *U8 = Std.Libc.Stdlib.realpath(c_path.as_ptr(), get_null_ptr());
     if is_null_ptr(resolved) {
-        return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
+        return Err(IO.Error.with_message(Std.Arch.Errno.get_errno(), path)).context();
     }
     let result = from_cstring(resolved);
     Std.Libc.Stdlib.free(transmute(resolved));

@@ -39,7 +39,12 @@ pub fn run_server() {
          TcpNetwork = AsyncTcp,
          Spawn = AsyncSpawn,
          Console = StdConsole {
-        spawn(|| { listen_and_serve(make_handler(), port).unwrap(); });
+        spawn(|| {
+            match listen_and_serve(make_handler(), port) {
+                Ok(()) => {},
+                Err(error) => Console.println("lsp server error: ${error.message()}")
+            }
+        });
         s.run_tasks();
     }
 }

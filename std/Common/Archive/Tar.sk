@@ -1,9 +1,7 @@
 module Std.Archive.Tar {
 
-import Std.Arch.Errno
 import Std.Array
 import Std.IO.Closer as IO
-import Std.IO.Error as IO
 import Std.IO.Reader as IO
 import Std.IO.Writer as IO
 import Std.Slice
@@ -13,7 +11,7 @@ pub enum TarError {
     Invalid(String),
     Truncated,
     ChecksumMismatch,
-    Io(IO.Error),
+    Io(Error),
 }
 
 instance ToString[TarError] {
@@ -27,9 +25,22 @@ instance ToString[TarError] {
     }
 }
 
-instance Into[IO.Error, TarError] {
-    fn into(error: IO.Error) -> TarError {
+instance Into[Error, TarError] {
+    fn into(error: Error) -> TarError {
         TarError.Io(error)
+    }
+}
+
+instance Error[TarError] {
+    fn message(error: TarError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: TarError) -> Option[Error] {
+        match error {
+            TarError.Io(error) => Some(error),
+            _ => None
+        }
     }
 }
 
@@ -295,12 +306,12 @@ fn write_all_tar[W: IO.Writer[W]](
 fn write_all_io[W: IO.Writer[W]](
     destination: W,
     data: Slice[U8]
-) -> Result[(), IO.Error] {
+) -> Result[(), Error] {
     let position = 0;
     while position < data.len() {
         let count = destination.write(data.sub(position, data.len()))?;
         if count <= 0 || count > data.len() - position {
-            return Err(IO.Error.with_message(Errno.EIO, "tar destination made no progress"));
+            return Err(TarError.Invalid("destination made no progress")).context();
         }
         position = position + count;
     }
@@ -322,7 +333,7 @@ fn write_zeroes_tar[W: IO.Writer[W]](
 fn write_zeroes_io[W: IO.Writer[W]](
     destination: W,
     count: Int
-) -> Result[(), IO.Error] {
+) -> Result[(), Error] {
     let zeroes: [U8; 1024] = uninitialized();
     Std.Array.fill(&zeroes, 0, 1024);
     let slice = Slice.from_raw(Std.Array.as_ptr(&zeroes), 1024);
@@ -504,22 +515,22 @@ pub struct Writer[W] {
 }
 
 instance[W: IO.Writer[W]] IO.Writer[Writer[W]] {
-    fn write(writer: Writer[W], data: Slice[U8]) -> Result[Int, IO.Error] {
+    fn write(writer: Writer[W], data: Slice[U8]) -> Result[Int, Error] {
         if writer.closed {
-            return Err(IO.Error.with_message(Errno.EINVAL, "tar writer is closed"));
+            return Err(TarError.Invalid("writer is closed")).context();
         }
         if !writer.active {
-            return Err(IO.Error.with_message(Errno.EINVAL, "tar entry header is required"));
+            return Err(TarError.Invalid("entry header is required")).context();
         }
         if data.len() > writer.remaining {
-            return Err(IO.Error.with_message(Errno.EFBIG, "write exceeds tar entry size"));
+            return Err(TarError.Invalid("write exceeds entry size")).context();
         }
         if data.len() == 0 {
             return Ok(0);
         }
         let count = writer.destination.write(data)?;
         if count < 0 || count > data.len() {
-            return Err(IO.Error.with_message(Errno.EIO, "tar destination returned invalid count"));
+            return Err(TarError.Invalid("destination returned invalid count")).context();
         }
         writer.remaining = writer.remaining - count;
         Ok(count)
@@ -527,12 +538,12 @@ instance[W: IO.Writer[W]] IO.Writer[Writer[W]] {
 }
 
 instance[W: IO.Writer[W]] IO.Closer[Writer[W]] {
-    fn close(writer: Writer[W]) -> Result[(), IO.Error] {
+    fn close(writer: Writer[W]) -> Result[(), Error] {
         if writer.closed {
             return Ok(());
         }
         if writer.active && writer.remaining != 0 {
-            return Err(IO.Error.with_message(Errno.EINVAL, "tar entry is shorter than declared size"));
+            return Err(TarError.Invalid("entry is shorter than declared size")).context();
         }
         if writer.active && writer.padding != 0 {
             write_zeroes_io(writer.destination, writer.padding)?;
@@ -807,9 +818,9 @@ pub struct Reader[R] {
 }
 
 instance[R: IO.Reader[R]] IO.Reader[Reader[R]] {
-    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, IO.Error] {
+    fn read(reader: Reader[R], buffer: Slice[U8]) -> Result[Int, Error] {
         if reader.closed {
-            return Err(IO.Error.with_message(Errno.EINVAL, "tar reader is closed"));
+            return Err(TarError.Invalid("reader is closed")).context();
         }
         let count = if buffer.len() < reader.remaining { buffer.len() } else { reader.remaining };
         if count == 0 {
@@ -817,10 +828,10 @@ instance[R: IO.Reader[R]] IO.Reader[Reader[R]] {
         }
         let actual = reader.source.read(buffer.sub(0, count))?;
         if actual == 0 {
-            return Err(IO.Error.with_message(Errno.EIO, "unexpected end of tar entry"));
+            return Err(TarError.Truncated).context();
         }
         if actual < 0 || actual > count {
-            return Err(IO.Error.with_message(Errno.EIO, "tar source returned invalid count"));
+            return Err(TarError.Invalid("source returned invalid count")).context();
         }
         reader.remaining = reader.remaining - actual;
         Ok(actual)
@@ -828,7 +839,7 @@ instance[R: IO.Reader[R]] IO.Reader[Reader[R]] {
 }
 
 instance[R] IO.Closer[Reader[R]] {
-    fn close(reader: Reader[R]) -> Result[(), IO.Error] {
+    fn close(reader: Reader[R]) -> Result[(), Error] {
         reader.closed = True;
         Ok(())
     }

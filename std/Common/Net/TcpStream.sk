@@ -1,6 +1,6 @@
 module Std.Net.TcpStream {
 
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
@@ -27,7 +27,7 @@ pub struct TcpStream {
         let addr = parse_address(host)?;
         let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
         if sock < 0 {
-            return Err(Error.new(Std.Arch.Errno.get_errno()));
+            return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
         }
         let fd = FileDescriptor.new(sock);
         let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
@@ -35,7 +35,7 @@ pub struct TcpStream {
         if ret < 0 {
             let errno = Std.Arch.Errno.get_errno();
             defer fd.close();
-            return Err(Error.new(errno));
+            return Err(IO.Error.new(errno)).context();
         }
         Ok(TcpStream.new(sock))
     }
@@ -45,7 +45,7 @@ pub struct TcpStream {
         let addr = parse_address(host)?;
         let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
         if sock < 0 {
-            return Err(Error.new(Std.Arch.Errno.get_errno()));
+            return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
         }
         let s = FileDescriptor.new(sock);
         s.set_nonblocking(True);
@@ -55,7 +55,7 @@ pub struct TcpStream {
             let errno = Std.Arch.Errno.get_errno();
             if errno != Std.Arch.Errno.Errno.EINPROGRESS {
                 defer s.close();
-                return Err(Error.new(errno));
+                return Err(IO.Error.new(errno)).context();
             }
         }
         Ok(TcpStream.new(sock))
@@ -73,11 +73,13 @@ pub struct TcpStream {
             &error_len,
         );
         if ret < 0 {
-            return Err(Error.new(Std.Arch.Errno.get_errno()));
+            return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
         }
         if error != 0 {
             let errno: Option[Std.Arch.Errno.Errno] = from_int(error.as_int());
-            return Err(Error.new(errno.expect("Failed to parse socket error code ${error}")));
+            return Err(IO.Error.new(
+                errno.expect("Failed to parse socket error code ${error}")
+            )).context();
         }
         Ok(())
     }

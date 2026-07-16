@@ -9,6 +9,13 @@ import Std.Effects.Spawn
 import Std.IO.Async.Scheduler as Async
 import Std.Sys.Process as Sys
 
+fn serve(root: String, port: U16) {
+    match listen_and_serve(file_server(root), port) {
+        Ok(()) => {},
+        Err(error) => Console.println("server error: ${error.message()}")
+    }
+}
+
 fn main() {
     let args = Sys.get_args();
     if args.len() < 3 {
@@ -33,7 +40,7 @@ fn main() {
              Spawn = AsyncSpawn,
              FileSystem = RealFs,
              Console = StdConsole {
-            spawn(|| { listen_and_serve(file_server(root), port); });
+            spawn(|| serve(root, port));
             s.run_tasks();
         }
     } else {
@@ -42,7 +49,7 @@ fn main() {
              Spawn = ThreadSpawn,
              FileSystem = RealFs,
              Console = StdConsole {
-            listen_and_serve(file_server(root), port);
+            serve(root, port);
         }
     }
 }

@@ -1,7 +1,7 @@
 module Std.Mock.Fs {
 
 import Std.Effects.Filesystem
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Arch.Errno
 import Std.Map
 
@@ -27,7 +27,7 @@ pub instance MockFs FileSystem {
     fn read_file(path: String) -> Result[String, Error] {
         match mock_files.files.get(path) {
             Some(contents) => Ok(contents),
-            None => Err(Error.with_message(Errno.ENOENT, "mock: no such file: ${path}")),
+            None => Err(IO.Error.with_message(Errno.ENOENT, "mock: no such file: ${path}")).context(),
         }
     }
 }

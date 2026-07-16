@@ -2,7 +2,7 @@ module Std.Libc.Fcntl {
 
 import Std.Libc.FileDescriptor
 import Std.Libc.String
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Arch.Errno
 import Std.Arch.Fs
 
@@ -17,7 +17,7 @@ pub fn open_file(path: String, flags: I32, mode: I32) -> Result[FileDescriptor, 
     let c_path = CString.from_string(path.clone());
     let fd = open(c_path.as_ptr(), flags | Std.Arch.Fs.O_CLOEXEC, mode);
     if fd < 0 {
-        return Err(Error.with_message(Std.Arch.Errno.get_errno(), path));
+        return Err(IO.Error.with_message(Std.Arch.Errno.get_errno(), path)).context();
     }
     Ok(FileDescriptor.new(fd))
 }

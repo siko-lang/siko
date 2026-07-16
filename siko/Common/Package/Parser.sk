@@ -4,9 +4,10 @@ import Siko.Package.Info
 import Std.Map
 import Std.Toml as T
 import Std.Fs.File
+import Std.Error as E
 
 pub enum Error {
-    IoError,
+    IoError(E.Error),
     TomlError,
     ContentError,
 }
@@ -14,9 +15,22 @@ pub enum Error {
 instance ToString[Error] {
     fn to_string(e: Error) -> String {
         match e {
-            Error.IoError => "io error",
+            Error.IoError(error) => "io error: ${error}",
             Error.TomlError => "toml parse error",
             Error.ContentError => "invalid package.toml content",
+        }
+    }
+}
+
+instance E.Error[Error] {
+    fn message(error: Error) -> String {
+        error.to_string()
+    }
+
+    fn source(error: Error) -> Option[E.Error] {
+        match error {
+            Error.IoError(error) => Some(error),
+            _ => None
         }
     }
 }
@@ -187,8 +201,8 @@ pub fn parse(f: String) -> Result[PackageInfo, Error] {
                 }
             }
         }
-        Err(_) => {
-            return Err(Error.IoError);
+        Err(error) => {
+            return Err(Error.IoError(error));
         }
     }
 }

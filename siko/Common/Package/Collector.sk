@@ -1,6 +1,6 @@
 module Siko.Package.Collector {
 
-import Std.IO.Error as IO
+import Std.Error as E
 import Siko.Package.Info
 import Siko.Package.Parser as P
 import Std.Fs.Directory
@@ -10,7 +10,7 @@ import Std.Map
 import Std.Set
 
 pub enum CollectorError {
-    IOError(IO.Error),
+    IOError(E.Error),
     ParseError(P.Error),
     MultipleRootPackages,
     MissingDependency(dep: String, requester: String, toml: String),
@@ -39,8 +39,8 @@ instance ToString[SourcePackage] {
     }
 }
 
-instance Into[IO.Error, CollectorError] {
-    fn into(value: IO.Error) -> CollectorError {
+instance Into[E.Error, CollectorError] {
+    fn into(value: E.Error) -> CollectorError {
         CollectorError.IOError(value)
     }
 }
@@ -48,6 +48,20 @@ instance Into[IO.Error, CollectorError] {
 instance Into[P.Error, CollectorError] {
     fn into(value: P.Error) -> CollectorError {
         CollectorError.ParseError(value)
+    }
+}
+
+instance E.Error[CollectorError] {
+    fn message(error: CollectorError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: CollectorError) -> Option[E.Error] {
+        match error {
+            CollectorError.IOError(error) => Some(error),
+            CollectorError.ParseError(error) => Some(E.Error(error)),
+            _ => None
+        }
     }
 }
 

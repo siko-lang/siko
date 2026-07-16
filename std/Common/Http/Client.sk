@@ -2,7 +2,6 @@ module Std.Http.Client {
 
 import Std.Effects.Network
 import Std.IO.Closer
-import Std.IO.Error as IO
 import Std.Http
 
 pub enum ClientError {
@@ -10,11 +9,11 @@ pub enum ClientError {
     UnsupportedScheme(String),
     InvalidPort(String),
     InvalidResponse,
-    Io(IO.Error),
+    Io(Error),
 }
 
-instance Into[IO.Error, ClientError] {
-    fn into(value: IO.Error) -> ClientError {
+instance Into[Error, ClientError] {
+    fn into(value: Error) -> ClientError {
         ClientError.Io(value)
     }
 }
@@ -27,6 +26,19 @@ instance ToString[ClientError] {
             ClientError.InvalidPort(port) => "invalid port: ${port}",
             ClientError.InvalidResponse => "invalid response",
             ClientError.Io(err) => err.to_string(),
+        }
+    }
+}
+
+instance Error[ClientError] {
+    fn message(error: ClientError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: ClientError) -> Option[Error] {
+        match error {
+            ClientError.Io(error) => Some(error),
+            _ => None
         }
     }
 }

@@ -7,7 +7,7 @@ import Std.Arch.Errno
 import Std.Libc.Fcntl
 import Std.IO.Reader
 import Std.IO.Writer
-import Std.IO.Error
+import Std.IO.Error as IO
 import Std.Arch.Fs
 import Std.Fs.Stat
 import Std.StringBuilder
@@ -64,7 +64,7 @@ instance Writer[File] {
 pub fn remove_file(path: String) -> Result[(), Error] {
     let c_path = CString.from_string(path.clone());
     if unlink(c_path.as_ptr()) < 0 {
-        return Err(Error.with_message(get_errno(), path));
+        return Err(IO.Error.with_message(get_errno(), path)).context();
     }
     Ok(())
 }
