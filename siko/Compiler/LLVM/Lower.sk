@@ -695,6 +695,102 @@ struct FunctionLowerer {
         }
     }
 
+    fn atomic_order(fl: FunctionLowerer, order: AtomicOrdering) -> LLVM.AtomicOrdering {
+        match order {
+            AtomicOrdering.Relaxed => LLVM.AtomicOrdering.Monotonic,
+            AtomicOrdering.Release => LLVM.AtomicOrdering.Release,
+            AtomicOrdering.Acquire => LLVM.AtomicOrdering.Acquire,
+            AtomicOrdering.AcqRel => LLVM.AtomicOrdering.AcqRel,
+            AtomicOrdering.SeqCst => LLVM.AtomicOrdering.SeqCst,
+        }
+    }
+
+    fn atomic_rmw_op(fl: FunctionLowerer, op: AtomicRmwOp) -> LLVM.AtomicRmwOp {
+        match op {
+            AtomicRmwOp.Xchg => LLVM.AtomicRmwOp.Xchg,
+            AtomicRmwOp.Add => LLVM.AtomicRmwOp.Add,
+            AtomicRmwOp.Sub => LLVM.AtomicRmwOp.Sub,
+            AtomicRmwOp.And => LLVM.AtomicRmwOp.And,
+            AtomicRmwOp.Or => LLVM.AtomicRmwOp.Or,
+            AtomicRmwOp.Xor => LLVM.AtomicRmwOp.Xor,
+        }
+    }
+
+    fn atomic_alignment(fl: FunctionLowerer, ty: BackendType) -> Int {
+        match ty.kind {
+            BackendTypeKind.Int(bits) => bits / 8,
+            _ => panic("llvm: atomic value is not an integer"),
+        }
+    }
+
+    fn lower_atomic_load(fl: FunctionLowerer, pointer: Expr, order: AtomicOrdering, result_ty: BackendType) -> TypedValue {
+        let pointer = fl.lower_expr(pointer);
+        let instruction = fl.builder.build_load(result_ty.handle, pointer.value);
+        instruction.set_ordering(fl.atomic_order(order));
+        instruction.set_alignment(fl.atomic_alignment(result_ty));
+        TypedValue(result_ty, instruction)
+    }
+
+    fn lower_atomic_store(fl: FunctionLowerer, pointer: Expr, value: Expr, order: AtomicOrdering, result_ty: BackendType) -> TypedValue {
+        let pointer = fl.lower_expr(pointer);
+        let value = fl.lower_expr(value);
+        let instruction = fl.builder.build_store(value.value, pointer.value);
+        instruction.set_ordering(fl.atomic_order(order));
+        instruction.set_alignment(fl.atomic_alignment(value.ty));
+        TypedValue(result_ty, result_ty.handle.undef())
+    }
+
+    fn lower_atomic_rmw(
+        fl: FunctionLowerer,
+        op: AtomicRmwOp,
+        pointer: Expr,
+        value: Expr,
+        order: AtomicOrdering,
+        result_ty: BackendType,
+    ) -> TypedValue {
+        let pointer = fl.lower_expr(pointer);
+        let value = fl.lower_expr(value);
+        let instruction = fl.builder.build_atomic_rmw(fl.atomic_rmw_op(op), pointer.value, value.value, fl.atomic_order(order));
+        instruction.set_alignment(fl.atomic_alignment(value.ty));
+        TypedValue(result_ty, instruction)
+    }
+
+    fn lower_atomic_compare_exchange(
+        fl: FunctionLowerer,
+        pointer: Expr,
+        current: Expr,
+        new: Expr,
+        success: AtomicOrdering,
+        failure: AtomicOrdering,
+        weak: Bool,
+        result_ty: BackendType,
+    ) -> TypedValue {
+        let pointer = fl.lower_expr(pointer);
+        let current = fl.lower_expr(current);
+        let new = fl.lower_expr(new);
+        let instruction = fl.builder.build_atomic_cmpxchg(
+            pointer.value,
+            current.value,
+            new.value,
+            fl.atomic_order(success),
+            fl.atomic_order(failure),
+        );
+        instruction.set_weak(weak);
+        instruction.set_alignment(fl.atomic_alignment(current.ty));
+        let old = fl.builder.build_extract_value(instruction, 0);
+        let succeeded = fl.builder.build_extract_value(instruction, 1);
+        let succeeded = fl.builder.build_cast(LLVM.CastOp.ZExt, succeeded, fl.ml.ctx.int_type(8));
+        let raw = result_ty.handle.undef();
+        let raw = fl.builder.build_insert_value(raw, old, 0);
+        let raw = fl.builder.build_insert_value(raw, succeeded, 1);
+        TypedValue(result_ty, raw)
+    }
+
+    fn lower_atomic_fence(fl: FunctionLowerer, order: AtomicOrdering, result_ty: BackendType) -> TypedValue {
+        fl.builder.build_fence(fl.atomic_order(order));
+        TypedValue(result_ty, result_ty.handle.undef())
+    }
+
     fn lower_addr(fl: FunctionLowerer, expr: Expr) -> Address {
         let ty_def = expr.ty.unwrap();
         let ty = fl.ml.lower_type(ty_def);
@@ -756,6 +852,12 @@ struct FunctionLowerer {
                 fl.ml.global(fl.ml.lowerer.fn_pointer_symbol(info.name)),
             ),
             ExprKind.FunctionPtrCall(callee, args) => fl.lower_function_ptr_call(callee, args, ty, True).unwrap(),
+            ExprKind.AtomicLoad(pointer, order) => fl.lower_atomic_load(pointer, order, ty),
+            ExprKind.AtomicStore(pointer, value, order) => fl.lower_atomic_store(pointer, value, order, ty),
+            ExprKind.AtomicRmw(op, pointer, value, order) => fl.lower_atomic_rmw(op, pointer, value, order, ty),
+            ExprKind.AtomicCompareExchange(pointer, current, new, success, failure, weak) =>
+                fl.lower_atomic_compare_exchange(pointer, current, new, success, failure, weak, ty),
+            ExprKind.AtomicFence(order) => fl.lower_atomic_fence(order, ty),
             ExprKind.Paren(inner) => fl.lower_expr(inner),
             _ => panic("llvm: unsupported value expression"),
         }
@@ -929,6 +1031,18 @@ fn collect_string_expr(expr: Expr, strings: Vec[String]) {
             collect_string_expr(tag, strings);
             for arm in arms { collect_string_expr(arm, strings); }
         }
+        ExprKind.AtomicLoad(pointer, _) => collect_string_expr(pointer, strings),
+        ExprKind.AtomicStore(pointer, value, _) |
+        ExprKind.AtomicRmw(_, pointer, value, _) => {
+            collect_string_expr(pointer, strings);
+            collect_string_expr(value, strings);
+        }
+        ExprKind.AtomicCompareExchange(pointer, current, new, _, _, _) => {
+            collect_string_expr(pointer, strings);
+            collect_string_expr(current, strings);
+            collect_string_expr(new, strings);
+        }
+        ExprKind.AtomicFence(_) => {}
         _ => {}
     }
 }

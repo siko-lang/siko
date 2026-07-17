@@ -404,6 +404,18 @@ fn check_value_expr(expr: Expr, where_: String) {
             check_value_expr(base, where_);
             check_value_expr(index, where_);
         }
+        ExprKind.AtomicLoad(pointer, _) => check_value_expr(pointer, where_),
+        ExprKind.AtomicStore(pointer, value, _) |
+        ExprKind.AtomicRmw(_, pointer, value, _) => {
+            check_value_expr(pointer, where_);
+            check_value_expr(value, where_);
+        }
+        ExprKind.AtomicCompareExchange(pointer, current, new, _, _, _) => {
+            check_value_expr(pointer, where_);
+            check_value_expr(current, where_);
+            check_value_expr(new, where_);
+        }
+        ExprKind.AtomicFence(_) => {}
         _ => {}
     }
 }

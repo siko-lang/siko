@@ -1,0 +1,102 @@
+module Main {
+
+import Std.Sync.Atomic
+import Std.Sync.Atomic.AtomicBool
+import Std.Sync.Atomic.AtomicInt
+import Std.Sync.Atomic.AtomicI8
+import Std.Sync.Atomic.AtomicI16
+import Std.Sync.Atomic.AtomicI32
+import Std.Sync.Atomic.AtomicI64
+import Std.Sync.Atomic.AtomicU8
+import Std.Sync.Atomic.AtomicU16
+import Std.Sync.Atomic.AtomicU32
+import Std.Sync.Atomic.AtomicU64
+import Std.Sync.Thread as Thread
+
+fn main() {
+    let b = AtomicBool.new(False);
+    assert(!b.load());
+    b.store(True, Release);
+    assert(b.load(Acquire));
+    assert(b.swap(False, AcqRel));
+    match b.compare_exchange(False, True, AcqRel, Acquire) {
+        Ok(False) => {}
+        _ => panic("AtomicBool compare_exchange failed"),
+    }
+    match b.compare_exchange_weak(True, False, SeqCst, SeqCst) {
+        _ => {}
+    }
+    b.store(True);
+    assert(b.fetch_and(False));
+    assert(!b.fetch_or(True, Relaxed));
+    assert(b.fetch_xor(True));
+    assert(!b.load());
+
+    let i = AtomicInt.new(1);
+    assert(i.load() == 1);
+    i.store(10, Release);
+    assert(i.swap(12, AcqRel) == 10);
+    match i.compare_exchange(12, 20, AcqRel, Acquire) {
+        Ok(12) => {}
+        _ => panic("AtomicInt compare_exchange failed"),
+    }
+    match i.compare_exchange_weak(20, 21, SeqCst, SeqCst) {
+        _ => {}
+    }
+    i.store(20);
+    assert(i.fetch_add(2, Relaxed) == 20);
+    assert(i.fetch_sub(1, Acquire) == 22);
+    assert(i.fetch_and(15, Release) == 21);
+    assert(i.fetch_or(8, AcqRel) == 5);
+    assert(i.fetch_xor(3) == 13);
+    assert(i.load() == 14);
+
+    let i8 = AtomicI8.new(1);
+    i8.store(2);
+    assert(i8.load() == 2);
+    let i16 = AtomicI16.new(3);
+    i16.store(4, Relaxed);
+    assert(i16.load(Acquire) == 4);
+    let i32 = AtomicI32.new(5);
+    i32.store(6, Release);
+    assert(i32.load(Acquire) == 6);
+    let i64 = AtomicI64.new(7);
+    i64.store(8);
+    assert(i64.load() == 8);
+
+    let u8 = AtomicU8.new(9);
+    u8.store(10);
+    assert(u8.load() == 10);
+    let u16 = AtomicU16.new(11);
+    u16.store(12, Relaxed);
+    assert(u16.load(Acquire) == 12);
+    let u32 = AtomicU32.new(13);
+    u32.store(14, Release);
+    assert(u32.load(Acquire) == 14);
+    let u64 = AtomicU64.new(15);
+    u64.store(16);
+    assert(u64.load() == 16);
+
+    fence(Acquire);
+    fence(Release);
+    fence(AcqRel);
+    fence();
+
+    let counter = AtomicU64.new(0);
+    let threads: Vec[Thread.JoinHandle] = Vec.new();
+    for _ in 0..4 {
+        threads.push(Thread.spawn(|| {
+            for _ in 0..1000 {
+                counter.fetch_add(1, Relaxed);
+            }
+        }));
+    }
+    for thread in threads {
+        thread.join();
+    }
+    assert(counter.load() == 4000);
+
+    println("atomic ok");
+}
+
+}

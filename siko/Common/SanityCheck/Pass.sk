@@ -240,6 +240,20 @@ struct Checker {
             ExprKind.SizeOf(size_ty) => {
                 ctx.check_concrete_type(size_ty, "sizeof");
             }
+            ExprKind.AtomicLoad(pointer, _) => {
+                ctx.check_expr(pointer);
+            }
+            ExprKind.AtomicStore(pointer, value, _) |
+            ExprKind.AtomicRmw(_, pointer, value, _) => {
+                ctx.check_expr(pointer);
+                ctx.check_expr(value);
+            }
+            ExprKind.AtomicCompareExchange(pointer, current, new, _, _, _) => {
+                ctx.check_expr(pointer);
+                ctx.check_expr(current);
+                ctx.check_expr(new);
+            }
+            ExprKind.AtomicFence(_) => {}
             ExprKind.Alloc(_) => panic("sanity check: Alloc exists before lower-enums"),
             ExprKind.Discriminator(inner) => {
                 ctx.check_expr(inner);

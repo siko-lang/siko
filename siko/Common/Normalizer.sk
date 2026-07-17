@@ -72,6 +72,11 @@ struct Normalizer {
             ExprKind.CreateClosure(_) | ExprKind.SizeOf(_) => Some(expr),
 
             ExprKind.Alloc(_) => panic("normalizer: Alloc exists before lower-enums"),
+            ExprKind.AtomicLoad(_, _) |
+            ExprKind.AtomicStore(_, _, _) |
+            ExprKind.AtomicRmw(_, _, _, _) |
+            ExprKind.AtomicCompareExchange(_, _, _, _, _, _) |
+            ExprKind.AtomicFence(_) => panic("normalizer: atomic node exists before lower-builtins"),
 
             ExprKind.Discriminator(inner) => {
                 let lowered = match norm.lower_expr(inner, out) {

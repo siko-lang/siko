@@ -405,6 +405,11 @@ pub struct Collector {
             }
 
             ExprKind.Alloc(_) => panic("typechecker: Alloc exists before lower-enums"),
+            ExprKind.AtomicLoad(_, _) |
+            ExprKind.AtomicStore(_, _, _) |
+            ExprKind.AtomicRmw(_, _, _, _) |
+            ExprKind.AtomicCompareExchange(_, _, _, _, _, _) |
+            ExprKind.AtomicFence(_) => panic("typechecker: atomic node exists before lower-builtins"),
 
             ExprKind.Discriminator(inner) => {
                 let (_, new_inner) = c.collect_expr(inner, env);

@@ -1,0 +1,112 @@
+module Std.Sync.Atomic.AtomicBool {
+
+import Std.Sync.Atomic as A
+import Std.Sync.Atomic.Intrinsics as I
+
+fn to_u8(value: Bool) -> U8 { if value { 1 } else { 0 } }
+
+fn from_u8(value: U8) -> Bool { value != 0 }
+
+fn from_u8_result(result: Result[U8, U8]) -> Result[Bool, Bool] {
+    match result {
+        Ok(old) => Ok(from_u8(old)),
+        Err(old) => Err(from_u8(old)),
+    }
+}
+
+pub struct AtomicBool {
+    value: U8,
+
+    pub fn new(value: Bool) -> AtomicBool {
+        AtomicBool(value: to_u8(value))
+    }
+
+    @safe
+    pub fn load(
+        a: AtomicBool,
+        order: A.Ordering = A.SeqCst
+    ) -> Bool {
+        from_u8(I.load(&a.value, order))
+    }
+
+    @safe
+    pub fn store(
+        a: AtomicBool,
+        value: Bool,
+        order: A.Ordering = A.SeqCst
+    ) {
+        I.store(&a.value, to_u8(value), order)
+    }
+
+    @safe
+    pub fn swap(
+        a: AtomicBool,
+        value: Bool,
+        order: A.Ordering = A.SeqCst
+    ) -> Bool {
+        from_u8(I.swap(&a.value, to_u8(value), order))
+    }
+
+    @safe
+    pub fn compare_exchange(
+        a: AtomicBool,
+        current: Bool,
+        new: Bool,
+        success: A.Ordering = A.SeqCst,
+        failure: A.Ordering = A.SeqCst
+    ) -> Result[Bool, Bool] {
+        from_u8_result(I.compare_exchange(
+            &a.value,
+            to_u8(current),
+            to_u8(new),
+            success,
+            failure
+        ))
+    }
+
+    @safe
+    pub fn compare_exchange_weak(
+        a: AtomicBool,
+        current: Bool,
+        new: Bool,
+        success: A.Ordering = A.SeqCst,
+        failure: A.Ordering = A.SeqCst
+    ) -> Result[Bool, Bool] {
+        from_u8_result(I.compare_exchange_weak(
+            &a.value,
+            to_u8(current),
+            to_u8(new),
+            success,
+            failure
+        ))
+    }
+
+    @safe
+    pub fn fetch_and(
+        a: AtomicBool,
+        value: Bool,
+        order: A.Ordering = A.SeqCst
+    ) -> Bool {
+        from_u8(I.fetch_and(&a.value, to_u8(value), order))
+    }
+
+    @safe
+    pub fn fetch_or(
+        a: AtomicBool,
+        value: Bool,
+        order: A.Ordering = A.SeqCst
+    ) -> Bool {
+        from_u8(I.fetch_or(&a.value, to_u8(value), order))
+    }
+
+    @safe
+    pub fn fetch_xor(
+        a: AtomicBool,
+        value: Bool,
+        order: A.Ordering = A.SeqCst
+    ) -> Bool {
+        from_u8(I.fetch_xor(&a.value, to_u8(value), order))
+    }
+}
+
+}

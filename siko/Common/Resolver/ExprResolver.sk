@@ -395,6 +395,11 @@ pub struct ExprResolver {
                 ExprKind.SizeOf(ty)
             }
             ExprKind.Alloc(_) => panic("resolver: Alloc exists before lower-enums"),
+            ExprKind.AtomicLoad(_, _) |
+            ExprKind.AtomicStore(_, _, _) |
+            ExprKind.AtomicRmw(_, _, _, _) |
+            ExprKind.AtomicCompareExchange(_, _, _, _, _, _) |
+            ExprKind.AtomicFence(_) => panic("resolver: atomic node exists before lower-builtins"),
             ExprKind.Deref(inner) => {
                 let inner = expr_resolver.resolve_expr(inner, env)?;
                 ExprKind.Deref(inner)

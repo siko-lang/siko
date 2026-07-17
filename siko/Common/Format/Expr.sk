@@ -404,6 +404,26 @@ fn format_expr_inner(f: Formatter, expr: Expr) {
             format_expr(f, tag);
             f.push(")");
         }
+        ExprKind.AtomicLoad(pointer, order) => {
+            f.push("atomic_load["); f.push(order.to_string()); f.push("](");
+            format_expr(f, pointer); f.push(")");
+        }
+        ExprKind.AtomicStore(pointer, value, order) => {
+            f.push("atomic_store["); f.push(order.to_string()); f.push("](");
+            format_expr(f, pointer); f.push(", "); format_expr(f, value); f.push(")");
+        }
+        ExprKind.AtomicRmw(op, pointer, value, order) => {
+            f.push("atomic_rmw["); f.push(op.to_string()); f.push(", "); f.push(order.to_string()); f.push("](");
+            format_expr(f, pointer); f.push(", "); format_expr(f, value); f.push(")");
+        }
+        ExprKind.AtomicCompareExchange(pointer, current, new, success, failure, weak) => {
+            f.push(if weak { "atomic_cmpxchg_weak[" } else { "atomic_cmpxchg[" });
+            f.push(success.to_string()); f.push(", "); f.push(failure.to_string()); f.push("](");
+            format_expr(f, pointer); f.push(", "); format_expr(f, current); f.push(", "); format_expr(f, new); f.push(")");
+        }
+        ExprKind.AtomicFence(order) => {
+            f.push("atomic_fence["); f.push(order.to_string()); f.push("]");
+        }
         ExprKind.Goto(label) => f.push("goto " + label),
         ExprKind.Label(label) => f.push(label + ":"),
     }

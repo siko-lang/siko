@@ -140,6 +140,13 @@ struct EnumLowerer {
             ExprKind.AddrOf(inner) => ExprKind.AddrOf(l.lower_expr(inner)),
             ExprKind.Paren(inner) => ExprKind.Paren(l.lower_expr(inner)),
             ExprKind.Index(base, index) => ExprKind.Index(l.lower_expr(base), l.lower_expr(index)),
+            ExprKind.AtomicLoad(pointer, order) => ExprKind.AtomicLoad(l.lower_expr(pointer), order),
+            ExprKind.AtomicStore(pointer, value, order) => ExprKind.AtomicStore(l.lower_expr(pointer), l.lower_expr(value), order),
+            ExprKind.AtomicRmw(op, pointer, value, order) => ExprKind.AtomicRmw(op, l.lower_expr(pointer), l.lower_expr(value), order),
+            ExprKind.AtomicCompareExchange(pointer, current, new, success, failure, weak) => ExprKind.AtomicCompareExchange(
+                l.lower_expr(pointer), l.lower_expr(current), l.lower_expr(new), success, failure, weak,
+            ),
+            ExprKind.AtomicFence(order) => ExprKind.AtomicFence(order),
             ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
             _ => panic("lower-enums: unexpected expression kind after basic block lowering"),
         };

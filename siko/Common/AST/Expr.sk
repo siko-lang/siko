@@ -180,6 +180,50 @@ pub struct YieldInfo {
 }
 
 @derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum AtomicOrdering {
+    Relaxed,
+    Release,
+    Acquire,
+    AcqRel,
+    SeqCst,
+}
+
+instance ToString[AtomicOrdering] {
+    fn to_string(order: AtomicOrdering) -> String {
+        match order {
+            AtomicOrdering.Relaxed => "Relaxed",
+            AtomicOrdering.Release => "Release",
+            AtomicOrdering.Acquire => "Acquire",
+            AtomicOrdering.AcqRel => "AcqRel",
+            AtomicOrdering.SeqCst => "SeqCst",
+        }
+    }
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
+pub enum AtomicRmwOp {
+    Xchg,
+    Add,
+    Sub,
+    And,
+    Or,
+    Xor,
+}
+
+instance ToString[AtomicRmwOp] {
+    fn to_string(op: AtomicRmwOp) -> String {
+        match op {
+            AtomicRmwOp.Xchg => "Xchg",
+            AtomicRmwOp.Add => "Add",
+            AtomicRmwOp.Sub => "Sub",
+            AtomicRmwOp.And => "And",
+            AtomicRmwOp.Or => "Or",
+            AtomicRmwOp.Xor => "Xor",
+        }
+    }
+}
+
+@derive(Clone, PartialEq, Std.Ops.Eq)
 pub enum ExprKind {
     IntLiteral(String),
     FloatLiteral(String),
@@ -246,6 +290,18 @@ pub enum ExprKind {
     // expression's own type is Ptr(ty). Created by lower-enums when it
     // generates constructor bodies; lowered to siko_malloc(sizeof ty).
     Alloc(TypeDef),
+    AtomicLoad(pointer: Expr, order: AtomicOrdering),
+    AtomicStore(pointer: Expr, value: Expr, order: AtomicOrdering),
+    AtomicRmw(op: AtomicRmwOp, pointer: Expr, value: Expr, order: AtomicOrdering),
+    AtomicCompareExchange(
+        pointer: Expr,
+        current: Expr,
+        new: Expr,
+        success: AtomicOrdering,
+        failure: AtomicOrdering,
+        weak: Bool,
+    ),
+    AtomicFence(order: AtomicOrdering),
 }
 
 @derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)

@@ -229,6 +229,26 @@ fn llvm_build_load2(b: void*, ty: void*, ptr: void*, name: *I8) -> void*
 fn llvm_build_store(b: void*, value: void*, ptr: void*) -> void*
 
 @extern("C")
+@rename("LLVMSetOrdering")
+fn llvm_set_ordering(instruction: void*, ordering: I32) -> void
+
+@extern("C")
+@rename("LLVMSetWeak")
+fn llvm_set_weak(cmpxchg: void*, weak: I32) -> void
+
+@extern("C")
+@rename("LLVMBuildFence")
+fn llvm_build_fence(b: void*, ordering: I32, single_thread: I32, name: *I8) -> void*
+
+@extern("C")
+@rename("LLVMBuildAtomicRMW")
+fn llvm_build_atomic_rmw(b: void*, op: I32, ptr: void*, value: void*, ordering: I32, single_thread: I32) -> void*
+
+@extern("C")
+@rename("LLVMBuildAtomicCmpXchg")
+fn llvm_build_atomic_cmpxchg(b: void*, ptr: void*, current: void*, new: void*, success: I32, failure: I32, single_thread: I32) -> void*
+
+@extern("C")
 @rename("LLVMBuildAdd")
 fn llvm_build_add(b: void*, lhs: void*, rhs: void*, name: *I8) -> void*
 
@@ -599,6 +619,46 @@ pub enum BinaryOp {
     AShr,
 }
 
+pub enum AtomicOrdering {
+    Monotonic,
+    Acquire,
+    Release,
+    AcqRel,
+    SeqCst,
+
+    // Codes from LLVMAtomicOrdering in llvm-c/Core.h.
+    fn code(order: AtomicOrdering) -> I32 {
+        match order {
+            AtomicOrdering.Monotonic => 2,
+            AtomicOrdering.Acquire => 4,
+            AtomicOrdering.Release => 5,
+            AtomicOrdering.AcqRel => 6,
+            AtomicOrdering.SeqCst => 7,
+        }
+    }
+}
+
+pub enum AtomicRmwOp {
+    Xchg,
+    Add,
+    Sub,
+    And,
+    Or,
+    Xor,
+
+    // Codes from LLVMAtomicRMWBinOp in llvm-c/Core.h. Nand occupies code 4.
+    fn code(op: AtomicRmwOp) -> I32 {
+        match op {
+            AtomicRmwOp.Xchg => 0,
+            AtomicRmwOp.Add => 1,
+            AtomicRmwOp.Sub => 2,
+            AtomicRmwOp.And => 3,
+            AtomicRmwOp.Or => 5,
+            AtomicRmwOp.Xor => 6,
+        }
+    }
+}
+
 pub enum CastOp {
     Trunc,
     ZExt,
@@ -762,6 +822,16 @@ pub struct Value {
     @safe
     pub fn set_alignment(v: Value, align: Int) {
         llvm_set_alignment(v.handle, align.as_u32());
+    }
+
+    @safe
+    pub fn set_ordering(v: Value, order: AtomicOrdering) {
+        llvm_set_ordering(v.handle, order.code());
+    }
+
+    @safe
+    pub fn set_weak(v: Value, weak: Bool) {
+        llvm_set_weak(v.handle, bool_flag(weak));
     }
 
     @safe
@@ -1104,6 +1174,31 @@ pub struct Builder {
     @safe
     pub fn build_store(b: Builder, value: Value, ptr: Value) -> Value {
         Value(llvm_build_store(b.handle, value.handle, ptr.handle))
+    }
+
+    @safe
+    pub fn build_fence(b: Builder, order: AtomicOrdering) -> Value {
+        Value(llvm_build_fence(b.handle, order.code(), bool_flag(False), empty_name()))
+    }
+
+    @safe
+    pub fn build_atomic_rmw(b: Builder, op: AtomicRmwOp, ptr: Value, value: Value, order: AtomicOrdering) -> Value {
+        Value(llvm_build_atomic_rmw(b.handle, op.code(), ptr.handle, value.handle, order.code(), bool_flag(False)))
+    }
+
+    @safe
+    pub fn build_atomic_cmpxchg(
+        b: Builder,
+        ptr: Value,
+        current: Value,
+        new: Value,
+        success: AtomicOrdering,
+        failure: AtomicOrdering,
+    ) -> Value {
+        Value(llvm_build_atomic_cmpxchg(
+            b.handle, ptr.handle, current.handle, new.handle,
+            success.code(), failure.code(), bool_flag(False),
+        ))
     }
 
     @safe

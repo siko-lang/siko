@@ -40,6 +40,8 @@ instance Rewrite[Identifier]    = auto(Map, =)
 instance Rewrite[FunctionKind]  = auto(Map, =)
 instance Rewrite[BinaryOp]      = auto(Map, =)
 instance Rewrite[UnaryOp]       = auto(Map, =)
+instance Rewrite[AtomicOrdering] = auto(Map, =)
+instance Rewrite[AtomicRmwOp]    = auto(Map, =)
 instance Rewrite[WitnessInfo]   = auto(Map, =)
 instance Rewrite[HandlerSelection] = auto(Map, =)
 instance Rewrite[ImplicitRefInfo]  = auto(Map, =)
@@ -107,13 +109,15 @@ instance Rewrite[Expr] {
         let ty = expr.ty.clone();
         match expr.kind {
             ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, is_co)) => {
+                let args = args.rewrite(ctx);
+                if let Some(kind) = ctx.lower_atomic_intrinsic(qn, args) {
+                    return Expr(kind, loc, ty);
+                }
                 if qn.base_name() == B.get_transmute_qn() {
-                    let args = args.rewrite(ctx);
                     let arg = args[0];
                     return Expr(ExprKind.Transmute(arg), loc, ty);
                 }
                 if qn.base_name() == B.get_util_discriminator_qn() {
-                    let args = args.rewrite(ctx);
                     let arg = args[0];
                     return Expr(ExprKind.Discriminator(arg), loc, ty);
                 }
@@ -127,13 +131,11 @@ instance Rewrite[Expr] {
                                 panic("lower-builtins: builtin comparison in value position"),
                             _ => {}
                         }
-                        let args = args.rewrite(ctx);
                         let lhs = args[0];
                         let rhs = args[1];
                         return Expr(ExprKind.BinaryOp(op, lhs, rhs), loc, ty);
                     }
                     if let Some(op) = fdef.is_unary_op() {
-                        let args = args.rewrite(ctx);
                         let operand = args[0];
                         return Expr(ExprKind.UnaryOp(op, operand), loc, ty);
                     }
@@ -141,7 +143,7 @@ instance Rewrite[Expr] {
                 Expr(ExprKind.FunctionCall(FunctionCallInfo(
                     qname: qn,
                     kind: FunctionKind.Builtin,
-                    args: args.rewrite(ctx),
+                    args: args,
                     witnesses: WitnessInfo.new(),
                     named_args: Vec.new(),
                     is_coroutine_create: is_co,
@@ -158,6 +160,112 @@ struct BuiltinLowerer {
     program: Program,
     label_alloc: LabelAllocator,
     int_ty: TypeDef,
+
+    fn lower_atomic_intrinsic(ctx: BuiltinLowerer, qn: QualifiedName, args: Vec[Expr]) -> Option[ExprKind] {
+        let qn = qn.base_name();
+        if qn == B.get_atomic_load_relaxed_qn() { return Some(ExprKind.AtomicLoad(args[0], AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_load_acquire_qn() { return Some(ExprKind.AtomicLoad(args[0], AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_load_seqcst_qn() { return Some(ExprKind.AtomicLoad(args[0], AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_store_relaxed_qn() { return Some(ExprKind.AtomicStore(args[0], args[1], AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_store_release_qn() { return Some(ExprKind.AtomicStore(args[0], args[1], AtomicOrdering.Release)); }
+        if qn == B.get_atomic_store_seqcst_qn() { return Some(ExprKind.AtomicStore(args[0], args[1], AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_swap_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xchg, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_swap_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xchg, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_swap_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xchg, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_swap_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xchg, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_swap_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xchg, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_fetch_add_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Add, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_fetch_add_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Add, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fetch_add_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Add, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fetch_add_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Add, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fetch_add_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Add, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_fetch_sub_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Sub, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_fetch_sub_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Sub, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fetch_sub_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Sub, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fetch_sub_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Sub, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fetch_sub_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Sub, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_fetch_and_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.And, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_fetch_and_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.And, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fetch_and_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.And, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fetch_and_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.And, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fetch_and_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.And, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_fetch_or_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Or, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_fetch_or_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Or, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fetch_or_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Or, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fetch_or_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Or, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fetch_or_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Or, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_fetch_xor_relaxed_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xor, AtomicOrdering.Relaxed)); }
+        if qn == B.get_atomic_fetch_xor_release_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xor, AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fetch_xor_acquire_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xor, AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fetch_xor_acqrel_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xor, AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fetch_xor_seqcst_qn() { return Some(ctx.atomic_rmw(args, AtomicRmwOp.Xor, AtomicOrdering.SeqCst)); }
+
+        if qn == B.get_atomic_compare_exchange_relaxed_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.Relaxed, False)); }
+        if qn == B.get_atomic_compare_exchange_relaxed_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.Acquire, False)); }
+        if qn == B.get_atomic_compare_exchange_relaxed_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.SeqCst, False)); }
+        if qn == B.get_atomic_compare_exchange_release_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.Relaxed, False)); }
+        if qn == B.get_atomic_compare_exchange_release_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.Acquire, False)); }
+        if qn == B.get_atomic_compare_exchange_release_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.SeqCst, False)); }
+        if qn == B.get_atomic_compare_exchange_acquire_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.Relaxed, False)); }
+        if qn == B.get_atomic_compare_exchange_acquire_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.Acquire, False)); }
+        if qn == B.get_atomic_compare_exchange_acquire_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.SeqCst, False)); }
+        if qn == B.get_atomic_compare_exchange_acqrel_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.Relaxed, False)); }
+        if qn == B.get_atomic_compare_exchange_acqrel_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.Acquire, False)); }
+        if qn == B.get_atomic_compare_exchange_acqrel_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.SeqCst, False)); }
+        if qn == B.get_atomic_compare_exchange_seqcst_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.Relaxed, False)); }
+        if qn == B.get_atomic_compare_exchange_seqcst_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.Acquire, False)); }
+        if qn == B.get_atomic_compare_exchange_seqcst_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.SeqCst, False)); }
+
+        if qn == B.get_atomic_compare_exchange_weak_relaxed_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.Relaxed, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_relaxed_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.Acquire, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_relaxed_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Relaxed, AtomicOrdering.SeqCst, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_release_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.Relaxed, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_release_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.Acquire, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_release_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Release, AtomicOrdering.SeqCst, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acquire_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.Relaxed, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acquire_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.Acquire, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acquire_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.Acquire, AtomicOrdering.SeqCst, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acqrel_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.Relaxed, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acqrel_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.Acquire, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_acqrel_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.AcqRel, AtomicOrdering.SeqCst, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_seqcst_relaxed_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.Relaxed, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_seqcst_acquire_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.Acquire, True)); }
+        if qn == B.get_atomic_compare_exchange_weak_seqcst_seqcst_qn() { return Some(ctx.atomic_compare_exchange(args, AtomicOrdering.SeqCst, AtomicOrdering.SeqCst, True)); }
+
+        if qn == B.get_atomic_fence_acquire_qn() { return Some(ExprKind.AtomicFence(AtomicOrdering.Acquire)); }
+        if qn == B.get_atomic_fence_release_qn() { return Some(ExprKind.AtomicFence(AtomicOrdering.Release)); }
+        if qn == B.get_atomic_fence_acqrel_qn() { return Some(ExprKind.AtomicFence(AtomicOrdering.AcqRel)); }
+        if qn == B.get_atomic_fence_seqcst_qn() { return Some(ExprKind.AtomicFence(AtomicOrdering.SeqCst)); }
+        None
+    }
+
+    fn atomic_rmw(ctx: BuiltinLowerer, args: Vec[Expr], op: AtomicRmwOp, order: AtomicOrdering) -> ExprKind {
+        ExprKind.AtomicRmw(op, args[0], args[1], order)
+    }
+
+    fn atomic_compare_exchange(
+        ctx: BuiltinLowerer,
+        args: Vec[Expr],
+        success: AtomicOrdering,
+        failure: AtomicOrdering,
+        weak: Bool,
+    ) -> ExprKind {
+        ExprKind.AtomicCompareExchange(
+            pointer: args[0],
+            current: args[1],
+            new: args[2],
+            success: success,
+            failure: failure,
+            weak: weak,
+        )
+    }
 
     // The op of a builtin comparison function; None for every other builtin.
     fn comparison_op(ctx: BuiltinLowerer, qn: QualifiedName) -> Option[BinaryOp] {

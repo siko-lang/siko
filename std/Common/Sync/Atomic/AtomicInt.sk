@@ -1,0 +1,107 @@
+module Std.Sync.Atomic.AtomicInt {
+
+import Std.Sync.Atomic as A
+import Std.Sync.Atomic.Intrinsics as I
+
+pub struct AtomicInt {
+    value: Int,
+
+    pub fn new(value: Int) -> AtomicInt {
+        AtomicInt(value: value)
+    }
+
+    @safe
+    pub fn load(
+        a: AtomicInt,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.load(&a.value, order)
+    }
+
+    @safe
+    pub fn store(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) {
+        I.store(&a.value, value, order)
+    }
+
+    @safe
+    pub fn swap(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.swap(&a.value, value, order)
+    }
+
+    @safe
+    pub fn compare_exchange(
+        a: AtomicInt,
+        current: Int,
+        new: Int,
+        success: A.Ordering = A.SeqCst,
+        failure: A.Ordering = A.SeqCst
+    ) -> Result[Int, Int] {
+        I.compare_exchange(&a.value, current, new, success, failure)
+    }
+
+    @safe
+    pub fn compare_exchange_weak(
+        a: AtomicInt,
+        current: Int,
+        new: Int,
+        success: A.Ordering = A.SeqCst,
+        failure: A.Ordering = A.SeqCst
+    ) -> Result[Int, Int] {
+        I.compare_exchange_weak(&a.value, current, new, success, failure)
+    }
+
+    @safe
+    pub fn fetch_add(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.fetch_add(&a.value, value, order)
+    }
+
+    @safe
+    pub fn fetch_sub(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.fetch_sub(&a.value, value, order)
+    }
+
+    @safe
+    pub fn fetch_and(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.fetch_and(&a.value, value, order)
+    }
+
+    @safe
+    pub fn fetch_or(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.fetch_or(&a.value, value, order)
+    }
+
+    @safe
+    pub fn fetch_xor(
+        a: AtomicInt,
+        value: Int,
+        order: A.Ordering = A.SeqCst
+    ) -> Int {
+        I.fetch_xor(&a.value, value, order)
+    }
+}
+
+}
