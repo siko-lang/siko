@@ -1,0 +1,58 @@
+module Main {
+
+import Std.Sync.Thread
+
+struct State {
+    mutex: Mutex,
+    changed: Condvar,
+    waiting: Int,
+    released: Bool,
+    awakened: Int,
+
+    fn new() -> State {
+        State(
+            mutex: Mutex.new(),
+            changed: Condvar.new(),
+            waiting: 0,
+            released: False,
+            awakened: 0,
+        )
+    }
+}
+
+fn main() {
+    let state = State.new();
+    let threads: Vec[JoinHandle] = Vec.new();
+
+    for _ in 0..4 {
+        threads.push(spawn(|| {
+            state.mutex.lock();
+            state.waiting += 1;
+            state.changed.notify_all();
+            while !state.released {
+                state.changed.wait(state.mutex);
+            }
+            state.awakened += 1;
+            state.mutex.unlock();
+        }));
+    }
+
+    state.mutex.lock();
+    while state.waiting < 4 {
+        state.changed.wait(state.mutex);
+    }
+    state.released = True;
+    state.changed.notify_all();
+    state.mutex.unlock();
+
+    for thread in threads {
+        thread.join();
+    }
+
+    state.mutex.lock();
+    let awakened = state.awakened;
+    state.mutex.unlock();
+    println("condvar awakened ${awakened} workers");
+}
+
+}

@@ -1,0 +1,40 @@
+module Main {
+
+import Std.IO.Async.Scheduler as Async
+import Std.Sync.Async.Semaphore
+
+fn run_test() {
+    let gate = Semaphore.new(0);
+    let completed = Semaphore.new(0);
+
+    for _ in 0..4 {
+        Async.spawn(|| {
+            gate.acquire();
+            completed.release();
+        });
+    }
+
+    Async.spawn(|| {
+        for _ in 0..4 {
+            gate.release();
+            completed.acquire();
+        }
+        println("async semaphore released 4 tasks");
+
+        let permits = Semaphore.new(2);
+        println(permits.try_acquire());
+        println(permits.try_acquire());
+        println(permits.try_acquire());
+        Async.stop();
+    });
+}
+
+fn main() {
+    let scheduler = Async.Scheduler.new();
+    with Async.current = scheduler {
+        run_test();
+        scheduler.run_tasks();
+    }
+}
+
+}

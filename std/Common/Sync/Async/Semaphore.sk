@@ -1,0 +1,49 @@
+module Std.Sync.Async.Semaphore {
+
+import Std.IO.Async.Scheduler as Async
+import Std.VecDeque
+
+// A counting semaphore for tasks on Std.IO.Async.Scheduler. Waiting suspends
+// only the current task; it never blocks the scheduler's OS thread.
+pub struct Semaphore {
+    permits: Int,
+    waiters: VecDeque[Async.Waker],
+
+    pub fn new(permits: Int) -> Semaphore {
+        if permits < 0 {
+            panic("Semaphore permits cannot be negative");
+        }
+        Semaphore(permits: permits, waiters: VecDeque.new())
+    }
+
+    // Wait asynchronously until a permit is available, then consume one.
+    pub fn acquire(s: Semaphore) co(()) -> () {
+        while s.permits == 0 {
+            Async.suspend(|waker| {
+                s.waiters.push_back(waker);
+            });
+        }
+        s.permits -= 1;
+    }
+
+    // Consume one permit without suspending, returning whether one was
+    // available.
+    pub fn try_acquire(s: Semaphore) -> Bool {
+        if s.permits == 0 {
+            return False;
+        }
+        s.permits -= 1;
+        True
+    }
+
+    // Add one permit and schedule one suspended waiter, if present.
+    pub fn release(s: Semaphore) {
+        s.permits += 1;
+        match s.waiters.pop_front() {
+            Some(waker) => waker.wake(),
+            None => {}
+        }
+    }
+}
+
+}

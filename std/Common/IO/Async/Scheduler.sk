@@ -60,6 +60,26 @@ struct Task {
     coroutine: Option[co(()) -> ()]
 }
 
+// A one-shot handle that makes a suspended task runnable again. Keeping the
+// scheduler in the handle ensures the task is returned to the scheduler that
+// originally suspended it, even if wake is called through escaped code.
+pub struct Waker {
+    scheduler: Scheduler,
+    task: Task,
+    woken: Bool,
+
+    fn new(scheduler: Scheduler, task: Task) -> Waker {
+        Waker(scheduler: scheduler, task: task, woken: False)
+    }
+
+    pub fn wake(w: Waker) {
+        if !w.woken {
+            w.woken = True;
+            w.scheduler.add_ready(w.task);
+        }
+    }
+}
+
 pub implicit current: Scheduler
 
 pub fn spawn(f: fn() -> ()) {
@@ -72,6 +92,15 @@ pub fn stop() {
 
 fn get_current_task() -> Task {
     current.current_task.unwrap()
+}
+
+// Register a one-shot waker and suspend the current task. Registration runs
+// before the yield, so single-threaded scheduler code cannot lose a wakeup
+// between recording its wait state and going to sleep.
+pub fn suspend(register: fn(Waker) -> ()) co(()) -> () {
+    let waker = Waker.new(current, get_current_task());
+    register(waker);
+    yield ();
 }
 
 pub fn await_readable(fd: I32) co(()) -> () {

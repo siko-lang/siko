@@ -1,0 +1,35 @@
+module Main {
+
+import Std.Sync.Semaphore
+import Std.Sync.Thread as Thread
+
+fn main() {
+    let gate = Semaphore.new(0);
+    let completed = Semaphore.new(0);
+    let threads: Vec[Thread.JoinHandle] = Vec.new();
+
+    for _ in 0..4 {
+        threads.push(Thread.spawn(|| {
+            gate.acquire();
+            completed.release();
+        }));
+    }
+
+    for _ in 0..4 {
+        gate.release();
+    }
+    for _ in 0..4 {
+        completed.acquire();
+    }
+    for thread in threads {
+        thread.join();
+    }
+    println("semaphore released 4 workers");
+
+    let permits = Semaphore.new(2);
+    println(permits.try_acquire());
+    println(permits.try_acquire());
+    println(permits.try_acquire());
+}
+
+}

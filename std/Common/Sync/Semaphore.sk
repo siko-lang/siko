@@ -1,0 +1,56 @@
+module Std.Sync.Semaphore {
+
+import Std.Sync.Thread as Sync
+
+// A blocking, thread-based counting semaphore. This primitive blocks the
+// current OS thread and should not be used to wait inside the async scheduler.
+pub struct Semaphore {
+    mutex: Sync.Mutex,
+    condvar: Sync.Condvar,
+    permits: Int,
+
+    pub fn new(permits: Int) -> Semaphore {
+        if permits < 0 {
+            panic("Semaphore permits cannot be negative");
+        }
+        Semaphore(
+            mutex: Sync.Mutex.new(),
+            condvar: Sync.Condvar.new(),
+            permits: permits,
+        )
+    }
+
+    // Wait until a permit is available, then consume one.
+    pub fn acquire(s: Semaphore) {
+        s.mutex.lock();
+        defer s.mutex.unlock();
+        while s.permits == 0 {
+            s.condvar.wait(s.mutex);
+        }
+        s.permits -= 1;
+    }
+
+    // Consume one permit without blocking, returning whether one was
+    // available.
+    pub fn try_acquire(s: Semaphore) -> Bool {
+        s.mutex.lock();
+        defer s.mutex.unlock();
+        if s.permits == 0 {
+            return False;
+        }
+        s.permits -= 1;
+        True
+    }
+
+    // Add one permit and wake one waiter. Every release signals: if several
+    // permits arrive before an awakened thread reacquires the mutex, every
+    // corresponding waiter still needs its own wakeup.
+    pub fn release(s: Semaphore) {
+        s.mutex.lock();
+        defer s.mutex.unlock();
+        s.permits += 1;
+        s.condvar.notify_one();
+    }
+}
+
+}

@@ -2,6 +2,7 @@ module Std.Arch.Pthread {
 
 // Linux x86-64 pthread struct sizes
 // pthread_mutex_t = 40 bytes, pthread_mutexattr_t = 4 bytes, pthread_attr_t = 56 bytes
+// pthread_cond_t = 48 bytes, pthread_condattr_t = 4 bytes
 
 // pthread_t is unsigned long on Linux.
 @value_type
@@ -39,6 +40,24 @@ pub struct MutexAttr {
     pub fn new() -> MutexAttr {
         MutexAttr(_priv: uninitialized())
     }
+}
+
+// The leading U64 gives the opaque pthread_cond_t its required 8-byte
+// alignment in addition to providing its 48-byte size.
+@value_type
+pub struct Cond {
+    _priv1: U64,
+    _priv2: [U8; 40],
+
+    @unsafe
+    pub fn new() -> Cond {
+        Cond(_priv1: 0, _priv2: uninitialized())
+    }
+}
+
+@value_type
+pub struct CondAttr {
+    _priv: [U8; 4]
 }
 
 @value_type

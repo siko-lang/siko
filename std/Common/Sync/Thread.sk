@@ -67,25 +67,69 @@ pub struct Mutex {
 
     @safe
     pub fn new() -> Mutex {
-        let mutex_attr = Std.Arch.Pthread.MutexAttr.new();
-        if pthread_mutexattr_init(&mutex_attr) != 0 {
-            panic("Failed to initialize mutex attributes");
-        }
-        let mutex = Std.Arch.Pthread.Mutex.new();
-        if pthread_mutex_init(&mutex, &mutex_attr) != 0 {
+        // Initialize the pthread object at its permanent address. pthread
+        // synchronization objects must not be copied after initialization.
+        let mutex = Mutex(inner: Std.Arch.Pthread.Mutex.new());
+        if pthread_mutex_init(&mutex.inner, get_null_ptr()) != 0 {
             panic("Failed to initialize mutex");
         }
-        Mutex(inner: mutex)
+        mutex
     }
 
     @safe
     pub fn lock(m: Mutex) {
-        pthread_mutex_lock(&m.inner);
+        if pthread_mutex_lock(&m.inner) != 0 {
+            panic("Failed to lock mutex");
+        }
     }
 
     @safe
     pub fn unlock(m: Mutex) {
-        pthread_mutex_unlock(&m.inner);
+        if pthread_mutex_unlock(&m.inner) != 0 {
+            panic("Failed to unlock mutex");
+        }
+    }
+}
+
+pub struct Condvar {
+    inner: Std.Arch.Pthread.Cond,
+
+    @safe
+    pub fn new() -> Condvar {
+        // As with Mutex, initialize the pthread object only after the final
+        // GC-managed Siko object has been allocated.
+        let condvar = Condvar(inner: Std.Arch.Pthread.Cond.new());
+        if pthread_cond_init(&condvar.inner, get_null_ptr()) != 0 {
+            panic("Failed to initialize condition variable");
+        }
+        condvar
+    }
+
+    // The caller must hold mutex. wait atomically releases it while sleeping
+    // and returns with it locked again. Callers must re-check their predicate
+    // after every wakeup because wakeups may be spurious.
+    @safe
+    pub fn wait(c: Condvar, mutex: Mutex) {
+        if pthread_cond_wait(&c.inner, &mutex.inner) != 0 {
+            panic("Failed to wait on condition variable");
+        }
+    }
+
+    // Wake one waiter. Predicate changes and notification should normally be
+    // performed while holding the associated mutex.
+    @safe
+    pub fn notify_one(c: Condvar) {
+        if pthread_cond_signal(&c.inner) != 0 {
+            panic("Failed to notify condition variable");
+        }
+    }
+
+    // Wake every current waiter.
+    @safe
+    pub fn notify_all(c: Condvar) {
+        if pthread_cond_broadcast(&c.inner) != 0 {
+            panic("Failed to notify condition variable");
+        }
     }
 }
 
