@@ -17,6 +17,7 @@ pub enum Error {
     Signal(signal: I32, output: String),
     Timeout(output: String),
     BuildFailed(output: String),
+    MissingBuildArtifact(path: String, output: String),
     ProgramFailed(output: String),
     ExpectedFailureSucceeded(output: String),
     SnapshotMismatch(path: String, expected: String, actual: String),
@@ -46,6 +47,9 @@ instance ToString[Error] {
                 with_captured_stdout("timed out after ${TIMEOUT_SECS}s", out)
             }
             BuildFailed(output: out) => "siko.bin exited non-zero:\n${out}",
+            MissingBuildArtifact(path: path, output: out) => {
+                with_captured_stdout("compiler reported success but did not produce ${path}", out)
+            }
             ProgramFailed(output: out) => "program exited non-zero:\n${out}",
             ExpectedFailureSucceeded(output: out) => "expected compiler to fail but it succeeded\nstdout:\n${out}",
             SnapshotMismatch(path: path, expected: expected, actual: actual) => "output differs from snapshot (${path})\n--- expected ---\n${expected}--- actual ---\n${actual}",
@@ -213,6 +217,13 @@ pub struct TestRunner {
         let bin = "${test.path}/test_selfhost.bin";
         let abs_bin = "${r.cwd}/${bin}";
 
+        if Path.exists(abs_bin) {
+            match File.remove_file(abs_bin) {
+                Ok(_) => {}
+                Err(e) => return Err(IoError(context: "cannot remove stale build artifact ${bin}", message: e.to_string())),
+            }
+        }
+
         let build_args = base_build_args(test);
         build_args.push("-o");
         build_args.push(bin);
@@ -223,6 +234,9 @@ pub struct TestRunner {
 
         match build_result {
             Ok(output) => {
+                if !Path.is_file(abs_bin) {
+                    return Err(MissingBuildArtifact(path: bin, output: output));
+                }
                 if let Some(snapshot) = test.compiler_snapshot {
                     match r.compare_or_bless(snapshot, output) {
                         Ok(_) => {}

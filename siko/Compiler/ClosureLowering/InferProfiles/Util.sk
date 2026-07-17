@@ -1,0 +1,38 @@
+module Siko.ClosureLowering.InferProfiles.Util {
+
+import Siko.AST.Name
+import Siko.AST.Type
+
+// Erase inference-assigned closure variables while preserving type shape.
+// auto(Map) supplies the structural traversal; the two custom instances
+// define the fields whose values are intentionally erased.
+pub trait EraseVars[T] {
+    fn erase_vars(t: T) -> T
+}
+
+instance EraseVars[Bool]          = auto(Map, =)
+instance EraseVars[Int]           = auto(Map, =)
+instance EraseVars[Name]          = auto(Map, =)
+instance EraseVars[NamedInfo]     = auto(Map)
+instance EraseVars[CoroutineInfo] = auto(Map)
+instance EraseVars[TypeDef]       = auto(Map)
+
+instance EraseVars[TypeVar] {
+    fn erase_vars(v: TypeVar) -> TypeVar {
+        TypeVar.Var(0)
+    }
+}
+
+instance EraseVars[ClosureInfo] {
+    fn erase_vars(info: ClosureInfo) -> ClosureInfo {
+        ClosureInfo(erase_vars(info.args), erase_vars(info.return_ty), None)
+    }
+}
+
+instance[T: EraseVars[T]] EraseVars[Vec[T]] {
+    fn erase_vars(vec: Vec[T]) -> Vec[T] {
+        vec.into_iter().map(|t| erase_vars(t)).collect()
+    }
+}
+
+}

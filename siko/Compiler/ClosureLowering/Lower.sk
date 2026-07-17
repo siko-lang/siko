@@ -18,6 +18,7 @@ import Siko.ClosureLowering.GeneralizeFunctions
 import Siko.ClosureLowering.Profile
 import Siko.ClosureLowering.ProfileBuilder
 import Siko.ClosureLowering.InferProfiles.Flow
+import Siko.ClosureLowering.InferProfiles.Util
 import Siko.ClosureLowering.Resolve
 import Siko.ClosureLowering.Statistics
 import Siko.ClosureLowering.Debug
@@ -43,6 +44,9 @@ pub fn lower_closures(program: Program) {
             dump_profiles(result.profiles);
         }
         let r = resolve(program, result.profiles);
+        if get_config().debug_closure_mono {
+            Siko.ClosureLowering.Resolve.dump(r);
+        }
         rewrite_program(r, program);
     }
     s.dump();
@@ -59,6 +63,8 @@ struct HandlerKey {
     enum_id: Int,
     param_sets: Vec[Vec[Int]],
     result_sets: Vec[Vec[Int]],
+    param_types: Vec[TypeDef],
+    result_type: TypeDef,
 }
 
 struct HandlerRecord {
@@ -98,6 +104,29 @@ struct Lowerer {
         TypeDef.Named(NamedInfo(Name.inner(QualifiedName.new_closure_enum(id).as_mono()), []))
     }
 
+    fn compatible_closures(l: Lowerer, set: Vec[Int], param_types: Vec[TypeDef], result_type: TypeDef) -> Vec[Int] {
+        let expected_params: Vec[TypeDef] = param_types.into_iter().map(|t| erase_vars(t)).collect();
+        let expected_result = erase_vars(result_type);
+        set.into_iter().filter(|cid| {
+            let closure = l.r.closures[cid];
+            let def = l.r.program.functions.get(closure.lambda).expect("closure lowering: lambda fn not found");
+            let capture_count = match def.kind {
+                FunctionDefKind.Closure(n) => n,
+                _ => return False,
+            };
+            let actual_params: Vec[TypeDef] = def.args
+                .iter()
+                .skip(capture_count)
+                .map(|arg| erase_vars(arg.type_def))
+                .collect();
+            let actual_result = match def.result_type {
+                Some(t) => erase_vars(t),
+                None => TypeDef.Tuple(Vec.new()),
+            };
+            actual_params == expected_params && actual_result == expected_result
+        }).collect()
+    }
+
     fn payload_types(l: Lowerer, enum_id: Int) -> Vec[Vec[TypeDef]] {
         if let Some(p) = l.enum_payloads.get(enum_id) {
             return p;
@@ -134,7 +163,10 @@ struct Lowerer {
 
     fn subst_type(l: Lowerer, ty: TypeDef, var_sets: Map[TypeVar, Vec[Int]]) -> TypeDef {
         match ty {
-            TypeDef.Fn(ClosureInfo(_, _, Some(v))) => l.enum_type(var_sets.get(v).unwrap_or(Vec.new())),
+            TypeDef.Fn(ClosureInfo(args, ret, Some(v))) => {
+                let set = l.compatible_closures(var_sets.get(v).unwrap_or(Vec.new()), args, ret);
+                l.enum_type(set)
+            }
             TypeDef.Fn(ClosureInfo(_, _, None)) => panic("closure lowering: untagged fn type"),
             TypeDef.Named(NamedInfo(n, targs)) => {
                 let tuple: Vec[Vec[Int]] = targs.iter().map(|t| l.targ_set(t, var_sets)).collect();
@@ -267,6 +299,13 @@ pub struct RwCtx {
         result
     }
 
+    fn closure_set(c: RwCtx, ty: TypeDef) -> Vec[Int] {
+        match ty {
+            TypeDef.Fn(ClosureInfo(args, ret, Some(v))) => c.l.compatible_closures(c.var_set(v), args, ret),
+            _ => Vec.new(),
+        }
+    }
+
     fn type_var_sets(c: RwCtx, ty: TypeDef) -> Map[TypeVar, Vec[Int]] {
         let var_sets: Map[TypeVar, Vec[Int]] = Map.new();
         for v in signature_ty_vars(ty) {
@@ -377,8 +416,7 @@ fn is_empty_dynamic_call(expr: E.Expr, c: RwCtx) -> Bool {
     match expr.kind {
         E.ExprKind.DynamicCall(callee, _) => {
             let callee_ty = callee.ty.expect("closure lowering: dynamic call callee has no type");
-            let callee_v = ty_vars(callee_ty)[0];
-            c.var_set(callee_v).is_empty()
+            c.closure_set(callee_ty).is_empty()
         }
         _ => False,
     }
@@ -480,8 +518,7 @@ instance Rw[E.Expr] {
                 stats.lowered_create_closure();
                 stats.rewrite_create_closure_start();
                 defer stats.rewrite_create_closure_end();
-                let v = ty_vars(orig_ty.unwrap())[0];
-                let set = c.var_set(v);
+                let set = c.closure_set(orig_ty.unwrap());
                 let eid = c.l.intern_enum(set);
                 let cid = c.l.r.closure_id_for(info.name);
                 let vidx = index_of(set, cid);
@@ -503,8 +540,7 @@ instance Rw[E.Expr] {
                 stats.lowered_dynamic_call();
                 stats.rewrite_dynamic_call_start();
                 defer stats.rewrite_dynamic_call_end();
-                let callee_v = ty_vars(callee.ty.unwrap())[0];
-                let callee_set = c.var_set(callee_v);
+                let callee_set = c.closure_set(callee.ty.unwrap());
                 if callee_set.is_empty() {
                     panic("closure lowering: empty dynamic call outside normalized let");
                 }
@@ -519,7 +555,9 @@ instance Rw[E.Expr] {
                 let callee2 = rw(callee, c);
                 let args2 = rw(args, c);
                 let param_types: Vec[TypeDef] = args2.iter().map(|a| a.ty.unwrap()).collect();
-                let hid = c.l.intern_handler(HandlerKey(eid, param_sets, result_sets), param_types, new_ty.unwrap());
+                let result_type = new_ty.unwrap();
+                let key = HandlerKey(eid, param_sets, result_sets, param_types.clone(), result_type.clone());
+                let hid = c.l.intern_handler(key, param_types, result_type);
                 let call_args: Vec[E.Expr] = Vec.new();
                 call_args.push(callee2);
                 call_args.extend(args2);
@@ -862,6 +900,16 @@ fn rewrite_program(r: Resolver, program: Program) {
         normalize_function(handler, Set.new());
         new_functions.insert(handler.qualified_name.unwrap(), handler);
         hid += 1;
+    }
+
+    if get_config().debug_closure_mono {
+        println("=== ClosureLowering: generated closure enums ===");
+        for (eid, set) in l.enum_sets.iter().enumerate() {
+            let names: Vec[String] = set.iter()
+                .map(|cid| I.resolve(l.r.closures[cid].lambda.name()))
+                .collect();
+            println("closure_${eid} = [${Std.Vec.join(names, ", ")}]");
+        }
     }
 
     let eid = 0;

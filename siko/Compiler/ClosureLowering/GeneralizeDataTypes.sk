@@ -68,6 +68,8 @@ instance Generalize[EnumDef]           = auto(Map)
 instance Generalize[ClosureInfo] {
     fn generalize(info: ClosureInfo, ctx: Generalizer) -> ClosureInfo {
         let ClosureInfo(args, ret, existing_var) = info;
+        let args = generalize(args, ctx);
+        let ret = generalize(ret, ctx);
         if existing_var.is_some() {
             return ClosureInfo(args, ret, existing_var);
         }
