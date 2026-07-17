@@ -52,8 +52,16 @@ pub fn spawn(f: fn() -> ()) -> JoinHandle {
     let arg = Arg(f: f);
     let arg_ptr: *Arg = allocate();
     *arg_ptr = arg;
-    pthread_attr_init(&attr);
-    pthread_create_typed(&thread, &attr, entrypoint, arg_ptr);
+    if pthread_attr_init(&attr) != 0 {
+        deallocate(arg_ptr);
+        panic("Failed to initialize thread attributes");
+    }
+    let pthread_result = pthread_create_typed(&thread, &attr, entrypoint, arg_ptr);
+    pthread_attr_destroy(&attr);
+    if pthread_result != 0 {
+        deallocate(arg_ptr);
+        panic("Failed to create thread");
+    }
     JoinHandle.new(thread)
 }
 

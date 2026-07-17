@@ -1,0 +1,103 @@
+module Std.Sync.Channel {
+
+import Std.Sync.Thread as Sync
+import Std.VecDeque
+
+// A blocking, unbounded, thread-based FIFO channel. This primitive blocks the
+// current OS thread and should not be used inside the async scheduler.
+pub struct Channel[T] {
+    mutex: Sync.Mutex,
+    available: Sync.Condvar,
+    queue: VecDeque[T],
+    closed: Bool,
+
+    pub fn new() -> Channel[T] {
+        Channel(
+            mutex: Sync.Mutex.new(),
+            available: Sync.Condvar.new(),
+            queue: VecDeque.new(),
+            closed: False,
+        )
+    }
+
+    // Add a value to the back of the channel. If the channel has already been
+    // closed, return the value to the caller without enqueueing it.
+    pub fn send(c: Channel[T], value: T) -> Result[(), T] {
+        c.mutex.lock();
+        defer c.mutex.unlock();
+        if c.closed {
+            return Err(value);
+        }
+        c.queue.push_back(value);
+        c.available.notify_one();
+        Ok(())
+    }
+
+    // Wait for and return the next value. Once a closed channel has been
+    // drained, return None. The predicate is checked in a loop because
+    // condition variables may wake spuriously.
+    pub fn recv(c: Channel[T]) -> Option[T] {
+        c.mutex.lock();
+        defer c.mutex.unlock();
+        while c.queue.is_empty() && !c.closed {
+            c.available.wait(c.mutex);
+        }
+        c.queue.pop_front()
+    }
+
+    // Return immediately with the current channel state.
+    pub fn try_recv(c: Channel[T]) -> TryRecvResult[T] {
+        c.mutex.lock();
+        defer c.mutex.unlock();
+        match c.queue.pop_front() {
+            Some(value) => TryRecvResult.Value(value: value),
+            None => {
+                if c.closed {
+                    TryRecvResult.Closed
+                } else {
+                    TryRecvResult.Empty
+                }
+            }
+        }
+    }
+
+    // Prevent future sends and wake every blocked receiver. Values already in
+    // the channel remain available and are drained before recv returns None.
+    pub fn close(c: Channel[T]) {
+        c.mutex.lock();
+        defer c.mutex.unlock();
+        if !c.closed {
+            c.closed = True;
+            c.available.notify_all();
+        }
+    }
+}
+
+pub enum TryRecvResult[T] {
+    Value(value: T),
+    Empty,
+    Closed,
+}
+
+pub struct ChannelIterator[T] {
+    channel: Channel[T],
+}
+
+instance[T] Iterator[ChannelIterator[T]] {
+    type Item = T
+
+    fn next(i: ChannelIterator[T]) -> Option[T] {
+        i.channel.recv()
+    }
+}
+
+instance[T] IntoIterator[Channel[T]] {
+    type Item = T
+    type IntoIter = ChannelIterator[T]
+
+    fn into_iter(channel: Channel[T]) -> ChannelIterator[T] {
+        ChannelIterator(channel: channel)
+    }
+}
+
+}

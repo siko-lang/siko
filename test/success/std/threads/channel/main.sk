@@ -1,0 +1,57 @@
+module Main {
+
+import Std.Sync.Channel
+import Std.Sync.Thread as Thread
+
+fn main() {
+    let fifo = Channel.new();
+    match fifo.try_recv() {
+        TryRecvResult.Empty => {}
+        _ => panic("new channel was not empty"),
+    }
+    fifo.send(1).unwrap();
+    fifo.send(2).unwrap();
+    match fifo.try_recv() {
+        TryRecvResult.Value(value: 1) => {}
+        _ => panic("unexpected first value"),
+    }
+    assert(fifo.recv() == Some(2));
+    fifo.close();
+    assert(fifo.recv() == None);
+    match fifo.send(3) {
+        Err(3) => {}
+        _ => panic("send to closed channel succeeded"),
+    }
+    match fifo.try_recv() {
+        TryRecvResult.Closed => {}
+        _ => panic("closed channel was not closed"),
+    }
+    println("channel fifo ok");
+
+    let jobs = Channel.new();
+    let results = Channel.new();
+    let workers: Vec[Thread.JoinHandle] = Vec.new();
+    for _ in 0..4 {
+        workers.push(Thread.spawn(|| {
+            for job in jobs {
+                results.send(job * 2).unwrap();
+            }
+        }));
+    }
+
+    for job in 0..8 {
+        jobs.send(job).unwrap();
+    }
+    jobs.close();
+
+    let sum = 0;
+    for _ in 0..8 {
+        sum += results.recv().unwrap();
+    }
+    for worker in workers {
+        worker.join();
+    }
+    println("channel workers sum ${sum}");
+}
+
+}

@@ -1,0 +1,432 @@
+module TestCaseRunner {
+
+import Std.Fs.File
+import Std.Fs.Path
+import Std.Sys.Command
+import Std.Time
+
+pub let TIMEOUT_SECS: I64 = 45;
+
+pub enum Error {
+    Signal(signal: I32, output: String),
+    Timeout(output: String),
+    BuildFailed(output: String),
+    MissingBuildArtifact(path: String, output: String),
+    ProgramFailed(output: String),
+    ExpectedFailureSucceeded(output: String),
+    SnapshotMismatch(path: String, expected: String, actual: String),
+    IoError(context: String, message: String),
+
+    pub fn is_segfault(e: Error) -> Bool {
+        match e {
+            Error.Signal(signal: sig, output: _) => sig == 11,
+            _ => False,
+        }
+    }
+}
+
+pub enum Timing {
+    BuildExec(build_ms: I64, exec_ms: I64),
+    Pass(name: String, elapsed_ms: I64),
+    Failure(elapsed_ms: I64),
+}
+
+pub struct PassTest {
+    pub name: String,
+    pub args: Vec[String],
+    pub args_path: String,
+    pub snapshot: String,
+    pub args_error: Option[Error],
+}
+
+pub struct TestCase {
+    pub path: String,
+    pub input: String,
+    pub nostd: Bool,
+    pub has_package: Bool,
+    pub snapshot: String,
+    pub has_snapshot: Bool,
+    pub compiler_snapshot: Option[String],
+    pub skipped: Bool,
+    pub pass_tests: Vec[PassTest],
+}
+
+pub enum ProcessStatus {
+    Success,
+    Failure,
+    Signal(signal: I32),
+    Timeout,
+}
+
+pub struct ProcessResult {
+    pub stdout: String,
+    pub stderr: String,
+    pub elapsed_ms: I64,
+    pub status: ProcessStatus,
+}
+
+pub enum TestOutcome {
+    Skipped,
+    CompilerMissing,
+    SuccessPass(timings: Vec[Timing]),
+    SuccessFail(error: Error),
+    FailurePass(timing: Timing),
+    FailureFail(error: Error, timing: Timing),
+    Blessed,
+    BlessBuildFail(error: Error),
+    BlessPassFail(error: Error),
+    BlessWriteFail(error: Error),
+}
+
+pub struct TestResult {
+    pub path: String,
+    pub processes: Vec[ProcessResult],
+    pub outcome: TestOutcome,
+
+    pub fn new(path: String, processes: Vec[ProcessResult], outcome: TestOutcome) -> TestResult {
+        TestResult(path: path, processes: processes, outcome: outcome)
+    }
+
+    pub fn skipped(path: String) -> TestResult {
+        TestResult.new(path, Vec.new(), TestOutcome.Skipped)
+    }
+}
+
+pub struct CaseRunner {
+    compiler: String,
+    bless: Bool,
+    valgrind: Bool,
+    cwd: String,
+
+    pub fn new(compiler: String, bless: Bool, valgrind: Bool, cwd: String) -> CaseRunner {
+        CaseRunner(
+            compiler: compiler,
+            bless: bless,
+            valgrind: valgrind,
+            cwd: cwd,
+        )
+    }
+
+    fn compare_or_bless(r: CaseRunner, snapshot: String, actual: String) -> Result[(), Error] {
+        if r.bless {
+            write_if_changed(snapshot, actual)
+        } else {
+            compare_snapshot(snapshot, actual)
+        }
+    }
+
+    fn invoke_testprogram(r: CaseRunner, testprogram: String, work_dir: String) -> ProcessResult {
+        let cmd = if r.valgrind {
+            let supp = "${r.cwd}/.github/valgrind.supp";
+            Command.new("valgrind")
+                .with_path()
+                .arg("--error-exitcode=1")
+                .arg("--leak-check=no")
+                .arg("--suppressions=${supp}")
+                .arg(testprogram)
+                .work_dir(work_dir)
+                .with_capture_stdout()
+                .with_capture_stderr()
+        } else {
+            Command.new(testprogram)
+                .work_dir(work_dir)
+                .with_capture_stdout()
+                .with_capture_stderr()
+        };
+
+        let start = Instant.now();
+        wait_with_timeout(cmd.spawn(), start)
+    }
+
+    fn invoke_compiler(r: CaseRunner, args: Vec[String]) -> ProcessResult {
+        let start = Instant.now();
+        let cmd = Command.new(r.compiler)
+            .args(args)
+            .with_capture_stdout()
+            .with_capture_stderr()
+            .run();
+        process_from_command(cmd, start.elapsed().to_millis())
+    }
+
+    fn build_and_run(r: CaseRunner, test: TestCase, processes: Vec[ProcessResult]) -> Result[Timing, Error] {
+        let bin = "${test.path}/test_selfhost.bin";
+        let abs_bin = "${r.cwd}/${bin}";
+
+        if Path.exists(abs_bin) {
+            match File.remove_file(abs_bin) {
+                Ok(_) => {}
+                Err(e) => return Err(Error.IoError(context: "cannot remove stale build artifact ${bin}", message: e.to_string())),
+            }
+        }
+
+        let build_args = base_build_args(test);
+        build_args.push("-o");
+        build_args.push(bin);
+
+        let build = r.invoke_compiler(build_args);
+        processes.push(build);
+        let build_output = compiler_success(build)?;
+
+        if !Path.is_file(abs_bin) {
+            return Err(Error.MissingBuildArtifact(path: bin, output: build_output));
+        }
+        if let Some(snapshot) = test.compiler_snapshot {
+            r.compare_or_bless(snapshot, build_output)?;
+        }
+
+        let execution = r.invoke_testprogram(abs_bin, test.path);
+        processes.push(execution);
+        let actual = program_success(execution)?;
+
+        r.compare_or_bless(test.snapshot, actual)?;
+
+        Ok(Timing.BuildExec(build_ms: build.elapsed_ms, exec_ms: execution.elapsed_ms))
+    }
+
+    fn run_pass_test(r: CaseRunner, test: TestCase, pass_test: PassTest, processes: Vec[ProcessResult]) -> Result[Timing, Error] {
+        match pass_test.args_error {
+            Some(e) => return Err(e),
+            None => {}
+        }
+        let args = base_build_args(test);
+        for arg in pass_test.args {
+            args.push(arg);
+        }
+
+        let process = r.invoke_compiler(args);
+        processes.push(process);
+        let actual = compiler_success(process)?;
+        r.compare_or_bless(pass_test.snapshot, actual)?;
+
+        Ok(Timing.Pass(name: pass_test.name, elapsed_ms: process.elapsed_ms))
+    }
+
+    fn run_success_normal(r: CaseRunner, test: TestCase) -> TestResult {
+        let processes: Vec[ProcessResult] = Vec.new();
+        if !Path.exists(r.compiler) {
+            return TestResult.new(test.path, processes, TestOutcome.CompilerMissing);
+        }
+
+        let timings: Vec[Timing] = Vec.new();
+        let result: Result[(), Error] = if test.has_snapshot {
+            match r.build_and_run(test, processes) {
+                Ok(timing) => {
+                    timings.push(timing);
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else if test.pass_tests.is_empty() {
+            Err(Error.IoError(context: "cannot read ${test.snapshot}", message: "file not found"))
+        } else {
+            Ok(())
+        };
+
+        match result {
+            Ok(_) => {
+                for pass_test in test.pass_tests {
+                    match r.run_pass_test(test, pass_test, processes) {
+                        Ok(timing) => timings.push(timing),
+                        Err(e) => return TestResult.new(test.path, processes, TestOutcome.SuccessFail(error: e)),
+                    }
+                }
+                TestResult.new(test.path, processes, TestOutcome.SuccessPass(timings: timings))
+            }
+            Err(e) => TestResult.new(test.path, processes, TestOutcome.SuccessFail(error: e)),
+        }
+    }
+
+    fn run_success_bless(r: CaseRunner, test: TestCase) -> TestResult {
+        let processes: Vec[ProcessResult] = Vec.new();
+        let result: Result[(), Error] = if test.has_snapshot || test.pass_tests.is_empty() {
+            match r.build_and_run(test, processes) {
+                Ok(_) => Ok(()),
+                Err(e) => Err(e),
+            }
+        } else {
+            Ok(())
+        };
+        match result {
+            Ok(_) => {
+                for pass_test in test.pass_tests {
+                    match r.run_pass_test(test, pass_test, processes) {
+                        Ok(_) => {}
+                        Err(e) => return TestResult.new(test.path, processes, TestOutcome.BlessPassFail(error: e)),
+                    }
+                }
+                TestResult.new(test.path, processes, TestOutcome.Blessed)
+            }
+            Err(e) => TestResult.new(test.path, processes, TestOutcome.BlessBuildFail(error: e)),
+        }
+    }
+
+    pub fn run_success(r: CaseRunner, test: TestCase) -> TestResult {
+        if r.bless {
+            r.run_success_bless(test)
+        } else {
+            r.run_success_normal(test)
+        }
+    }
+
+    fn run_failure_normal(r: CaseRunner, test: TestCase) -> TestResult {
+        let processes: Vec[ProcessResult] = Vec.new();
+        let args: Vec[String] = Vec.new();
+        args.push("build");
+        args.push(test.input);
+
+        let process = r.invoke_compiler(args);
+        processes.push(process);
+        let timing = Timing.Failure(elapsed_ms: process.elapsed_ms);
+        let result: Result[(), Error] = match compiler_failure(process) {
+            Ok(actual) => compare_snapshot(test.snapshot, actual),
+            Err(e) => Err(e),
+        };
+
+        match result {
+            Ok(_) => TestResult.new(test.path, processes, TestOutcome.FailurePass(timing: timing)),
+            Err(e) => TestResult.new(test.path, processes, TestOutcome.FailureFail(error: e, timing: timing)),
+        }
+    }
+
+    fn run_failure_bless(r: CaseRunner, test: TestCase) -> TestResult {
+        let processes: Vec[ProcessResult] = Vec.new();
+        let args: Vec[String] = Vec.new();
+        args.push("build");
+        args.push(test.input);
+
+        let process = r.invoke_compiler(args);
+        processes.push(process);
+        match compiler_failure(process) {
+            Ok(output) => {
+                match write_if_changed(test.snapshot, output) {
+                    Ok(_) => TestResult.new(test.path, processes, TestOutcome.Blessed),
+                    Err(e) => TestResult.new(test.path, processes, TestOutcome.BlessWriteFail(error: e)),
+                }
+            }
+            Err(e) => TestResult.new(test.path, processes, TestOutcome.BlessBuildFail(error: e)),
+        }
+    }
+
+    pub fn run_failure(r: CaseRunner, test: TestCase) -> TestResult {
+        if r.bless {
+            r.run_failure_bless(test)
+        } else {
+            r.run_failure_normal(test)
+        }
+    }
+}
+
+fn process_status(status: Status) -> ProcessStatus {
+    if status.success() {
+        ProcessStatus.Success
+    } else {
+        match status.signal() {
+            Some(signal) => ProcessStatus.Signal(signal: signal),
+            None => ProcessStatus.Failure,
+        }
+    }
+}
+
+fn process_from_command(command: Command, elapsed_ms: I64) -> ProcessResult {
+    ProcessResult(
+        stdout: command.captured_stdout(),
+        stderr: command.captured_stderr(),
+        elapsed_ms: elapsed_ms,
+        status: process_status(command.status()),
+    )
+}
+
+fn process_from_result(result: CommandResult, elapsed_ms: I64) -> ProcessResult {
+    ProcessResult(
+        stdout: result.captured_stdout(),
+        stderr: result.captured_stderr(),
+        elapsed_ms: elapsed_ms,
+        status: process_status(result.status()),
+    )
+}
+
+fn compiler_success(process: ProcessResult) -> Result[String, Error] {
+    match process.status {
+        ProcessStatus.Success => Ok(process.stdout),
+        ProcessStatus.Signal(signal: signal) => Err(Error.Signal(signal: signal, output: process.stdout)),
+        ProcessStatus.Timeout => Err(Error.Timeout(output: process.stdout)),
+        ProcessStatus.Failure => Err(Error.BuildFailed(output: process.stdout)),
+    }
+}
+
+fn compiler_failure(process: ProcessResult) -> Result[String, Error] {
+    match process.status {
+        ProcessStatus.Success => Err(Error.ExpectedFailureSucceeded(output: process.stdout)),
+        ProcessStatus.Signal(signal: signal) => Err(Error.Signal(signal: signal, output: process.stdout)),
+        ProcessStatus.Timeout => Err(Error.Timeout(output: process.stdout)),
+        ProcessStatus.Failure => Ok(process.stdout),
+    }
+}
+
+fn program_success(process: ProcessResult) -> Result[String, Error] {
+    match process.status {
+        ProcessStatus.Success => Ok(process.stdout),
+        ProcessStatus.Signal(signal: signal) => Err(Error.Signal(signal: signal, output: process.stdout)),
+        ProcessStatus.Timeout => Err(Error.Timeout(output: process.stdout)),
+        ProcessStatus.Failure => Err(Error.ProgramFailed(output: process.stdout)),
+    }
+}
+
+fn compare_snapshot(snapshot: String, actual: String) -> Result[(), Error] {
+    let expected = match Std.Fs.File.read_file(snapshot) {
+        Ok(s) => s,
+        Err(e) => return Err(Error.IoError(context: "cannot read ${snapshot}", message: e.to_string())),
+    };
+    if actual != expected {
+        return Err(Error.SnapshotMismatch(path: snapshot, expected: expected, actual: actual));
+    }
+    Ok(())
+}
+
+fn write_if_changed(path: String, content: String) -> Result[(), Error] {
+    match Std.Fs.File.read_file(path) {
+        Ok(existing) => {
+            if existing == content {
+                return Ok(());
+            }
+        }
+        Err(_) => {}
+    }
+    match Std.Fs.File.write_file(path, content) {
+        Ok(_) => Ok(()),
+        Err(e) => Err(Error.IoError(context: "cannot write ${path}", message: e.to_string())),
+    }
+}
+
+fn wait_with_timeout(child: ChildProcess, start: Instant) -> ProcessResult {
+    loop {
+        match child.try_wait() {
+            Some(result) => return process_from_result(result, start.elapsed().to_millis()),
+            None => {
+                if start.elapsed().to_seconds() >= TIMEOUT_SECS {
+                    child.kill(9);
+                    let result = child.wait();
+                    return ProcessResult(
+                        stdout: result.captured_stdout(),
+                        stderr: result.captured_stderr(),
+                        elapsed_ms: start.elapsed().to_millis(),
+                        status: ProcessStatus.Timeout,
+                    );
+                }
+                sleep(milliseconds(50));
+            }
+        }
+    }
+}
+
+fn base_build_args(test: TestCase) -> Vec[String] {
+    let args: Vec[String] = Vec.new();
+    args.push("build");
+    if test.nostd && !test.has_package {
+        args.push("--no-std");
+    }
+    args.push(test.input);
+    args
+}
+
+}
