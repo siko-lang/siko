@@ -1,6 +1,7 @@
 module Std.Sys.Command {
 
 import Std.Array
+import Std.Fs.Path
 import Std.Intrinsics
 import Std.Libc.Env
 import Std.Libc.FileDescriptor
@@ -15,12 +16,177 @@ import Std.Ptr
 import Std.Sync.Thread as T
 
 @safe
-fn close_child_fds() {
-    let limit = Unistd.getdtablesize();
+fn close_child_fds(limit: I32) {
     let fd = 3;
     while fd < limit {
         Unistd.close(fd);
         fd += 1;
+    }
+}
+
+struct PreparedCommand {
+    // The CString vectors own the storage referenced by the raw pointer
+    // vectors while the child crosses the fork/exec boundary.
+    executable_strings: Vec[CString],
+    executable_paths: Vec[*U8],
+    arg_strings: Vec[CString],
+    args: Vec[*U8],
+    env_strings: Vec[CString],
+    env: Vec[*U8],
+    work_dir_string: Option[CString],
+    work_dir: *U8,
+}
+
+@safe
+fn find_env(envs: Vec[String], name: String) -> Option[String] {
+    let prefix = name + "=";
+    for env in envs {
+        if env.starts_with(prefix) {
+            return Some(env.substring(prefix.len(), env.len()));
+        }
+    }
+
+    let environ = get_environ();
+    let i = 0;
+    loop {
+        let entry_ptr = *offset_of(environ, i);
+        if is_null_ptr(entry_ptr) {
+            return None;
+        }
+        let entry = from_cstring(entry_ptr);
+        if entry.starts_with(prefix) {
+            return Some(entry.substring(prefix.len(), entry.len()));
+        }
+        i += 1;
+    }
+}
+
+@safe
+fn prepare_command(cmd: Command) -> PreparedCommand {
+    let executable_strings: Vec[CString] = Vec.new();
+    if !cmd.use_path || cmd.program.contains("/") || cmd.program.is_empty() {
+        executable_strings.push(CString.from_string(cmd.program));
+    } else {
+        let path = match find_env(cmd.envs, "PATH") {
+            Some(path) => path,
+            None => "/usr/bin:/bin",
+        };
+        for dir in path.split(":") {
+            executable_strings.push(CString.from_string(Path.join(dir, cmd.program)));
+        }
+    }
+
+    let executable_paths: Vec[*U8] = Vec.new(executable_strings.len());
+    for path in executable_strings {
+        executable_paths.push(transmute(path.as_ptr()));
+    }
+
+    let arg_strings: Vec[CString] = Vec.new(cmd.args.len() + 1);
+    arg_strings.push(CString.from_string(cmd.program));
+    for arg in cmd.args {
+        arg_strings.push(CString.from_string(arg));
+    }
+    let args: Vec[*U8] = Vec.new(arg_strings.len() + 1);
+    for arg in arg_strings {
+        args.push(transmute(arg.as_ptr()));
+    }
+    args.push(get_null_ptr());
+
+    let env_strings: Vec[CString] = Vec.new(cmd.envs.len());
+    for env in cmd.envs {
+        env_strings.push(CString.from_string(env));
+    }
+    let env: Vec[*U8] = Vec.new();
+    for item in env_strings {
+        env.push(transmute(item.as_ptr()));
+    }
+    let existing = get_environ();
+    let i = 0;
+    loop {
+        let env_ptr = *offset_of(existing, i);
+        if is_null_ptr(env_ptr) { break; }
+        env.push(env_ptr);
+        i += 1;
+    }
+    env.push(get_null_ptr());
+
+    let work_dir_string: Option[CString] = match cmd.work_dir {
+        Some(dir) => Some(CString.from_string(dir)),
+        None => None,
+    };
+    let work_dir: *U8 = match work_dir_string {
+        Some(dir) => transmute(dir.as_ptr()),
+        None => get_null_ptr(),
+    };
+
+    PreparedCommand(
+        executable_strings: executable_strings,
+        executable_paths: executable_paths,
+        arg_strings: arg_strings,
+        args: args,
+        env_strings: env_strings,
+        env: env,
+        work_dir_string: work_dir_string,
+        work_dir: work_dir,
+    )
+}
+
+@unsafe
+fn exec_prepared(prepared: PreparedCommand) -> ! {
+    let paths = prepared.executable_paths.as_ptr();
+    let args = prepared.args.as_ptr();
+    let env = prepared.env.as_ptr();
+    let i = 0;
+    while i < prepared.executable_paths.len() {
+        Unistd.execve(*offset_of(paths, i), args, env);
+        i += 1;
+    }
+    Unistd._exit(1)
+}
+
+struct OutputCapture {
+    thread: Option[T.JoinHandle],
+    output: *String,
+
+    @safe
+    fn start(enabled: Bool, fd: I32) -> OutputCapture {
+        let output: *String = gc_allocate();
+        *output = "";
+        let thread = if enabled {
+            Some(T.spawn(|| {
+                let descriptor = FileDescriptor.new(fd);
+                defer descriptor.close();
+                let buf: Vec[U8] = Vec.with_value(4096, 0);
+                let bytes: Vec[U8] = Vec.new();
+                loop {
+                    let n = match descriptor.read(buf.slice()) {
+                        Ok(n) => n,
+                        Err(_) => break,
+                    };
+                    if n == 0 { break; }
+                    let chunk = buf.slice().sub(0, n);
+                    for i in 0..n {
+                        bytes.push(chunk[i]);
+                    }
+                }
+                *output = String.from_slice(bytes.slice());
+            }))
+        } else {
+            None
+        };
+        OutputCapture(thread: thread, output: output)
+    }
+
+    @safe
+    fn finish(c: OutputCapture) -> String {
+        match c.thread {
+            Some(thread) => {
+                thread.join();
+                c.thread = None;
+            }
+            None => {}
+        }
+        *c.output
     }
 }
 
@@ -51,6 +217,7 @@ pub struct Status {
 pub struct CommandResult {
     status: I32,
     captured_stdout: String,
+    captured_stderr: String,
 
     pub fn success(r: CommandResult) -> Bool {
         Status(r.status).success()
@@ -63,13 +230,17 @@ pub struct CommandResult {
     pub fn captured_stdout(r: CommandResult) -> String {
         r.captured_stdout
     }
+
+    pub fn captured_stderr(r: CommandResult) -> String {
+        r.captured_stderr
+    }
 }
 
 pub struct ChildProcess {
     stdin_fd: I32,
-    pid: U32,
-    capture_thread: Option[T.JoinHandle],
-    captured_stdout: *String,
+    pid: I32,
+    stdout_capture: OutputCapture,
+    stderr_capture: OutputCapture,
 
     pub fn write_stdin(child: ChildProcess, data: String) -> Result[(), Error] {
         let fd = FileDescriptor.new(child.stdin_fd);
@@ -90,11 +261,9 @@ pub struct ChildProcess {
     pub fn wait(child: ChildProcess) -> CommandResult {
         let status = 0;
         waitpid(child.pid, &status, 0);
-        match child.capture_thread {
-            Some(t) => t.join(),
-            None => {}
-        }
-        CommandResult(status: status, captured_stdout: *child.captured_stdout)
+        let stdout = child.stdout_capture.finish();
+        let stderr = child.stderr_capture.finish();
+        CommandResult(status: status, captured_stdout: stdout, captured_stderr: stderr)
     }
 
     @safe
@@ -104,20 +273,15 @@ pub struct ChildProcess {
         if ret == 0 {
             None
         } else {
-            match child.capture_thread {
-                Some(t) => {
-                    t.join();
-                    child.capture_thread = None;
-                }
-                None => {}
-            }
-            Some(CommandResult(status: status, captured_stdout: *child.captured_stdout))
+            let stdout = child.stdout_capture.finish();
+            let stderr = child.stderr_capture.finish();
+            Some(CommandResult(status: status, captured_stdout: stdout, captured_stderr: stderr))
         }
     }
 
     @safe
     pub fn kill(child: ChildProcess, sig: I32) {
-        Unistd.kill(child.pid.as_int().as_i32(), sig);
+        Unistd.kill(child.pid, sig);
     }
 }
 
@@ -127,10 +291,12 @@ pub struct Command {
     work_dir: Option[String],
     status: I32,
     captured_stdout: String,
+    captured_stderr: String,
     envs: Vec[String],
     use_path: Bool,
     stdin_pipe: Bool,
     capture_stdout: Bool,
+    capture_stderr: Bool,
 
     pub fn new(program: String) -> Command {
         Command(
@@ -139,10 +305,12 @@ pub struct Command {
             work_dir: None,
             status: 0,
             captured_stdout: "",
+            captured_stderr: "",
             envs: Vec.new(),
             use_path: False,
             stdin_pipe: False,
             capture_stdout: False,
+            capture_stderr: False,
         )
     }
 
@@ -158,6 +326,11 @@ pub struct Command {
 
     pub fn with_capture_stdout(cmd: Command) -> Command {
         cmd.capture_stdout = True;
+        cmd
+    }
+
+    pub fn with_capture_stderr(cmd: Command) -> Command {
+        cmd.capture_stderr = True;
         cmd
     }
 
@@ -195,8 +368,17 @@ pub struct Command {
         cmd.captured_stdout
     }
 
+    pub fn captured_stderr(cmd: Command) -> String {
+        cmd.captured_stderr
+    }
+
     @safe
     pub fn spawn(cmd: Command) -> ChildProcess {
+        // Everything the child needs is allocated before fork. After fork, the
+        // child may only call async-signal-safe functions until execve.
+        let prepared = prepare_command(cmd);
+        let child_fd_limit = Unistd.getdtablesize();
+
         let stdout_read = -1;
         let stdout_write = -1;
         if cmd.capture_stdout {
@@ -208,6 +390,19 @@ pub struct Command {
             }
             stdout_read = *stdout_ptr;
             stdout_write = *offset_of(stdout_ptr, 1);
+        }
+
+        let stderr_read = -1;
+        let stderr_write = -1;
+        if cmd.capture_stderr {
+            let stderr_fds: [I32; 2] = uninitialized();
+            let stderr_ptr = Std.Array.as_ptr(&stderr_fds);
+            if Unistd.pipe(stderr_ptr) != 0 {
+                println("Failed to create stderr pipe");
+                exit(1);
+            }
+            stderr_read = *stderr_ptr;
+            stderr_write = *offset_of(stderr_ptr, 1);
         }
 
         let stdin_read = -1;
@@ -227,102 +422,52 @@ pub struct Command {
         if pid == 0 {
             if stdout_write >= 0 {
                 if Unistd.dup2(stdout_write, 1) < 0 {
-                    exit(1);
+                    Unistd._exit(1);
                 }
-                defer Unistd.close(stdout_read);
-                defer Unistd.close(stdout_write);
             }
             if stdin_read >= 0 {
                 if Unistd.dup2(stdin_read, 0) < 0 {
-                    exit(1);
-                }
-                defer Unistd.close(stdin_write);
-                defer Unistd.close(stdin_read);
-            }
-            close_child_fds();
-            if let Some(dir) = cmd.work_dir {
-                let c_dir = CString.from_string(dir);
-                if Unistd.chdir(transmute(c_dir.as_ptr())) != 0 {
-                    exit(1);
+                    Unistd._exit(1);
                 }
             }
-            cmd.exec_child()
+            if stderr_write >= 0 {
+                if Unistd.dup2(stderr_write, 2) < 0 {
+                    Unistd._exit(1);
+                }
+            }
+            close_child_fds(child_fd_limit);
+            if !is_null_ptr(prepared.work_dir) && Unistd.chdir(prepared.work_dir) != 0 {
+                Unistd._exit(1);
+            }
+            exec_prepared(prepared)
         } else {
+            if pid < 0 {
+                if stdout_read >= 0 { Unistd.close(stdout_read); }
+                if stdout_write >= 0 { Unistd.close(stdout_write); }
+                if stdin_read >= 0 { Unistd.close(stdin_read); }
+                if stdin_write >= 0 { Unistd.close(stdin_write); }
+                if stderr_read >= 0 { Unistd.close(stderr_read); }
+                if stderr_write >= 0 { Unistd.close(stderr_write); }
+                panic("Failed to fork");
+            }
             if stdout_write >= 0 {
                 defer Unistd.close(stdout_write);
             }
             if stdin_read >= 0 {
                 defer Unistd.close(stdin_read);
             }
-            let captured = gc_allocate();
-            let capture_thread = if cmd.capture_stdout {
-                let t = T.spawn(|| {
-                    let fd = FileDescriptor.new(stdout_read);
-                    defer fd.close();
-                    let buf: Vec[U8] = Vec.with_value(4096, 0);
-                    let bytes: Vec[U8] = Vec.new();
-                    loop {
-                        let n = match fd.read(buf.slice()) {
-                            Ok(n) => n,
-                            Err(_) => break,
-                        };
-                        if n == 0 { break; }
-                        let chunk = buf.slice().sub(0, n);
-                        for i in 0..n {
-                            bytes.push(chunk[i]);
-                        }
-                    }
-                    *captured = String.from_slice(bytes.slice());
-                });
-                Some(t)
-            } else {
-                None
-            };
+            if stderr_write >= 0 {
+                defer Unistd.close(stderr_write);
+            }
+            let stdout_capture = OutputCapture.start(cmd.capture_stdout, stdout_read);
+            let stderr_capture = OutputCapture.start(cmd.capture_stderr, stderr_read);
             ChildProcess(
                 stdin_fd: stdin_write,
                 pid: pid,
-                capture_thread: capture_thread,
-                captured_stdout: captured,
+                stdout_capture: stdout_capture,
+                stderr_capture: stderr_capture,
             )
         }
-    }
-
-    @unsafe
-    fn exec_child(cmd: Command) -> ! {
-        let c_path = CString.from_string(cmd.program);
-        let arg_strings: Vec[CString] = Vec.new();
-        arg_strings.push(CString.from_string(cmd.program));
-        for arg in cmd.args {
-            arg_strings.push(CString.from_string(arg));
-        }
-        let c_args: Vec[*U8] = Vec.new();
-        for s in arg_strings {
-            c_args.push(transmute(s.as_ptr()));
-        }
-        c_args.push(get_null_ptr());
-        let env_strings: Vec[CString] = Vec.new();
-        for env in cmd.envs {
-            env_strings.push(CString.from_string(env));
-        }
-        let c_envs: Vec[*U8] = Vec.new();
-        for env in env_strings {
-            c_envs.push(transmute(env.as_ptr()));
-        }
-        let existing = get_environ();
-        let i = 0;
-        loop {
-            let env_ptr = *offset_of(existing, i);
-            if is_null_ptr(env_ptr) { break; }
-            c_envs.push(env_ptr);
-            i += 1;
-        }
-        c_envs.push(get_null_ptr());
-        if cmd.use_path {
-            Unistd.execvp(transmute(c_path.as_ptr()), transmute(c_args.as_ptr()));
-        } else {
-            Unistd.execve(transmute(c_path.as_ptr()), transmute(c_args.as_ptr()), transmute(c_envs.as_ptr()));
-        }
-        exit(1)
     }
 
     pub fn run(cmd: Command) -> Command {
@@ -333,6 +478,7 @@ pub struct Command {
         let result = child.wait();
         cmd.status = result.status;
         cmd.captured_stdout = result.captured_stdout;
+        cmd.captured_stderr = result.captured_stderr;
         cmd
     }
 }
