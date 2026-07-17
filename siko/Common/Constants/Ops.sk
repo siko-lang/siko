@@ -1,0 +1,131 @@
+module Siko.Constants.Ops {
+
+import Siko.AST.QualifiedName
+import Siko.Constants.Util
+
+pub struct OpsNames {
+    pub partial_eq: PartialEqNames,
+    pub eq: TraitNames,
+    pub partial_ord: PartialOrdNames,
+    pub ord: OrdNames,
+    pub clone: CloneNames,
+    pub from_int: FromIntNames,
+    pub add_qn: QualifiedName,
+    pub sub_qn: QualifiedName,
+    pub mul_qn: QualifiedName,
+    pub div_qn: QualifiedName,
+    pub neg_qn: QualifiedName,
+    pub not_qn: QualifiedName,
+    pub mod_qn: QualifiedName,
+    pub band_qn: QualifiedName,
+    pub bor_qn: QualifiedName,
+    pub bxor_qn: QualifiedName,
+    pub bnot_qn: QualifiedName,
+    pub shl_qn: QualifiedName,
+    pub shr_qn: QualifiedName,
+}
+
+pub struct TraitNames {
+    pub trait_qn: QualifiedName,
+}
+
+pub struct PartialEqNames {
+    pub trait_qn: QualifiedName,
+    pub eq_qn: QualifiedName,
+    pub not_eq_qn: QualifiedName,
+}
+
+pub struct PartialOrdNames {
+    pub trait_qn: QualifiedName,
+    pub partial_cmp_qn: QualifiedName,
+    pub less_qn: QualifiedName,
+    pub greater_qn: QualifiedName,
+    pub less_eq_qn: QualifiedName,
+    pub greater_eq_qn: QualifiedName,
+}
+
+pub struct OrdNames {
+    pub trait_qn: QualifiedName,
+    pub cmp_qn: QualifiedName,
+}
+
+pub struct CloneNames {
+    pub trait_qn: QualifiedName,
+    pub clone_qn: QualifiedName,
+}
+
+pub struct FromIntNames {
+    pub trait_qn: QualifiedName,
+    pub from_int_qn: QualifiedName,
+}
+
+pub struct IndexNames {
+    pub index_qn: QualifiedName,
+    pub assign_qn: QualifiedName,
+}
+
+pub struct ConvertNames {
+    pub into_qn: QualifiedName,
+}
+
+pub fn build_ops_names() -> OpsNames {
+    let partial_eq = m("Std.Ops.PartialEq");
+    let partial_ord = m("Std.Ops.PartialOrd");
+    let ord = m("Std.Ops.Ord");
+    let clone = m("Std.Ops.Clone");
+    let from_int = m("Std.Ops.FromInt");
+    OpsNames(
+        partial_eq: PartialEqNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialEq")),
+            eq_qn: QualifiedName.new_method(partial_eq, m("eq")),
+            not_eq_qn: QualifiedName.new_method(partial_eq, m("not_eq")),
+        ),
+        eq: TraitNames(trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("Eq"))),
+        partial_ord: PartialOrdNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialOrd")),
+            partial_cmp_qn: QualifiedName.new_method(partial_ord, m("partial_cmp")),
+            less_qn: QualifiedName.new_method(partial_ord, m("less_than")),
+            greater_qn: QualifiedName.new_method(partial_ord, m("greater_than")),
+            less_eq_qn: QualifiedName.new_method(partial_ord, m("less_than_or_equal")),
+            greater_eq_qn: QualifiedName.new_method(partial_ord, m("greater_than_or_equal")),
+        ),
+        ord: OrdNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("Ord")),
+            cmp_qn: QualifiedName.new_method(ord, m("cmp")),
+        ),
+        clone: CloneNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("Clone")),
+            clone_qn: QualifiedName.new_method(clone, m("clone")),
+        ),
+        from_int: FromIntNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Ops"), m("FromInt")),
+            from_int_qn: QualifiedName.new_method(from_int, m("from_int")),
+        ),
+        add_qn: QualifiedName.new_method(m("Std.Ops.Add"), m("add")),
+        sub_qn: QualifiedName.new_method(m("Std.Ops.Sub"), m("sub")),
+        mul_qn: QualifiedName.new_method(m("Std.Ops.Mul"), m("mul")),
+        div_qn: QualifiedName.new_method(m("Std.Ops.Div"), m("div")),
+        neg_qn: QualifiedName.new_method(m("Std.Ops.Neg"), m("neg")),
+        not_qn: QualifiedName.new_method(m("Std.Ops.Not"), m("not")),
+        mod_qn: QualifiedName.new_method(m("Std.Ops.Mod"), m("mod")),
+        band_qn: QualifiedName.new_method(m("Std.Ops.BitAnd"), m("band")),
+        bor_qn: QualifiedName.new_method(m("Std.Ops.BitOr"), m("bor")),
+        bxor_qn: QualifiedName.new_method(m("Std.Ops.BitXor"), m("bxor")),
+        bnot_qn: QualifiedName.new_method(m("Std.Ops.BNot"), m("bnot")),
+        shl_qn: QualifiedName.new_method(m("Std.Ops.Shl"), m("shl")),
+        shr_qn: QualifiedName.new_method(m("Std.Ops.Shr"), m("shr")),
+    )
+}
+
+pub fn build_index_names() -> IndexNames {
+    IndexNames(
+        index_qn: QualifiedName.new_method(m("Std.Ops.Index"), m("index")),
+        assign_qn: QualifiedName.new_method(m("Std.Ops.IndexAssign"), m("index_assign")),
+    )
+}
+
+pub fn build_convert_names() -> ConvertNames {
+    ConvertNames(into_qn: QualifiedName.new_method(m("Std.Convert.Into"), m("into")))
+}
+
+}

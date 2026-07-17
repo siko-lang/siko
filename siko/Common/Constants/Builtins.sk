@@ -1,630 +1,301 @@
 module Siko.Constants.Builtins {
 
-import Siko.Interner as I
 import Siko.AST.QualifiedName
+import Siko.Constants.Array
+import Siko.Constants.Atomic
+import Siko.Constants.Bool
+import Siko.Constants.Coroutine
+import Siko.Constants.Float
+import Siko.Constants.Int
+import Siko.Constants.Iterator
+import Siko.Constants.Json
+import Siko.Constants.Map
+import Siko.Constants.Ops
+import Siko.Constants.Option
+import Siko.Constants.Ordering
+import Siko.Constants.Range
+import Siko.Constants.Result
+import Siko.Constants.Runtime
+import Siko.Constants.String
+import Siko.Constants.Vec
 
 pub struct BuiltinNameCache {
-    bool_type_qn: QualifiedName,
-    bool_true_qn: QualifiedName,
-    bool_false_qn: QualifiedName,
-    int_type_qn: QualifiedName,
-    i8_type_qn: QualifiedName,
-    i16_type_qn: QualifiedName,
-    i32_type_qn: QualifiedName,
-    i64_type_qn: QualifiedName,
-    u8_type_qn: QualifiedName,
-    u16_type_qn: QualifiedName,
-    u32_type_qn: QualifiedName,
-    u64_type_qn: QualifiedName,
-    f32_type_qn: QualifiedName,
-    f64_type_qn: QualifiedName,
-    string_type_qn: QualifiedName,
-    array_type_qn: QualifiedName,
-    map_type_qn: QualifiedName,
-    option_type_qn: QualifiedName,
-    option_some_qn: QualifiedName,
-    option_none_qn: QualifiedName,
-    result_type_qn: QualifiedName,
-    result_ok_qn: QualifiedName,
-    result_err_qn: QualifiedName,
-    ordering_type_qn: QualifiedName,
-    ordering_less_qn: QualifiedName,
-    ordering_equal_qn: QualifiedName,
-    ordering_greater_qn: QualifiedName,
-    atomic_load_relaxed_qn: QualifiedName,
-    atomic_load_acquire_qn: QualifiedName,
-    atomic_load_seqcst_qn: QualifiedName,
-    atomic_store_relaxed_qn: QualifiedName,
-    atomic_store_release_qn: QualifiedName,
-    atomic_store_seqcst_qn: QualifiedName,
-    atomic_swap_relaxed_qn: QualifiedName,
-    atomic_swap_release_qn: QualifiedName,
-    atomic_swap_acquire_qn: QualifiedName,
-    atomic_swap_acqrel_qn: QualifiedName,
-    atomic_swap_seqcst_qn: QualifiedName,
-    atomic_fetch_add_relaxed_qn: QualifiedName,
-    atomic_fetch_add_release_qn: QualifiedName,
-    atomic_fetch_add_acquire_qn: QualifiedName,
-    atomic_fetch_add_acqrel_qn: QualifiedName,
-    atomic_fetch_add_seqcst_qn: QualifiedName,
-    atomic_fetch_sub_relaxed_qn: QualifiedName,
-    atomic_fetch_sub_release_qn: QualifiedName,
-    atomic_fetch_sub_acquire_qn: QualifiedName,
-    atomic_fetch_sub_acqrel_qn: QualifiedName,
-    atomic_fetch_sub_seqcst_qn: QualifiedName,
-    atomic_fetch_and_relaxed_qn: QualifiedName,
-    atomic_fetch_and_release_qn: QualifiedName,
-    atomic_fetch_and_acquire_qn: QualifiedName,
-    atomic_fetch_and_acqrel_qn: QualifiedName,
-    atomic_fetch_and_seqcst_qn: QualifiedName,
-    atomic_fetch_or_relaxed_qn: QualifiedName,
-    atomic_fetch_or_release_qn: QualifiedName,
-    atomic_fetch_or_acquire_qn: QualifiedName,
-    atomic_fetch_or_acqrel_qn: QualifiedName,
-    atomic_fetch_or_seqcst_qn: QualifiedName,
-    atomic_fetch_xor_relaxed_qn: QualifiedName,
-    atomic_fetch_xor_release_qn: QualifiedName,
-    atomic_fetch_xor_acquire_qn: QualifiedName,
-    atomic_fetch_xor_acqrel_qn: QualifiedName,
-    atomic_fetch_xor_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_relaxed_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_relaxed_acquire_qn: QualifiedName,
-    atomic_compare_exchange_relaxed_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_release_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_release_acquire_qn: QualifiedName,
-    atomic_compare_exchange_release_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_acquire_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_acquire_acquire_qn: QualifiedName,
-    atomic_compare_exchange_acquire_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_acqrel_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_acqrel_acquire_qn: QualifiedName,
-    atomic_compare_exchange_acqrel_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_seqcst_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_seqcst_acquire_qn: QualifiedName,
-    atomic_compare_exchange_seqcst_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_weak_relaxed_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_weak_relaxed_acquire_qn: QualifiedName,
-    atomic_compare_exchange_weak_relaxed_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_weak_release_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_weak_release_acquire_qn: QualifiedName,
-    atomic_compare_exchange_weak_release_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_weak_acquire_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_weak_acquire_acquire_qn: QualifiedName,
-    atomic_compare_exchange_weak_acquire_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_weak_acqrel_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_weak_acqrel_acquire_qn: QualifiedName,
-    atomic_compare_exchange_weak_acqrel_seqcst_qn: QualifiedName,
-    atomic_compare_exchange_weak_seqcst_relaxed_qn: QualifiedName,
-    atomic_compare_exchange_weak_seqcst_acquire_qn: QualifiedName,
-    atomic_compare_exchange_weak_seqcst_seqcst_qn: QualifiedName,
-    atomic_fence_acquire_qn: QualifiedName,
-    atomic_fence_release_qn: QualifiedName,
-    atomic_fence_acqrel_qn: QualifiedName,
-    atomic_fence_seqcst_qn: QualifiedName,
-    trait_partial_eq_qn: QualifiedName,
-    trait_eq_qn: QualifiedName,
-    trait_partial_ord_qn: QualifiedName,
-    trait_ord_qn: QualifiedName,
-    trait_clone_qn: QualifiedName,
-    trait_from_int_qn: QualifiedName,
-    trait_json_serialize_qn: QualifiedName,
-    trait_json_deserialize_qn: QualifiedName,
-    op_eq_qn: QualifiedName,
-    op_not_eq_qn: QualifiedName,
-    op_partial_cmp_qn: QualifiedName,
-    op_less_qn: QualifiedName,
-    op_greater_qn: QualifiedName,
-    op_less_eq_qn: QualifiedName,
-    op_greater_eq_qn: QualifiedName,
-    op_cmp_qn: QualifiedName,
-    op_clone_qn: QualifiedName,
-    op_from_int_qn: QualifiedName,
-    op_add_qn: QualifiedName,
-    op_sub_qn: QualifiedName,
-    op_mul_qn: QualifiedName,
-    op_div_qn: QualifiedName,
-    op_neg_qn: QualifiedName,
-    op_not_qn: QualifiedName,
-    op_mod_qn: QualifiedName,
-    op_band_qn: QualifiedName,
-    op_bor_qn: QualifiedName,
-    op_bxor_qn: QualifiedName,
-    op_bnot_qn: QualifiedName,
-    op_shl_qn: QualifiedName,
-    op_shr_qn: QualifiedName,
-    index_index_qn: QualifiedName,
-    index_assign_index_assign_qn: QualifiedName,
-    convert_into_qn: QualifiedName,
-    int_eq_qn: QualifiedName,
-    i8_eq_qn: QualifiedName,
-    i16_eq_qn: QualifiedName,
-    i32_eq_qn: QualifiedName,
-    i64_eq_qn: QualifiedName,
-    u8_eq_qn: QualifiedName,
-    u16_eq_qn: QualifiedName,
-    u32_eq_qn: QualifiedName,
-    u64_eq_qn: QualifiedName,
-    string_eq_qn: QualifiedName,
-    string_from_literal_qn: QualifiedName,
-    vec_new_qn: QualifiedName,
-    vec_push_qn: QualifiedName,
-    map_new_qn: QualifiedName,
-    map_insert_qn: QualifiedName,
-    range_range_qn: QualifiedName,
-    json_type_qn: QualifiedName,
-    json_null_qn: QualifiedName,
-    json_boolean_qn: QualifiedName,
-    json_number_qn: QualifiedName,
-    json_str_qn: QualifiedName,
-    json_array_qn: QualifiedName,
-    json_object_qn: QualifiedName,
-    json_error_type_qn: QualifiedName,
-    json_error_expected_array_qn: QualifiedName,
-    json_error_unknown_variant_qn: QualifiedName,
-    json_error_invalid_variant_qn: QualifiedName,
-    json_to_json_qn: QualifiedName,
-    json_from_json_qn: QualifiedName,
-    json_get_field_qn: QualifiedName,
-    json_get_optional_field_qn: QualifiedName,
-    json_single_field_qn: QualifiedName,
-    util_panic_qn: QualifiedName,
-    libc_abort_qn: QualifiedName,
-    util_discriminator_qn: QualifiedName,
-    util_uninitialized_qn: QualifiedName,
-    util_downcast_qn: QualifiedName,
-    transmute_qn: QualifiedName,
-    array_as_ptr_qn: QualifiedName,
-    ptr_offset_of_qn: QualifiedName,
-    main_entry_qn: QualifiedName,
-    console_print_qn: QualifiedName,
-    console_println_qn: QualifiedName,
-    console_flush_qn: QualifiedName,
-    co_result_type_qn: QualifiedName,
-    co_result_yielded_qn: QualifiedName,
-    co_result_returned_qn: QualifiedName,
-    co_result_completed_qn: QualifiedName,
-    resume_qn: QualifiedName,
-    into_iter_qn: QualifiedName,
-    iterator_next_qn: QualifiedName,
+    bool_: Bool.BoolNames,
+    integer: Int.IntegerNames,
+    float: Float.FloatNames,
+    string: String.StringNames,
+    array: Array.ArrayNames,
+    map: Map.MapNames,
+    option: Option.OptionNames,
+    result: Result.ResultNames,
+    ordering: Ordering.OrderingNames,
+    atomic: Atomic.AtomicNames,
+    ops: Ops.OpsNames,
+    index: Ops.IndexNames,
+    convert: Ops.ConvertNames,
+    vector: Vec.VectorNames,
+    range: Range.RangeNames,
+    json: Json.JsonNames,
+    util: Runtime.UtilNames,
+    libc: Runtime.LibcNames,
+    intrinsics: Runtime.IntrinsicNames,
+    ptr: Runtime.PtrNames,
+    main: Runtime.MainNames,
+    console: Runtime.ConsoleNames,
+    coroutine: Coroutine.CoroutineNames,
+    iterator: Iterator.IteratorNames,
 }
 
-fn m(s: String) -> I.String { I.intern(s) }
-
 pub fn build_cache() -> BuiltinNameCache {
-    let n_partial_eq = m("Std.Ops.PartialEq");
-    let n_partial_ord = m("Std.Ops.PartialOrd");
-    let n_ord = m("Std.Ops.Ord");
-    let n_clone = m("Std.Ops.Clone");
-    let n_from_int = m("Std.Ops.FromInt");
-    let n_json_serialize = m("Std.Json.JsonSerialize");
-    let n_json_deserialize = m("Std.Json.JsonDeserialize");
-    let n_int = m("Std.Int.Int");
-    let n_u8 = m("Std.Int.U8.U8");
-    let n_string = m("Std.String.String");
-    let n_vec = m("Std.Vec.Vec");
-    let n_map = m("Std.Map.Map");
-    let n_json = m("Std.Json.Json");
-    let n_atomic = m("Std.Sync.Atomic.Intrinsics");
-
     BuiltinNameCache(
-        bool_type_qn: QualifiedName.new_enum(m("Std.Bool"), m("Bool")),
-        bool_true_qn: QualifiedName.new_variant(m("Std.Bool"), m("Bool"), m("True")),
-        bool_false_qn: QualifiedName.new_variant(m("Std.Bool"), m("Bool"), m("False")),
-        int_type_qn: QualifiedName.new_struct(m("Std.Int"), m("Int")),
-        i8_type_qn: QualifiedName.new_struct(m("Std.Int.I8"), m("I8")),
-        i16_type_qn: QualifiedName.new_struct(m("Std.Int.I16"), m("I16")),
-        i32_type_qn: QualifiedName.new_struct(m("Std.Int.I32"), m("I32")),
-        i64_type_qn: QualifiedName.new_struct(m("Std.Int.I64"), m("I64")),
-        u8_type_qn: QualifiedName.new_struct(m("Std.Int.U8"), m("U8")),
-        u16_type_qn: QualifiedName.new_struct(m("Std.Int.U16"), m("U16")),
-        u32_type_qn: QualifiedName.new_struct(m("Std.Int.U32"), m("U32")),
-        u64_type_qn: QualifiedName.new_struct(m("Std.Int.U64"), m("U64")),
-        f32_type_qn: QualifiedName.new_struct(m("Std.Float.F32"), m("F32")),
-        f64_type_qn: QualifiedName.new_struct(m("Std.Float.F64"), m("F64")),
-        string_type_qn: QualifiedName.new_struct(m("Std.String"), m("String")),
-        array_type_qn: QualifiedName.new_struct(m("Std.Array"), m("Array")),
-        map_type_qn: QualifiedName.new_struct(m("Std.Map"), m("Map")),
-        option_type_qn: QualifiedName.new_enum(m("Std.Option"), m("Option")),
-        option_some_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("Some")),
-        option_none_qn: QualifiedName.new_variant(m("Std.Option"), m("Option"), m("None")),
-        result_type_qn: QualifiedName.new_enum(m("Std.Result"), m("Result")),
-        result_ok_qn: QualifiedName.new_variant(m("Std.Result"), m("Result"), m("Ok")),
-        result_err_qn: QualifiedName.new_variant(m("Std.Result"), m("Result"), m("Err")),
-        ordering_type_qn: QualifiedName.new_enum(m("Std.Ordering"), m("Ordering")),
-        ordering_less_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Less")),
-        ordering_equal_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Equal")),
-        ordering_greater_qn: QualifiedName.new_variant(m("Std.Ordering"), m("Ordering"), m("Greater")),
-        atomic_load_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_load_relaxed")),
-        atomic_load_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_load_acquire")),
-        atomic_load_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_load_seqcst")),
-        atomic_store_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_store_relaxed")),
-        atomic_store_release_qn: QualifiedName.new_function(n_atomic, m("atomic_store_release")),
-        atomic_store_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_store_seqcst")),
-        atomic_swap_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_swap_relaxed")),
-        atomic_swap_release_qn: QualifiedName.new_function(n_atomic, m("atomic_swap_release")),
-        atomic_swap_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_swap_acquire")),
-        atomic_swap_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_swap_acqrel")),
-        atomic_swap_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_swap_seqcst")),
-        atomic_fetch_add_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_add_relaxed")),
-        atomic_fetch_add_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_add_release")),
-        atomic_fetch_add_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_add_acquire")),
-        atomic_fetch_add_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_add_acqrel")),
-        atomic_fetch_add_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_add_seqcst")),
-        atomic_fetch_sub_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_sub_relaxed")),
-        atomic_fetch_sub_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_sub_release")),
-        atomic_fetch_sub_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_sub_acquire")),
-        atomic_fetch_sub_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_sub_acqrel")),
-        atomic_fetch_sub_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_sub_seqcst")),
-        atomic_fetch_and_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_and_relaxed")),
-        atomic_fetch_and_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_and_release")),
-        atomic_fetch_and_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_and_acquire")),
-        atomic_fetch_and_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_and_acqrel")),
-        atomic_fetch_and_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_and_seqcst")),
-        atomic_fetch_or_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_or_relaxed")),
-        atomic_fetch_or_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_or_release")),
-        atomic_fetch_or_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_or_acquire")),
-        atomic_fetch_or_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_or_acqrel")),
-        atomic_fetch_or_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_or_seqcst")),
-        atomic_fetch_xor_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_xor_relaxed")),
-        atomic_fetch_xor_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_xor_release")),
-        atomic_fetch_xor_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_xor_acquire")),
-        atomic_fetch_xor_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_xor_acqrel")),
-        atomic_fetch_xor_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fetch_xor_seqcst")),
-        atomic_compare_exchange_relaxed_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_relaxed_relaxed")),
-        atomic_compare_exchange_relaxed_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_relaxed_acquire")),
-        atomic_compare_exchange_relaxed_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_relaxed_seqcst")),
-        atomic_compare_exchange_release_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_release_relaxed")),
-        atomic_compare_exchange_release_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_release_acquire")),
-        atomic_compare_exchange_release_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_release_seqcst")),
-        atomic_compare_exchange_acquire_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acquire_relaxed")),
-        atomic_compare_exchange_acquire_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acquire_acquire")),
-        atomic_compare_exchange_acquire_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acquire_seqcst")),
-        atomic_compare_exchange_acqrel_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acqrel_relaxed")),
-        atomic_compare_exchange_acqrel_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acqrel_acquire")),
-        atomic_compare_exchange_acqrel_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_acqrel_seqcst")),
-        atomic_compare_exchange_seqcst_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_seqcst_relaxed")),
-        atomic_compare_exchange_seqcst_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_seqcst_acquire")),
-        atomic_compare_exchange_seqcst_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_seqcst_seqcst")),
-        atomic_compare_exchange_weak_relaxed_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_relaxed_relaxed")),
-        atomic_compare_exchange_weak_relaxed_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_relaxed_acquire")),
-        atomic_compare_exchange_weak_relaxed_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_relaxed_seqcst")),
-        atomic_compare_exchange_weak_release_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_release_relaxed")),
-        atomic_compare_exchange_weak_release_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_release_acquire")),
-        atomic_compare_exchange_weak_release_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_release_seqcst")),
-        atomic_compare_exchange_weak_acquire_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acquire_relaxed")),
-        atomic_compare_exchange_weak_acquire_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acquire_acquire")),
-        atomic_compare_exchange_weak_acquire_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acquire_seqcst")),
-        atomic_compare_exchange_weak_acqrel_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acqrel_relaxed")),
-        atomic_compare_exchange_weak_acqrel_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acqrel_acquire")),
-        atomic_compare_exchange_weak_acqrel_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_acqrel_seqcst")),
-        atomic_compare_exchange_weak_seqcst_relaxed_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_seqcst_relaxed")),
-        atomic_compare_exchange_weak_seqcst_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_seqcst_acquire")),
-        atomic_compare_exchange_weak_seqcst_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_compare_exchange_weak_seqcst_seqcst")),
-        atomic_fence_acquire_qn: QualifiedName.new_function(n_atomic, m("atomic_fence_acquire")),
-        atomic_fence_release_qn: QualifiedName.new_function(n_atomic, m("atomic_fence_release")),
-        atomic_fence_acqrel_qn: QualifiedName.new_function(n_atomic, m("atomic_fence_acqrel")),
-        atomic_fence_seqcst_qn: QualifiedName.new_function(n_atomic, m("atomic_fence_seqcst")),
-        trait_partial_eq_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialEq")),
-        trait_eq_qn: QualifiedName.new_trait(m("Std.Ops"), m("Eq")),
-        trait_partial_ord_qn: QualifiedName.new_trait(m("Std.Ops"), m("PartialOrd")),
-        trait_ord_qn: QualifiedName.new_trait(m("Std.Ops"), m("Ord")),
-        trait_clone_qn: QualifiedName.new_trait(m("Std.Ops"), m("Clone")),
-        trait_from_int_qn: QualifiedName.new_trait(m("Std.Ops"), m("FromInt")),
-        trait_json_serialize_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonSerialize")),
-        trait_json_deserialize_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonDeserialize")),
-        op_eq_qn: QualifiedName.new_method(n_partial_eq, m("eq")),
-        op_not_eq_qn: QualifiedName.new_method(n_partial_eq, m("not_eq")),
-        op_partial_cmp_qn: QualifiedName.new_method(n_partial_ord, m("partial_cmp")),
-        op_less_qn: QualifiedName.new_method(n_partial_ord, m("less_than")),
-        op_greater_qn: QualifiedName.new_method(n_partial_ord, m("greater_than")),
-        op_less_eq_qn: QualifiedName.new_method(n_partial_ord, m("less_than_or_equal")),
-        op_greater_eq_qn: QualifiedName.new_method(n_partial_ord, m("greater_than_or_equal")),
-        op_cmp_qn: QualifiedName.new_method(n_ord, m("cmp")),
-        op_clone_qn: QualifiedName.new_method(n_clone, m("clone")),
-        op_from_int_qn: QualifiedName.new_method(n_from_int, m("from_int")),
-        op_add_qn: QualifiedName.new_method(m("Std.Ops.Add"), m("add")),
-        op_sub_qn: QualifiedName.new_method(m("Std.Ops.Sub"), m("sub")),
-        op_mul_qn: QualifiedName.new_method(m("Std.Ops.Mul"), m("mul")),
-        op_div_qn: QualifiedName.new_method(m("Std.Ops.Div"), m("div")),
-        op_neg_qn: QualifiedName.new_method(m("Std.Ops.Neg"), m("neg")),
-        op_not_qn: QualifiedName.new_method(m("Std.Ops.Not"), m("not")),
-        op_mod_qn: QualifiedName.new_method(m("Std.Ops.Mod"), m("mod")),
-        op_band_qn: QualifiedName.new_method(m("Std.Ops.BitAnd"), m("band")),
-        op_bor_qn: QualifiedName.new_method(m("Std.Ops.BitOr"), m("bor")),
-        op_bxor_qn: QualifiedName.new_method(m("Std.Ops.BitXor"), m("bxor")),
-        op_bnot_qn: QualifiedName.new_method(m("Std.Ops.BNot"), m("bnot")),
-        op_shl_qn: QualifiedName.new_method(m("Std.Ops.Shl"), m("shl")),
-        op_shr_qn: QualifiedName.new_method(m("Std.Ops.Shr"), m("shr")),
-        index_index_qn: QualifiedName.new_method(m("Std.Ops.Index"), m("index")),
-        index_assign_index_assign_qn: QualifiedName.new_method(m("Std.Ops.IndexAssign"), m("index_assign")),
-        convert_into_qn: QualifiedName.new_method(m("Std.Convert.Into"), m("into")),
-        int_eq_qn: QualifiedName.new_method(n_int, m("eq")),
-        i8_eq_qn: QualifiedName.new_method(m("Std.Int.I8.I8"), m("eq")),
-        i16_eq_qn: QualifiedName.new_method(m("Std.Int.I16.I16"), m("eq")),
-        i32_eq_qn: QualifiedName.new_method(m("Std.Int.I32.I32"), m("eq")),
-        i64_eq_qn: QualifiedName.new_method(m("Std.Int.I64.I64"), m("eq")),
-        u8_eq_qn: QualifiedName.new_method(n_u8, m("eq")),
-        u16_eq_qn: QualifiedName.new_method(m("Std.Int.U16.U16"), m("eq")),
-        u32_eq_qn: QualifiedName.new_method(m("Std.Int.U32.U32"), m("eq")),
-        u64_eq_qn: QualifiedName.new_method(m("Std.Int.U64.U64"), m("eq")),
-        string_eq_qn: QualifiedName.new_method(n_string, m("eq")),
-        string_from_literal_qn: QualifiedName.new_method(n_string, m("from_literal")),
-        vec_new_qn: QualifiedName.new_method(n_vec, m("new")),
-        vec_push_qn: QualifiedName.new_method(n_vec, m("push")),
-        map_new_qn: QualifiedName.new_method(n_map, m("new")),
-        map_insert_qn: QualifiedName.new_method(n_map, m("insert")),
-        range_range_qn: QualifiedName.new_method(m("Std.Range.Range"), m("range")),
-        json_type_qn: QualifiedName.new_enum(m("Std.Json"), m("Json")),
-        json_null_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Null")),
-        json_boolean_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Boolean")),
-        json_number_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Number")),
-        json_str_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Str")),
-        json_array_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Array")),
-        json_object_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Object")),
-        json_error_type_qn: QualifiedName.new_enum(m("Std.Json"), m("JsonError")),
-        json_error_expected_array_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("ExpectedArray")),
-        json_error_unknown_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("UnknownVariant")),
-        json_error_invalid_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("InvalidVariant")),
-        json_to_json_qn: QualifiedName.new_method(n_json_serialize, m("to_json")),
-        json_from_json_qn: QualifiedName.new_method(n_json_deserialize, m("from_json")),
-        json_get_field_qn: QualifiedName.new_method(n_json, m("get_field")),
-        json_get_optional_field_qn: QualifiedName.new_function(m("Std.Json"), m("get_optional_field")),
-        json_single_field_qn: QualifiedName.new_function(m("Std.Json"), m("single_field")),
-        util_panic_qn: QualifiedName.new_function(m("Std.Util"), m("panic")),
-        libc_abort_qn: QualifiedName.new_function(m("Std.Libc.Stdlib"), m("abort")),
-        util_discriminator_qn: QualifiedName.new_function(m("Std.Util"), m("discriminator")),
-        util_uninitialized_qn: QualifiedName.new_function(m("Std.Util"), m("uninitialized")),
-        util_downcast_qn: QualifiedName.new_function(m("Std.Util"), m("downcast")),
-        transmute_qn: QualifiedName.new_function(m("Std.Intrinsics"), m("transmute")),
-        array_as_ptr_qn: QualifiedName.new_function(m("Std.Array"), m("as_ptr")),
-        ptr_offset_of_qn: QualifiedName.new_function(m("Std.Ptr"), m("offset_of")),
-        main_entry_qn: QualifiedName.new_function(m("Main"), m("main")),
-        console_print_qn: QualifiedName.new_function(m("Std.Console"), m("print")),
-        console_println_qn: QualifiedName.new_function(m("Std.Console"), m("println")),
-        console_flush_qn: QualifiedName.new_function(m("Std.Console"), m("flush")),
-        co_result_type_qn: QualifiedName.new_enum(m("Std.Coroutine"), m("CoResult")),
-        co_result_yielded_qn: QualifiedName.new_variant(m("Std.Coroutine"), m("CoResult"), m("Yielded")),
-        co_result_returned_qn: QualifiedName.new_variant(m("Std.Coroutine"), m("CoResult"), m("Returned")),
-        co_result_completed_qn: QualifiedName.new_variant(m("Std.Coroutine"), m("CoResult"), m("Completed")),
-        resume_qn: QualifiedName.new_function(m("Std.Coroutine"), m("resume")),
-        into_iter_qn: QualifiedName.new_method(m("Std.Iterator.IntoIterator"), m("into_iter")),
-        iterator_next_qn: QualifiedName.new_method(m("Std.Iterator.Iterator"), m("next")),
+        bool_: Bool.build_bool_names(),
+        integer: Int.build_integer_names(),
+        float: Float.build_float_names(),
+        string: String.build_string_names(),
+        array: Array.build_array_names(),
+        map: Map.build_map_names(),
+        option: Option.build_option_names(),
+        result: Result.build_result_names(),
+        ordering: Ordering.build_ordering_names(),
+        atomic: Atomic.build_atomic_names(),
+        ops: Ops.build_ops_names(),
+        index: Ops.build_index_names(),
+        convert: Ops.build_convert_names(),
+        vector: Vec.build_vector_names(),
+        range: Range.build_range_names(),
+        json: Json.build_json_names(),
+        util: Runtime.build_util_names(),
+        libc: Runtime.build_libc_names(),
+        intrinsics: Runtime.build_intrinsic_names(),
+        ptr: Runtime.build_ptr_names(),
+        main: Runtime.build_main_names(),
+        console: Runtime.build_console_names(),
+        coroutine: Coroutine.build_coroutine_names(),
+        iterator: Iterator.build_iterator_names(),
     )
 }
 
 pub implicit name_cache: BuiltinNameCache
 
 // Primitive types
-pub fn get_bool_type_qn() -> QualifiedName { name_cache.bool_type_qn }
-pub fn get_bool_true_qn() -> QualifiedName { name_cache.bool_true_qn }
-pub fn get_bool_false_qn() -> QualifiedName { name_cache.bool_false_qn }
+pub fn get_bool_type_qn() -> QualifiedName { name_cache.bool_.type_qn }
+pub fn get_bool_true_qn() -> QualifiedName { name_cache.bool_.true_qn }
+pub fn get_bool_false_qn() -> QualifiedName { name_cache.bool_.false_qn }
 // Bool's variant indices (= enum tags after lower-enums). These mirror the
 // declaration order in std's Bool and must stay in sync with it; False is 0
 // and True is 1 so a Bool tag matches the C/LLVM truth value of a comparison.
 pub fn get_bool_false_variant_index() -> Int { 0 }
 pub fn get_bool_true_variant_index() -> Int { 1 }
-pub fn get_int_type_qn() -> QualifiedName { name_cache.int_type_qn }
-pub fn get_i8_type_qn() -> QualifiedName { name_cache.i8_type_qn }
-pub fn get_i16_type_qn() -> QualifiedName { name_cache.i16_type_qn }
-pub fn get_i32_type_qn() -> QualifiedName { name_cache.i32_type_qn }
-pub fn get_i64_type_qn() -> QualifiedName { name_cache.i64_type_qn }
-pub fn get_u8_type_qn() -> QualifiedName { name_cache.u8_type_qn }
-pub fn get_u16_type_qn() -> QualifiedName { name_cache.u16_type_qn }
-pub fn get_u32_type_qn() -> QualifiedName { name_cache.u32_type_qn }
-pub fn get_u64_type_qn() -> QualifiedName { name_cache.u64_type_qn }
-pub fn get_f32_type_qn() -> QualifiedName { name_cache.f32_type_qn }
-pub fn get_f64_type_qn() -> QualifiedName { name_cache.f64_type_qn }
-pub fn get_string_type_qn() -> QualifiedName { name_cache.string_type_qn }
-pub fn get_array_type_qn() -> QualifiedName { name_cache.array_type_qn }
-pub fn get_map_type_qn() -> QualifiedName { name_cache.map_type_qn }
+pub fn get_int_type_qn() -> QualifiedName { name_cache.integer.int_.type_qn }
+pub fn get_i8_type_qn() -> QualifiedName { name_cache.integer.i8.type_qn }
+pub fn get_i16_type_qn() -> QualifiedName { name_cache.integer.i16.type_qn }
+pub fn get_i32_type_qn() -> QualifiedName { name_cache.integer.i32.type_qn }
+pub fn get_i64_type_qn() -> QualifiedName { name_cache.integer.i64.type_qn }
+pub fn get_u8_type_qn() -> QualifiedName { name_cache.integer.u8.type_qn }
+pub fn get_u16_type_qn() -> QualifiedName { name_cache.integer.u16.type_qn }
+pub fn get_u32_type_qn() -> QualifiedName { name_cache.integer.u32.type_qn }
+pub fn get_u64_type_qn() -> QualifiedName { name_cache.integer.u64.type_qn }
+pub fn get_f32_type_qn() -> QualifiedName { name_cache.float.f32.type_qn }
+pub fn get_f64_type_qn() -> QualifiedName { name_cache.float.f64.type_qn }
+pub fn get_string_type_qn() -> QualifiedName { name_cache.string.type_qn }
+pub fn get_array_type_qn() -> QualifiedName { name_cache.array.type_qn }
+pub fn get_map_type_qn() -> QualifiedName { name_cache.map.type_qn }
 
 // Option
-pub fn get_option_type_qn() -> QualifiedName { name_cache.option_type_qn }
-pub fn get_option_some_qn() -> QualifiedName { name_cache.option_some_qn }
-pub fn get_option_none_qn() -> QualifiedName { name_cache.option_none_qn }
+pub fn get_option_type_qn() -> QualifiedName { name_cache.option.type_qn }
+pub fn get_option_some_qn() -> QualifiedName { name_cache.option.some_qn }
+pub fn get_option_none_qn() -> QualifiedName { name_cache.option.none_qn }
 
 // Result
-pub fn get_result_type_qn() -> QualifiedName { name_cache.result_type_qn }
-pub fn get_result_ok_qn() -> QualifiedName { name_cache.result_ok_qn }
-pub fn get_result_err_qn() -> QualifiedName { name_cache.result_err_qn }
+pub fn get_result_type_qn() -> QualifiedName { name_cache.result.type_qn }
+pub fn get_result_ok_qn() -> QualifiedName { name_cache.result.ok_qn }
+pub fn get_result_err_qn() -> QualifiedName { name_cache.result.err_qn }
 
 // Ordering
-pub fn get_ordering_type_qn() -> QualifiedName { name_cache.ordering_type_qn }
-pub fn get_ordering_less_qn() -> QualifiedName { name_cache.ordering_less_qn }
-pub fn get_ordering_equal_qn() -> QualifiedName { name_cache.ordering_equal_qn }
-pub fn get_ordering_greater_qn() -> QualifiedName { name_cache.ordering_greater_qn }
+pub fn get_ordering_type_qn() -> QualifiedName { name_cache.ordering.type_qn }
+pub fn get_ordering_less_qn() -> QualifiedName { name_cache.ordering.less_qn }
+pub fn get_ordering_equal_qn() -> QualifiedName { name_cache.ordering.equal_qn }
+pub fn get_ordering_greater_qn() -> QualifiedName { name_cache.ordering.greater_qn }
 
 // Atomic leaf intrinsics
-pub fn get_atomic_load_relaxed_qn() -> QualifiedName { name_cache.atomic_load_relaxed_qn }
-pub fn get_atomic_load_acquire_qn() -> QualifiedName { name_cache.atomic_load_acquire_qn }
-pub fn get_atomic_load_seqcst_qn() -> QualifiedName { name_cache.atomic_load_seqcst_qn }
-pub fn get_atomic_store_relaxed_qn() -> QualifiedName { name_cache.atomic_store_relaxed_qn }
-pub fn get_atomic_store_release_qn() -> QualifiedName { name_cache.atomic_store_release_qn }
-pub fn get_atomic_store_seqcst_qn() -> QualifiedName { name_cache.atomic_store_seqcst_qn }
-pub fn get_atomic_swap_relaxed_qn() -> QualifiedName { name_cache.atomic_swap_relaxed_qn }
-pub fn get_atomic_swap_release_qn() -> QualifiedName { name_cache.atomic_swap_release_qn }
-pub fn get_atomic_swap_acquire_qn() -> QualifiedName { name_cache.atomic_swap_acquire_qn }
-pub fn get_atomic_swap_acqrel_qn() -> QualifiedName { name_cache.atomic_swap_acqrel_qn }
-pub fn get_atomic_swap_seqcst_qn() -> QualifiedName { name_cache.atomic_swap_seqcst_qn }
-pub fn get_atomic_fetch_add_relaxed_qn() -> QualifiedName { name_cache.atomic_fetch_add_relaxed_qn }
-pub fn get_atomic_fetch_add_release_qn() -> QualifiedName { name_cache.atomic_fetch_add_release_qn }
-pub fn get_atomic_fetch_add_acquire_qn() -> QualifiedName { name_cache.atomic_fetch_add_acquire_qn }
-pub fn get_atomic_fetch_add_acqrel_qn() -> QualifiedName { name_cache.atomic_fetch_add_acqrel_qn }
-pub fn get_atomic_fetch_add_seqcst_qn() -> QualifiedName { name_cache.atomic_fetch_add_seqcst_qn }
-pub fn get_atomic_fetch_sub_relaxed_qn() -> QualifiedName { name_cache.atomic_fetch_sub_relaxed_qn }
-pub fn get_atomic_fetch_sub_release_qn() -> QualifiedName { name_cache.atomic_fetch_sub_release_qn }
-pub fn get_atomic_fetch_sub_acquire_qn() -> QualifiedName { name_cache.atomic_fetch_sub_acquire_qn }
-pub fn get_atomic_fetch_sub_acqrel_qn() -> QualifiedName { name_cache.atomic_fetch_sub_acqrel_qn }
-pub fn get_atomic_fetch_sub_seqcst_qn() -> QualifiedName { name_cache.atomic_fetch_sub_seqcst_qn }
-pub fn get_atomic_fetch_and_relaxed_qn() -> QualifiedName { name_cache.atomic_fetch_and_relaxed_qn }
-pub fn get_atomic_fetch_and_release_qn() -> QualifiedName { name_cache.atomic_fetch_and_release_qn }
-pub fn get_atomic_fetch_and_acquire_qn() -> QualifiedName { name_cache.atomic_fetch_and_acquire_qn }
-pub fn get_atomic_fetch_and_acqrel_qn() -> QualifiedName { name_cache.atomic_fetch_and_acqrel_qn }
-pub fn get_atomic_fetch_and_seqcst_qn() -> QualifiedName { name_cache.atomic_fetch_and_seqcst_qn }
-pub fn get_atomic_fetch_or_relaxed_qn() -> QualifiedName { name_cache.atomic_fetch_or_relaxed_qn }
-pub fn get_atomic_fetch_or_release_qn() -> QualifiedName { name_cache.atomic_fetch_or_release_qn }
-pub fn get_atomic_fetch_or_acquire_qn() -> QualifiedName { name_cache.atomic_fetch_or_acquire_qn }
-pub fn get_atomic_fetch_or_acqrel_qn() -> QualifiedName { name_cache.atomic_fetch_or_acqrel_qn }
-pub fn get_atomic_fetch_or_seqcst_qn() -> QualifiedName { name_cache.atomic_fetch_or_seqcst_qn }
-pub fn get_atomic_fetch_xor_relaxed_qn() -> QualifiedName { name_cache.atomic_fetch_xor_relaxed_qn }
-pub fn get_atomic_fetch_xor_release_qn() -> QualifiedName { name_cache.atomic_fetch_xor_release_qn }
-pub fn get_atomic_fetch_xor_acquire_qn() -> QualifiedName { name_cache.atomic_fetch_xor_acquire_qn }
-pub fn get_atomic_fetch_xor_acqrel_qn() -> QualifiedName { name_cache.atomic_fetch_xor_acqrel_qn }
-pub fn get_atomic_fetch_xor_seqcst_qn() -> QualifiedName { name_cache.atomic_fetch_xor_seqcst_qn }
-pub fn get_atomic_compare_exchange_relaxed_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_relaxed_relaxed_qn }
-pub fn get_atomic_compare_exchange_relaxed_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_relaxed_acquire_qn }
-pub fn get_atomic_compare_exchange_relaxed_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_relaxed_seqcst_qn }
-pub fn get_atomic_compare_exchange_release_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_release_relaxed_qn }
-pub fn get_atomic_compare_exchange_release_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_release_acquire_qn }
-pub fn get_atomic_compare_exchange_release_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_release_seqcst_qn }
-pub fn get_atomic_compare_exchange_acquire_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acquire_relaxed_qn }
-pub fn get_atomic_compare_exchange_acquire_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acquire_acquire_qn }
-pub fn get_atomic_compare_exchange_acquire_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acquire_seqcst_qn }
-pub fn get_atomic_compare_exchange_acqrel_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acqrel_relaxed_qn }
-pub fn get_atomic_compare_exchange_acqrel_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acqrel_acquire_qn }
-pub fn get_atomic_compare_exchange_acqrel_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_acqrel_seqcst_qn }
-pub fn get_atomic_compare_exchange_seqcst_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_seqcst_relaxed_qn }
-pub fn get_atomic_compare_exchange_seqcst_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_seqcst_acquire_qn }
-pub fn get_atomic_compare_exchange_seqcst_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_seqcst_seqcst_qn }
-pub fn get_atomic_compare_exchange_weak_relaxed_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_relaxed_relaxed_qn }
-pub fn get_atomic_compare_exchange_weak_relaxed_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_relaxed_acquire_qn }
-pub fn get_atomic_compare_exchange_weak_relaxed_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_relaxed_seqcst_qn }
-pub fn get_atomic_compare_exchange_weak_release_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_release_relaxed_qn }
-pub fn get_atomic_compare_exchange_weak_release_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_release_acquire_qn }
-pub fn get_atomic_compare_exchange_weak_release_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_release_seqcst_qn }
-pub fn get_atomic_compare_exchange_weak_acquire_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acquire_relaxed_qn }
-pub fn get_atomic_compare_exchange_weak_acquire_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acquire_acquire_qn }
-pub fn get_atomic_compare_exchange_weak_acquire_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acquire_seqcst_qn }
-pub fn get_atomic_compare_exchange_weak_acqrel_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acqrel_relaxed_qn }
-pub fn get_atomic_compare_exchange_weak_acqrel_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acqrel_acquire_qn }
-pub fn get_atomic_compare_exchange_weak_acqrel_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_acqrel_seqcst_qn }
-pub fn get_atomic_compare_exchange_weak_seqcst_relaxed_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_seqcst_relaxed_qn }
-pub fn get_atomic_compare_exchange_weak_seqcst_acquire_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_seqcst_acquire_qn }
-pub fn get_atomic_compare_exchange_weak_seqcst_seqcst_qn() -> QualifiedName { name_cache.atomic_compare_exchange_weak_seqcst_seqcst_qn }
-pub fn get_atomic_fence_acquire_qn() -> QualifiedName { name_cache.atomic_fence_acquire_qn }
-pub fn get_atomic_fence_release_qn() -> QualifiedName { name_cache.atomic_fence_release_qn }
-pub fn get_atomic_fence_acqrel_qn() -> QualifiedName { name_cache.atomic_fence_acqrel_qn }
-pub fn get_atomic_fence_seqcst_qn() -> QualifiedName { name_cache.atomic_fence_seqcst_qn }
+pub fn get_atomic_load_relaxed_qn() -> QualifiedName { name_cache.atomic.load.relaxed_qn }
+pub fn get_atomic_load_acquire_qn() -> QualifiedName { name_cache.atomic.load.acquire_qn }
+pub fn get_atomic_load_seqcst_qn() -> QualifiedName { name_cache.atomic.load.seqcst_qn }
+pub fn get_atomic_store_relaxed_qn() -> QualifiedName { name_cache.atomic.store.relaxed_qn }
+pub fn get_atomic_store_release_qn() -> QualifiedName { name_cache.atomic.store.release_qn }
+pub fn get_atomic_store_seqcst_qn() -> QualifiedName { name_cache.atomic.store.seqcst_qn }
+pub fn get_atomic_swap_relaxed_qn() -> QualifiedName { name_cache.atomic.swap.relaxed_qn }
+pub fn get_atomic_swap_release_qn() -> QualifiedName { name_cache.atomic.swap.release_qn }
+pub fn get_atomic_swap_acquire_qn() -> QualifiedName { name_cache.atomic.swap.acquire_qn }
+pub fn get_atomic_swap_acqrel_qn() -> QualifiedName { name_cache.atomic.swap.acqrel_qn }
+pub fn get_atomic_swap_seqcst_qn() -> QualifiedName { name_cache.atomic.swap.seqcst_qn }
+pub fn get_atomic_fetch_add_relaxed_qn() -> QualifiedName { name_cache.atomic.fetch.add.relaxed_qn }
+pub fn get_atomic_fetch_add_release_qn() -> QualifiedName { name_cache.atomic.fetch.add.release_qn }
+pub fn get_atomic_fetch_add_acquire_qn() -> QualifiedName { name_cache.atomic.fetch.add.acquire_qn }
+pub fn get_atomic_fetch_add_acqrel_qn() -> QualifiedName { name_cache.atomic.fetch.add.acqrel_qn }
+pub fn get_atomic_fetch_add_seqcst_qn() -> QualifiedName { name_cache.atomic.fetch.add.seqcst_qn }
+pub fn get_atomic_fetch_sub_relaxed_qn() -> QualifiedName { name_cache.atomic.fetch.sub.relaxed_qn }
+pub fn get_atomic_fetch_sub_release_qn() -> QualifiedName { name_cache.atomic.fetch.sub.release_qn }
+pub fn get_atomic_fetch_sub_acquire_qn() -> QualifiedName { name_cache.atomic.fetch.sub.acquire_qn }
+pub fn get_atomic_fetch_sub_acqrel_qn() -> QualifiedName { name_cache.atomic.fetch.sub.acqrel_qn }
+pub fn get_atomic_fetch_sub_seqcst_qn() -> QualifiedName { name_cache.atomic.fetch.sub.seqcst_qn }
+pub fn get_atomic_fetch_and_relaxed_qn() -> QualifiedName { name_cache.atomic.fetch.and_.relaxed_qn }
+pub fn get_atomic_fetch_and_release_qn() -> QualifiedName { name_cache.atomic.fetch.and_.release_qn }
+pub fn get_atomic_fetch_and_acquire_qn() -> QualifiedName { name_cache.atomic.fetch.and_.acquire_qn }
+pub fn get_atomic_fetch_and_acqrel_qn() -> QualifiedName { name_cache.atomic.fetch.and_.acqrel_qn }
+pub fn get_atomic_fetch_and_seqcst_qn() -> QualifiedName { name_cache.atomic.fetch.and_.seqcst_qn }
+pub fn get_atomic_fetch_or_relaxed_qn() -> QualifiedName { name_cache.atomic.fetch.or_.relaxed_qn }
+pub fn get_atomic_fetch_or_release_qn() -> QualifiedName { name_cache.atomic.fetch.or_.release_qn }
+pub fn get_atomic_fetch_or_acquire_qn() -> QualifiedName { name_cache.atomic.fetch.or_.acquire_qn }
+pub fn get_atomic_fetch_or_acqrel_qn() -> QualifiedName { name_cache.atomic.fetch.or_.acqrel_qn }
+pub fn get_atomic_fetch_or_seqcst_qn() -> QualifiedName { name_cache.atomic.fetch.or_.seqcst_qn }
+pub fn get_atomic_fetch_xor_relaxed_qn() -> QualifiedName { name_cache.atomic.fetch.xor.relaxed_qn }
+pub fn get_atomic_fetch_xor_release_qn() -> QualifiedName { name_cache.atomic.fetch.xor.release_qn }
+pub fn get_atomic_fetch_xor_acquire_qn() -> QualifiedName { name_cache.atomic.fetch.xor.acquire_qn }
+pub fn get_atomic_fetch_xor_acqrel_qn() -> QualifiedName { name_cache.atomic.fetch.xor.acqrel_qn }
+pub fn get_atomic_fetch_xor_seqcst_qn() -> QualifiedName { name_cache.atomic.fetch.xor.seqcst_qn }
+pub fn get_atomic_compare_exchange_relaxed_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.relaxed.relaxed_qn }
+pub fn get_atomic_compare_exchange_relaxed_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.relaxed.acquire_qn }
+pub fn get_atomic_compare_exchange_relaxed_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.relaxed.seqcst_qn }
+pub fn get_atomic_compare_exchange_release_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.release.relaxed_qn }
+pub fn get_atomic_compare_exchange_release_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.release.acquire_qn }
+pub fn get_atomic_compare_exchange_release_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.release.seqcst_qn }
+pub fn get_atomic_compare_exchange_acquire_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acquire.relaxed_qn }
+pub fn get_atomic_compare_exchange_acquire_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acquire.acquire_qn }
+pub fn get_atomic_compare_exchange_acquire_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acquire.seqcst_qn }
+pub fn get_atomic_compare_exchange_acqrel_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acqrel.relaxed_qn }
+pub fn get_atomic_compare_exchange_acqrel_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acqrel.acquire_qn }
+pub fn get_atomic_compare_exchange_acqrel_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.acqrel.seqcst_qn }
+pub fn get_atomic_compare_exchange_seqcst_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.seqcst.relaxed_qn }
+pub fn get_atomic_compare_exchange_seqcst_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.seqcst.acquire_qn }
+pub fn get_atomic_compare_exchange_seqcst_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.strong.seqcst.seqcst_qn }
+pub fn get_atomic_compare_exchange_weak_relaxed_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.relaxed.relaxed_qn }
+pub fn get_atomic_compare_exchange_weak_relaxed_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.relaxed.acquire_qn }
+pub fn get_atomic_compare_exchange_weak_relaxed_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.relaxed.seqcst_qn }
+pub fn get_atomic_compare_exchange_weak_release_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.release.relaxed_qn }
+pub fn get_atomic_compare_exchange_weak_release_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.release.acquire_qn }
+pub fn get_atomic_compare_exchange_weak_release_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.release.seqcst_qn }
+pub fn get_atomic_compare_exchange_weak_acquire_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acquire.relaxed_qn }
+pub fn get_atomic_compare_exchange_weak_acquire_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acquire.acquire_qn }
+pub fn get_atomic_compare_exchange_weak_acquire_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acquire.seqcst_qn }
+pub fn get_atomic_compare_exchange_weak_acqrel_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acqrel.relaxed_qn }
+pub fn get_atomic_compare_exchange_weak_acqrel_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acqrel.acquire_qn }
+pub fn get_atomic_compare_exchange_weak_acqrel_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.acqrel.seqcst_qn }
+pub fn get_atomic_compare_exchange_weak_seqcst_relaxed_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.seqcst.relaxed_qn }
+pub fn get_atomic_compare_exchange_weak_seqcst_acquire_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.seqcst.acquire_qn }
+pub fn get_atomic_compare_exchange_weak_seqcst_seqcst_qn() -> QualifiedName { name_cache.atomic.compare_exchange.weak.seqcst.seqcst_qn }
+pub fn get_atomic_fence_acquire_qn() -> QualifiedName { name_cache.atomic.fence.acquire_qn }
+pub fn get_atomic_fence_release_qn() -> QualifiedName { name_cache.atomic.fence.release_qn }
+pub fn get_atomic_fence_acqrel_qn() -> QualifiedName { name_cache.atomic.fence.acqrel_qn }
+pub fn get_atomic_fence_seqcst_qn() -> QualifiedName { name_cache.atomic.fence.seqcst_qn }
 
 // Traits
-pub fn get_trait_partial_eq_qn() -> QualifiedName { name_cache.trait_partial_eq_qn }
-pub fn get_trait_eq_qn() -> QualifiedName { name_cache.trait_eq_qn }
-pub fn get_trait_partial_ord_qn() -> QualifiedName { name_cache.trait_partial_ord_qn }
-pub fn get_trait_ord_qn() -> QualifiedName { name_cache.trait_ord_qn }
-pub fn get_trait_clone_qn() -> QualifiedName { name_cache.trait_clone_qn }
-pub fn get_trait_from_int_qn() -> QualifiedName { name_cache.trait_from_int_qn }
-pub fn get_trait_json_serialize_qn() -> QualifiedName { name_cache.trait_json_serialize_qn }
-pub fn get_trait_json_deserialize_qn() -> QualifiedName { name_cache.trait_json_deserialize_qn }
+pub fn get_trait_partial_eq_qn() -> QualifiedName { name_cache.ops.partial_eq.trait_qn }
+pub fn get_trait_eq_qn() -> QualifiedName { name_cache.ops.eq.trait_qn }
+pub fn get_trait_partial_ord_qn() -> QualifiedName { name_cache.ops.partial_ord.trait_qn }
+pub fn get_trait_ord_qn() -> QualifiedName { name_cache.ops.ord.trait_qn }
+pub fn get_trait_clone_qn() -> QualifiedName { name_cache.ops.clone.trait_qn }
+pub fn get_trait_from_int_qn() -> QualifiedName { name_cache.ops.from_int.trait_qn }
+pub fn get_trait_json_serialize_qn() -> QualifiedName { name_cache.json.serialize.trait_qn }
+pub fn get_trait_json_deserialize_qn() -> QualifiedName { name_cache.json.deserialize.trait_qn }
 
 // Trait methods — comparison
-pub fn get_op_eq_qn() -> QualifiedName { name_cache.op_eq_qn }
-pub fn get_op_not_eq_qn() -> QualifiedName { name_cache.op_not_eq_qn }
-pub fn get_op_partial_cmp_qn() -> QualifiedName { name_cache.op_partial_cmp_qn }
-pub fn get_op_less_qn() -> QualifiedName { name_cache.op_less_qn }
-pub fn get_op_greater_qn() -> QualifiedName { name_cache.op_greater_qn }
-pub fn get_op_less_eq_qn() -> QualifiedName { name_cache.op_less_eq_qn }
-pub fn get_op_greater_eq_qn() -> QualifiedName { name_cache.op_greater_eq_qn }
-pub fn get_op_cmp_qn() -> QualifiedName { name_cache.op_cmp_qn }
-pub fn get_op_clone_qn() -> QualifiedName { name_cache.op_clone_qn }
-pub fn get_op_from_int_qn() -> QualifiedName { name_cache.op_from_int_qn }
+pub fn get_op_eq_qn() -> QualifiedName { name_cache.ops.partial_eq.eq_qn }
+pub fn get_op_not_eq_qn() -> QualifiedName { name_cache.ops.partial_eq.not_eq_qn }
+pub fn get_op_partial_cmp_qn() -> QualifiedName { name_cache.ops.partial_ord.partial_cmp_qn }
+pub fn get_op_less_qn() -> QualifiedName { name_cache.ops.partial_ord.less_qn }
+pub fn get_op_greater_qn() -> QualifiedName { name_cache.ops.partial_ord.greater_qn }
+pub fn get_op_less_eq_qn() -> QualifiedName { name_cache.ops.partial_ord.less_eq_qn }
+pub fn get_op_greater_eq_qn() -> QualifiedName { name_cache.ops.partial_ord.greater_eq_qn }
+pub fn get_op_cmp_qn() -> QualifiedName { name_cache.ops.ord.cmp_qn }
+pub fn get_op_clone_qn() -> QualifiedName { name_cache.ops.clone.clone_qn }
+pub fn get_op_from_int_qn() -> QualifiedName { name_cache.ops.from_int.from_int_qn }
 
 // Trait methods — arithmetic / bitwise
-pub fn get_op_add_qn() -> QualifiedName { name_cache.op_add_qn }
-pub fn get_op_sub_qn() -> QualifiedName { name_cache.op_sub_qn }
-pub fn get_op_mul_qn() -> QualifiedName { name_cache.op_mul_qn }
-pub fn get_op_div_qn() -> QualifiedName { name_cache.op_div_qn }
-pub fn get_op_neg_qn() -> QualifiedName { name_cache.op_neg_qn }
-pub fn get_op_not_qn() -> QualifiedName { name_cache.op_not_qn }
-pub fn get_op_mod_qn() -> QualifiedName { name_cache.op_mod_qn }
-pub fn get_op_band_qn() -> QualifiedName { name_cache.op_band_qn }
-pub fn get_op_bor_qn() -> QualifiedName { name_cache.op_bor_qn }
-pub fn get_op_bxor_qn() -> QualifiedName { name_cache.op_bxor_qn }
-pub fn get_op_bnot_qn() -> QualifiedName { name_cache.op_bnot_qn }
-pub fn get_op_shl_qn() -> QualifiedName { name_cache.op_shl_qn }
-pub fn get_op_shr_qn() -> QualifiedName { name_cache.op_shr_qn }
+pub fn get_op_add_qn() -> QualifiedName { name_cache.ops.add_qn }
+pub fn get_op_sub_qn() -> QualifiedName { name_cache.ops.sub_qn }
+pub fn get_op_mul_qn() -> QualifiedName { name_cache.ops.mul_qn }
+pub fn get_op_div_qn() -> QualifiedName { name_cache.ops.div_qn }
+pub fn get_op_neg_qn() -> QualifiedName { name_cache.ops.neg_qn }
+pub fn get_op_not_qn() -> QualifiedName { name_cache.ops.not_qn }
+pub fn get_op_mod_qn() -> QualifiedName { name_cache.ops.mod_qn }
+pub fn get_op_band_qn() -> QualifiedName { name_cache.ops.band_qn }
+pub fn get_op_bor_qn() -> QualifiedName { name_cache.ops.bor_qn }
+pub fn get_op_bxor_qn() -> QualifiedName { name_cache.ops.bxor_qn }
+pub fn get_op_bnot_qn() -> QualifiedName { name_cache.ops.bnot_qn }
+pub fn get_op_shl_qn() -> QualifiedName { name_cache.ops.shl_qn }
+pub fn get_op_shr_qn() -> QualifiedName { name_cache.ops.shr_qn }
 
 // Trait methods — index
-pub fn get_index_index_qn() -> QualifiedName { name_cache.index_index_qn }
-pub fn get_index_assign_index_assign_qn() -> QualifiedName { name_cache.index_assign_index_assign_qn }
+pub fn get_index_index_qn() -> QualifiedName { name_cache.index.index_qn }
+pub fn get_index_assign_index_assign_qn() -> QualifiedName { name_cache.index.assign_qn }
 
 // Trait methods — convert
-pub fn get_convert_into_qn() -> QualifiedName { name_cache.convert_into_qn }
+pub fn get_convert_into_qn() -> QualifiedName { name_cache.convert.into_qn }
 
 // Struct methods
-pub fn get_int_eq_qn() -> QualifiedName { name_cache.int_eq_qn }
-pub fn get_u8_eq_qn() -> QualifiedName { name_cache.u8_eq_qn }
+pub fn get_int_eq_qn() -> QualifiedName { name_cache.integer.int_.eq_qn }
+pub fn get_u8_eq_qn() -> QualifiedName { name_cache.integer.u8.eq_qn }
 
 // The builtin eq method for a builtin integer type, if `qn` is one.
 pub fn get_eq_qn_for_int_type(qn: QualifiedName) -> Option[QualifiedName] {
-    if qn == name_cache.int_type_qn { return Some(name_cache.int_eq_qn); }
-    if qn == name_cache.i8_type_qn { return Some(name_cache.i8_eq_qn); }
-    if qn == name_cache.i16_type_qn { return Some(name_cache.i16_eq_qn); }
-    if qn == name_cache.i32_type_qn { return Some(name_cache.i32_eq_qn); }
-    if qn == name_cache.i64_type_qn { return Some(name_cache.i64_eq_qn); }
-    if qn == name_cache.u8_type_qn { return Some(name_cache.u8_eq_qn); }
-    if qn == name_cache.u16_type_qn { return Some(name_cache.u16_eq_qn); }
-    if qn == name_cache.u32_type_qn { return Some(name_cache.u32_eq_qn); }
-    if qn == name_cache.u64_type_qn { return Some(name_cache.u64_eq_qn); }
+    if qn == name_cache.integer.int_.type_qn { return Some(name_cache.integer.int_.eq_qn); }
+    if qn == name_cache.integer.i8.type_qn { return Some(name_cache.integer.i8.eq_qn); }
+    if qn == name_cache.integer.i16.type_qn { return Some(name_cache.integer.i16.eq_qn); }
+    if qn == name_cache.integer.i32.type_qn { return Some(name_cache.integer.i32.eq_qn); }
+    if qn == name_cache.integer.i64.type_qn { return Some(name_cache.integer.i64.eq_qn); }
+    if qn == name_cache.integer.u8.type_qn { return Some(name_cache.integer.u8.eq_qn); }
+    if qn == name_cache.integer.u16.type_qn { return Some(name_cache.integer.u16.eq_qn); }
+    if qn == name_cache.integer.u32.type_qn { return Some(name_cache.integer.u32.eq_qn); }
+    if qn == name_cache.integer.u64.type_qn { return Some(name_cache.integer.u64.eq_qn); }
     None
 }
-pub fn get_string_eq_qn() -> QualifiedName { name_cache.string_eq_qn }
-pub fn get_string_from_literal_qn() -> QualifiedName { name_cache.string_from_literal_qn }
-pub fn get_vec_new_qn() -> QualifiedName { name_cache.vec_new_qn }
-pub fn get_vec_push_qn() -> QualifiedName { name_cache.vec_push_qn }
-pub fn get_map_new_qn() -> QualifiedName { name_cache.map_new_qn }
-pub fn get_map_insert_qn() -> QualifiedName { name_cache.map_insert_qn }
-pub fn get_range_range_qn() -> QualifiedName { name_cache.range_range_qn }
+pub fn get_string_eq_qn() -> QualifiedName { name_cache.string.eq_qn }
+pub fn get_string_from_literal_qn() -> QualifiedName { name_cache.string.from_literal_qn }
+pub fn get_vec_new_qn() -> QualifiedName { name_cache.vector.new_qn }
+pub fn get_vec_push_qn() -> QualifiedName { name_cache.vector.push_qn }
+pub fn get_map_new_qn() -> QualifiedName { name_cache.map.new_qn }
+pub fn get_map_insert_qn() -> QualifiedName { name_cache.map.insert_qn }
+pub fn get_range_range_qn() -> QualifiedName { name_cache.range.range_qn }
 
 // Json
-pub fn get_json_type_qn() -> QualifiedName { name_cache.json_type_qn }
-pub fn get_json_null_qn() -> QualifiedName { name_cache.json_null_qn }
-pub fn get_json_boolean_qn() -> QualifiedName { name_cache.json_boolean_qn }
-pub fn get_json_number_qn() -> QualifiedName { name_cache.json_number_qn }
-pub fn get_json_str_qn() -> QualifiedName { name_cache.json_str_qn }
-pub fn get_json_array_qn() -> QualifiedName { name_cache.json_array_qn }
-pub fn get_json_object_qn() -> QualifiedName { name_cache.json_object_qn }
-pub fn get_json_error_type_qn() -> QualifiedName { name_cache.json_error_type_qn }
-pub fn get_json_error_expected_array_qn() -> QualifiedName { name_cache.json_error_expected_array_qn }
-pub fn get_json_error_unknown_variant_qn() -> QualifiedName { name_cache.json_error_unknown_variant_qn }
-pub fn get_json_error_invalid_variant_qn() -> QualifiedName { name_cache.json_error_invalid_variant_qn }
-pub fn get_json_to_json_qn() -> QualifiedName { name_cache.json_to_json_qn }
-pub fn get_json_from_json_qn() -> QualifiedName { name_cache.json_from_json_qn }
-pub fn get_json_get_field_qn() -> QualifiedName { name_cache.json_get_field_qn }
-pub fn get_json_get_optional_field_qn() -> QualifiedName { name_cache.json_get_optional_field_qn }
-pub fn get_json_single_field_qn() -> QualifiedName { name_cache.json_single_field_qn }
+pub fn get_json_type_qn() -> QualifiedName { name_cache.json.value.type_qn }
+pub fn get_json_null_qn() -> QualifiedName { name_cache.json.value.null_qn }
+pub fn get_json_boolean_qn() -> QualifiedName { name_cache.json.value.boolean_qn }
+pub fn get_json_number_qn() -> QualifiedName { name_cache.json.value.number_qn }
+pub fn get_json_str_qn() -> QualifiedName { name_cache.json.value.str_qn }
+pub fn get_json_array_qn() -> QualifiedName { name_cache.json.value.array_qn }
+pub fn get_json_object_qn() -> QualifiedName { name_cache.json.value.object_qn }
+pub fn get_json_error_type_qn() -> QualifiedName { name_cache.json.error.type_qn }
+pub fn get_json_error_expected_array_qn() -> QualifiedName { name_cache.json.error.expected_array_qn }
+pub fn get_json_error_unknown_variant_qn() -> QualifiedName { name_cache.json.error.unknown_variant_qn }
+pub fn get_json_error_invalid_variant_qn() -> QualifiedName { name_cache.json.error.invalid_variant_qn }
+pub fn get_json_to_json_qn() -> QualifiedName { name_cache.json.serialize.to_json_qn }
+pub fn get_json_from_json_qn() -> QualifiedName { name_cache.json.deserialize.from_json_qn }
+pub fn get_json_get_field_qn() -> QualifiedName { name_cache.json.value.get_field_qn }
+pub fn get_json_get_optional_field_qn() -> QualifiedName { name_cache.json.get_optional_field_qn }
+pub fn get_json_single_field_qn() -> QualifiedName { name_cache.json.single_field_qn }
 
 // Free functions
-pub fn get_util_panic_qn() -> QualifiedName { name_cache.util_panic_qn }
-pub fn get_libc_abort_qn() -> QualifiedName { name_cache.libc_abort_qn }
-pub fn get_util_discriminator_qn() -> QualifiedName { name_cache.util_discriminator_qn }
-pub fn get_util_uninitialized_qn() -> QualifiedName { name_cache.util_uninitialized_qn }
-pub fn get_util_downcast_qn() -> QualifiedName { name_cache.util_downcast_qn }
-pub fn get_transmute_qn() -> QualifiedName { name_cache.transmute_qn }
-pub fn get_array_as_ptr_qn() -> QualifiedName { name_cache.array_as_ptr_qn }
-pub fn get_ptr_offset_of_qn() -> QualifiedName { name_cache.ptr_offset_of_qn }
-pub fn get_main_entry_qn() -> QualifiedName { name_cache.main_entry_qn }
-pub fn get_console_print_qn() -> QualifiedName { name_cache.console_print_qn }
-pub fn get_console_println_qn() -> QualifiedName { name_cache.console_println_qn }
-pub fn get_console_flush_qn() -> QualifiedName { name_cache.console_flush_qn }
+pub fn get_util_panic_qn() -> QualifiedName { name_cache.util.panic_qn }
+pub fn get_libc_abort_qn() -> QualifiedName { name_cache.libc.abort_qn }
+pub fn get_util_discriminator_qn() -> QualifiedName { name_cache.util.discriminator_qn }
+pub fn get_util_uninitialized_qn() -> QualifiedName { name_cache.util.uninitialized_qn }
+pub fn get_util_downcast_qn() -> QualifiedName { name_cache.util.downcast_qn }
+pub fn get_transmute_qn() -> QualifiedName { name_cache.intrinsics.transmute_qn }
+pub fn get_array_as_ptr_qn() -> QualifiedName { name_cache.array.as_ptr_qn }
+pub fn get_ptr_offset_of_qn() -> QualifiedName { name_cache.ptr.offset_of_qn }
+pub fn get_main_entry_qn() -> QualifiedName { name_cache.main.entry_qn }
+pub fn get_console_print_qn() -> QualifiedName { name_cache.console.print_qn }
+pub fn get_console_println_qn() -> QualifiedName { name_cache.console.println_qn }
+pub fn get_console_flush_qn() -> QualifiedName { name_cache.console.flush_qn }
 
-pub fn get_co_result_type_qn() -> QualifiedName { name_cache.co_result_type_qn }
-pub fn get_co_result_yielded_qn() -> QualifiedName { name_cache.co_result_yielded_qn }
-pub fn get_co_result_returned_qn() -> QualifiedName { name_cache.co_result_returned_qn }
-pub fn get_co_result_completed_qn() -> QualifiedName { name_cache.co_result_completed_qn }
-pub fn get_resume_qn() -> QualifiedName { name_cache.resume_qn }
-pub fn get_into_iter_qn() -> QualifiedName { name_cache.into_iter_qn }
-pub fn get_iterator_next_qn() -> QualifiedName { name_cache.iterator_next_qn }
+pub fn get_co_result_type_qn() -> QualifiedName { name_cache.coroutine.result.type_qn }
+pub fn get_co_result_yielded_qn() -> QualifiedName { name_cache.coroutine.result.yielded_qn }
+pub fn get_co_result_returned_qn() -> QualifiedName { name_cache.coroutine.result.returned_qn }
+pub fn get_co_result_completed_qn() -> QualifiedName { name_cache.coroutine.result.completed_qn }
+pub fn get_resume_qn() -> QualifiedName { name_cache.coroutine.resume_qn }
+pub fn get_into_iter_qn() -> QualifiedName { name_cache.iterator.into_iter_qn }
+pub fn get_iterator_next_qn() -> QualifiedName { name_cache.iterator.next_qn }
 
 }
-
-
-
-
-
-
-
-
-
-
-
-

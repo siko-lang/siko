@@ -1,0 +1,77 @@
+module Siko.Constants.Json {
+
+import Siko.AST.QualifiedName
+import Siko.Constants.Util
+
+pub struct JsonNames {
+    pub value: JsonValueNames,
+    pub error: JsonErrorNames,
+    pub serialize: JsonSerializeNames,
+    pub deserialize: JsonDeserializeNames,
+    pub get_optional_field_qn: QualifiedName,
+    pub single_field_qn: QualifiedName,
+}
+
+pub struct JsonValueNames {
+    pub type_qn: QualifiedName,
+    pub null_qn: QualifiedName,
+    pub boolean_qn: QualifiedName,
+    pub number_qn: QualifiedName,
+    pub str_qn: QualifiedName,
+    pub array_qn: QualifiedName,
+    pub object_qn: QualifiedName,
+    pub get_field_qn: QualifiedName,
+}
+
+pub struct JsonErrorNames {
+    pub type_qn: QualifiedName,
+    pub expected_array_qn: QualifiedName,
+    pub unknown_variant_qn: QualifiedName,
+    pub invalid_variant_qn: QualifiedName,
+}
+
+pub struct JsonSerializeNames {
+    pub trait_qn: QualifiedName,
+    pub to_json_qn: QualifiedName,
+}
+
+pub struct JsonDeserializeNames {
+    pub trait_qn: QualifiedName,
+    pub from_json_qn: QualifiedName,
+}
+
+pub fn build_json_names() -> JsonNames {
+    let json = m("Std.Json.Json");
+    let serialize = m("Std.Json.JsonSerialize");
+    let deserialize = m("Std.Json.JsonDeserialize");
+    JsonNames(
+        value: JsonValueNames(
+            type_qn: QualifiedName.new_enum(m("Std.Json"), m("Json")),
+            null_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Null")),
+            boolean_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Boolean")),
+            number_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Number")),
+            str_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Str")),
+            array_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Array")),
+            object_qn: QualifiedName.new_variant(m("Std.Json"), m("Json"), m("Object")),
+            get_field_qn: QualifiedName.new_method(json, m("get_field")),
+        ),
+        error: JsonErrorNames(
+            type_qn: QualifiedName.new_enum(m("Std.Json"), m("JsonError")),
+            expected_array_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("ExpectedArray")),
+            unknown_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("UnknownVariant")),
+            invalid_variant_qn: QualifiedName.new_variant(m("Std.Json"), m("JsonError"), m("InvalidVariant")),
+        ),
+        serialize: JsonSerializeNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonSerialize")),
+            to_json_qn: QualifiedName.new_method(serialize, m("to_json")),
+        ),
+        deserialize: JsonDeserializeNames(
+            trait_qn: QualifiedName.new_trait(m("Std.Json"), m("JsonDeserialize")),
+            from_json_qn: QualifiedName.new_method(deserialize, m("from_json")),
+        ),
+        get_optional_field_qn: QualifiedName.new_function(m("Std.Json"), m("get_optional_field")),
+        single_field_qn: QualifiedName.new_function(m("Std.Json"), m("single_field")),
+    )
+}
+
+}

@@ -1,0 +1,136 @@
+module Siko.Constants.Atomic {
+
+import Siko.Interner as I
+import Siko.AST.QualifiedName
+import Siko.Constants.Util
+
+pub struct AtomicNames {
+    pub load: AtomicLoadNames,
+    pub store: AtomicStoreNames,
+    pub swap: AtomicRmwNames,
+    pub fetch: AtomicFetchNames,
+    pub compare_exchange: AtomicCompareExchangeNames,
+    pub fence: AtomicFenceNames,
+}
+
+pub struct AtomicLoadNames {
+    pub relaxed_qn: QualifiedName,
+    pub acquire_qn: QualifiedName,
+    pub seqcst_qn: QualifiedName,
+}
+
+pub struct AtomicStoreNames {
+    pub relaxed_qn: QualifiedName,
+    pub release_qn: QualifiedName,
+    pub seqcst_qn: QualifiedName,
+}
+
+pub struct AtomicRmwNames {
+    pub relaxed_qn: QualifiedName,
+    pub release_qn: QualifiedName,
+    pub acquire_qn: QualifiedName,
+    pub acqrel_qn: QualifiedName,
+    pub seqcst_qn: QualifiedName,
+}
+
+pub struct AtomicFetchNames {
+    pub add: AtomicRmwNames,
+    pub sub: AtomicRmwNames,
+    pub and_: AtomicRmwNames,
+    pub or_: AtomicRmwNames,
+    pub xor: AtomicRmwNames,
+}
+
+pub struct AtomicCompareExchangeNames {
+    pub strong: AtomicCompareExchangeOrderNames,
+    pub weak: AtomicCompareExchangeOrderNames,
+}
+
+pub struct AtomicCompareExchangeOrderNames {
+    pub relaxed: AtomicFailureOrderNames,
+    pub release: AtomicFailureOrderNames,
+    pub acquire: AtomicFailureOrderNames,
+    pub acqrel: AtomicFailureOrderNames,
+    pub seqcst: AtomicFailureOrderNames,
+}
+
+pub struct AtomicFailureOrderNames {
+    pub relaxed_qn: QualifiedName,
+    pub acquire_qn: QualifiedName,
+    pub seqcst_qn: QualifiedName,
+}
+
+pub struct AtomicFenceNames {
+    pub acquire_qn: QualifiedName,
+    pub release_qn: QualifiedName,
+    pub acqrel_qn: QualifiedName,
+    pub seqcst_qn: QualifiedName,
+}
+
+fn atomic_function(module_name: I.String, name: String) -> QualifiedName {
+    QualifiedName.new_function(module_name, m(name))
+}
+
+fn build_atomic_rmw_names(module_name: I.String, prefix: String) -> AtomicRmwNames {
+    AtomicRmwNames(
+        relaxed_qn: atomic_function(module_name, prefix + "_relaxed"),
+        release_qn: atomic_function(module_name, prefix + "_release"),
+        acquire_qn: atomic_function(module_name, prefix + "_acquire"),
+        acqrel_qn: atomic_function(module_name, prefix + "_acqrel"),
+        seqcst_qn: atomic_function(module_name, prefix + "_seqcst"),
+    )
+}
+
+fn build_atomic_failure_order_names(module_name: I.String, prefix: String) -> AtomicFailureOrderNames {
+    AtomicFailureOrderNames(
+        relaxed_qn: atomic_function(module_name, prefix + "_relaxed"),
+        acquire_qn: atomic_function(module_name, prefix + "_acquire"),
+        seqcst_qn: atomic_function(module_name, prefix + "_seqcst"),
+    )
+}
+
+fn build_atomic_compare_exchange_order_names(module_name: I.String, prefix: String) -> AtomicCompareExchangeOrderNames {
+    AtomicCompareExchangeOrderNames(
+        relaxed: build_atomic_failure_order_names(module_name, prefix + "_relaxed"),
+        release: build_atomic_failure_order_names(module_name, prefix + "_release"),
+        acquire: build_atomic_failure_order_names(module_name, prefix + "_acquire"),
+        acqrel: build_atomic_failure_order_names(module_name, prefix + "_acqrel"),
+        seqcst: build_atomic_failure_order_names(module_name, prefix + "_seqcst"),
+    )
+}
+
+pub fn build_atomic_names() -> AtomicNames {
+    let module_name = m("Std.Sync.Atomic.Intrinsics");
+    AtomicNames(
+        load: AtomicLoadNames(
+            relaxed_qn: atomic_function(module_name, "atomic_load_relaxed"),
+            acquire_qn: atomic_function(module_name, "atomic_load_acquire"),
+            seqcst_qn: atomic_function(module_name, "atomic_load_seqcst"),
+        ),
+        store: AtomicStoreNames(
+            relaxed_qn: atomic_function(module_name, "atomic_store_relaxed"),
+            release_qn: atomic_function(module_name, "atomic_store_release"),
+            seqcst_qn: atomic_function(module_name, "atomic_store_seqcst"),
+        ),
+        swap: build_atomic_rmw_names(module_name, "atomic_swap"),
+        fetch: AtomicFetchNames(
+            add: build_atomic_rmw_names(module_name, "atomic_fetch_add"),
+            sub: build_atomic_rmw_names(module_name, "atomic_fetch_sub"),
+            and_: build_atomic_rmw_names(module_name, "atomic_fetch_and"),
+            or_: build_atomic_rmw_names(module_name, "atomic_fetch_or"),
+            xor: build_atomic_rmw_names(module_name, "atomic_fetch_xor"),
+        ),
+        compare_exchange: AtomicCompareExchangeNames(
+            strong: build_atomic_compare_exchange_order_names(module_name, "atomic_compare_exchange"),
+            weak: build_atomic_compare_exchange_order_names(module_name, "atomic_compare_exchange_weak"),
+        ),
+        fence: AtomicFenceNames(
+            acquire_qn: atomic_function(module_name, "atomic_fence_acquire"),
+            release_qn: atomic_function(module_name, "atomic_fence_release"),
+            acqrel_qn: atomic_function(module_name, "atomic_fence_acqrel"),
+            seqcst_qn: atomic_function(module_name, "atomic_fence_seqcst"),
+        ),
+    )
+}
+
+}
