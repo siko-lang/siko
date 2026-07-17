@@ -1,0 +1,25 @@
+module TLS.Util {
+
+import Std.Error
+import Std.Libc.String
+import TLS.OpenSSL.CApi
+
+@derive(Clone, PartialEq, Eq)
+pub enum Version {
+    Tls12,
+    Tls13,
+}
+
+pub fn version_code(version: Version) -> I64 {
+    match version {
+        Version.Tls12 => CApi.TLS1_2_VERSION,
+        Version.Tls13 => CApi.TLS1_3_VERSION,
+    }
+}
+
+@safe
+pub fn backend_version() -> String {
+    from_cstring(CApi.openssl_version(0))
+}
+
+}

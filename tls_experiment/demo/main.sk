@@ -5,14 +5,17 @@ import Std.IO.Reader
 import Std.IO.Writer
 import Std.Slice
 import Std.Sys.Process
-import TlsExperiment.Tls
+import TLS.Util
+import TLS.Config
+import TLS.Error
+import TLS.Stream
 
 fn write_all[W: Writer[W]](writer: W, bytes: Slice[U8]) -> Result[(), E.Error] {
     let offset = 0;
     while offset < bytes.len() {
         let count = writer.write(bytes.sub(offset, bytes.len()))?;
         if count == 0 {
-            return Err(Tls.Error.Ssl(Tls.SslError.WriteZero)).context();
+            return Err(SslError.WriteZero).context();
         }
         offset = offset + count;
     }
@@ -37,12 +40,11 @@ fn fetch(
     port: U16,
     insecure: Bool,
 ) -> Result[(), E.Error] {
-    let config = Tls.Config.new()
+    let config = Config.new()
         .with_server_name(server_name.clone())
         .with_insecure_skip_verify(insecure);
-    let stream = Tls.TlsStream.connect(address, port, config)?;
+    let stream = TlsStream.connect(address, port, config)?;
     defer stream.close();
-    stream.handshake()?;
     let request = "GET ${path} HTTP/1.1\r\n" +
         "Host: ${server_name}\r\n" +
         "Connection: close\r\n" +
@@ -52,18 +54,15 @@ fn fetch(
 }
 
 fn report_error(error: E.Error) {
-    if error is Tls.Error {
-        match error {
-            Tls.Error.Io(error) => eprintln("TLS transport error: ${error}"),
-            Tls.Error.Ssl(error) => eprintln("TLS protocol error: ${error}"),
-        }
+    if error is SslError {
+        eprintln("TLS protocol error: ${error}");
     } else {
         eprintln("request failed: ${error}");
     }
 }
 
 fn main() {
-    println("TLS backend: ${Tls.backend_version()}");
+    println("TLS backend: ${Util.backend_version()}");
     let args = Process.get_args();
     if args.len() < 3 || args.len() > 6 {
         eprintln("usage: ${args[0]} <IPv4 address> <TLS server name> [path] [port] [--insecure]");
