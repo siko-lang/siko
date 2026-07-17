@@ -14,8 +14,8 @@ let RED: String = "\x1b[31m";
 let RESET: String = "\x1b[0m";
 
 pub enum Error {
-    Signal(signal: I32),
-    Timeout,
+    Signal(signal: I32, output: String),
+    Timeout(output: String),
     BuildFailed(output: String),
     ProgramFailed(output: String),
     ExpectedFailureSucceeded(output: String),
@@ -24,7 +24,7 @@ pub enum Error {
 
     pub fn is_segfault(e: Error) -> Bool {
         match e {
-            Signal(signal: sig) => sig == 11,
+            Signal(signal: sig, output: _) => sig == 11,
             _ => False,
         }
     }
@@ -33,16 +33,17 @@ pub enum Error {
 instance ToString[Error] {
     fn to_string(e: Error) -> String {
         match e {
-            Signal(signal: sig) => {
-                if sig == 11 {
+            Signal(signal: sig, output: out) => {
+                let message = if sig == 11 {
                     "SEGFAULT (signal 11)"
                 } else {
                     // FIXME: String interpolation should support all integer types directly.
                     "killed by signal ${sig.as_int()}"
-                }
+                };
+                with_captured_stdout(message, out)
             }
-            Timeout => {
-                "timed out after ${TIMEOUT_SECS}s"
+            Timeout(output: out) => {
+                with_captured_stdout("timed out after ${TIMEOUT_SECS}s", out)
             }
             BuildFailed(output: out) => "siko.bin exited non-zero:\n${out}",
             ProgramFailed(output: out) => "program exited non-zero:\n${out}",
@@ -50,6 +51,14 @@ instance ToString[Error] {
             SnapshotMismatch(path: path, expected: expected, actual: actual) => "output differs from snapshot (${path})\n--- expected ---\n${expected}--- actual ---\n${actual}",
             IoError(context: ctx, message: msg) => "${ctx}: ${msg}",
         }
+    }
+}
+
+fn with_captured_stdout(message: String, output: String) -> String {
+    if output.is_empty() {
+        message
+    } else {
+        "${message}\nstdout:\n${output}"
     }
 }
 
@@ -180,7 +189,7 @@ pub struct TestRunner {
         let cmd = Command.new(r.compiler).args(args).with_capture_stdout().run();
         if !cmd.success() {
             match cmd.status().signal() {
-                Some(sig) => return Err(Signal(signal: sig)),
+                Some(sig) => return Err(Signal(signal: sig, output: cmd.captured_stdout())),
                 None => {}
             }
             return Err(BuildFailed(output: cmd.captured_stdout()));
@@ -194,7 +203,7 @@ pub struct TestRunner {
             return Err(ExpectedFailureSucceeded(output: cmd.captured_stdout()));
         }
         match cmd.status().signal() {
-            Some(sig) => return Err(Signal(signal: sig)),
+            Some(sig) => return Err(Signal(signal: sig, output: cmd.captured_stdout())),
             None => {}
         }
         Ok(cmd.captured_stdout())
@@ -269,6 +278,14 @@ pub struct TestRunner {
         r.stats.failed_names.push(case);
         if e.is_segfault() {
             println(" ${RED}FAIL - SEGFAULT${RESET}");
+            match e {
+                Signal(signal: _, output: out) => {
+                    if !out.is_empty() {
+                        print_indented("stdout:\n${out}");
+                    }
+                }
+                _ => {}
+            }
         } else {
             println(" ${RED}FAIL${RESET}");
             print_indented(e.to_string());
@@ -630,8 +647,8 @@ fn wait_with_timeout(child: ChildProcess) -> Result[CommandResult, Error] {
             None => {
                 if start.elapsed().to_seconds() >= TIMEOUT_SECS {
                     child.kill(9);
-                    child.wait();
-                    return Err(Timeout);
+                    let result = child.wait();
+                    return Err(Timeout(output: result.captured_stdout()));
                 }
                 sleep(milliseconds(50));
             }
