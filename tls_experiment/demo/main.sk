@@ -1,0 +1,100 @@
+module Main {
+
+import Std.Error as E
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.Slice
+import Std.Sys.Process
+import TlsExperiment.Tls
+
+fn write_all[W: Writer[W]](writer: W, bytes: Slice[U8]) -> Result[(), E.Error] {
+    let offset = 0;
+    while offset < bytes.len() {
+        let count = writer.write(bytes.sub(offset, bytes.len()))?;
+        if count == 0 {
+            return Err(Tls.Error.Ssl(Tls.SslError.WriteZero)).context();
+        }
+        offset = offset + count;
+    }
+    Ok(())
+}
+
+fn print_response[R: Reader[R]](reader: R) -> Result[(), E.Error] {
+    let buffer: Vec[U8] = Vec.with_value(16384, 0);
+    loop {
+        let count = reader.read(buffer.slice())?;
+        if count == 0 {
+            return Ok(());
+        }
+        print(String.from_slice(buffer.slice().sub(0, count)));
+    }
+}
+
+fn fetch(
+    address: String,
+    server_name: String,
+    path: String,
+    port: U16,
+    insecure: Bool,
+) -> Result[(), E.Error] {
+    let config = Tls.Config.new()
+        .with_server_name(server_name.clone())
+        .with_insecure_skip_verify(insecure);
+    let stream = Tls.TlsStream.connect(address, port, config)?;
+    defer stream.close();
+    stream.handshake()?;
+    let request = "GET ${path} HTTP/1.1\r\n" +
+        "Host: ${server_name}\r\n" +
+        "Connection: close\r\n" +
+        "User-Agent: siko-tls-experiment/0.1\r\n\r\n";
+    write_all(stream, request.as_slice())?;
+    print_response(stream)
+}
+
+fn report_error(error: E.Error) {
+    if error is Tls.Error {
+        match error {
+            Tls.Error.Io(error) => eprintln("TLS transport error: ${error}"),
+            Tls.Error.Ssl(error) => eprintln("TLS protocol error: ${error}"),
+        }
+    } else {
+        eprintln("request failed: ${error}");
+    }
+}
+
+fn main() {
+    println("TLS backend: ${Tls.backend_version()}");
+    let args = Process.get_args();
+    if args.len() < 3 || args.len() > 6 {
+        eprintln("usage: ${args[0]} <IPv4 address> <TLS server name> [path] [port] [--insecure]");
+        Process.set_exit_code(2);
+        return;
+    }
+    if args.len() == 6 && args[5] != "--insecure" {
+        eprintln("the final argument must be --insecure");
+        Process.set_exit_code(2);
+        return;
+    }
+    let path = if args.len() >= 4 { args[3] } else { "/" };
+    let port = if args.len() >= 5 {
+        match args[4].parse_int(10) {
+            Ok(port) if port > 0 && port <= 65535 => port.as_u16(),
+            _ => {
+                eprintln("invalid TCP port: ${args[4]}");
+                Process.set_exit_code(2);
+                return;
+            }
+        }
+    } else {
+        443
+    };
+    match fetch(args[1], args[2], path, port, args.len() == 6) {
+        Ok(_) => {}
+        Err(error) => {
+            report_error(error);
+            Process.set_exit_code(1);
+        }
+    }
+}
+
+}

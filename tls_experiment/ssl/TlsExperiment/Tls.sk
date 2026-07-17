@@ -1,0 +1,907 @@
+module TlsExperiment.Tls {
+
+import Std.Error as E
+import Std.IO.Error as IO
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Closer
+import Std.Libc.String as LibcString
+import Std.Net.TcpStream
+import Std.Net.TcpListener
+import Std.Ptr
+import Std.Slice
+import Std.Vec
+
+// OpenSSL types are intentionally opaque. This experiment is LP64-only.
+@extern("C")
+@rename("TLS_client_method")
+fn tls_client_method() -> void*
+
+@extern("C")
+@rename("TLS_server_method")
+fn tls_server_method() -> void*
+
+@extern("C")
+@rename("SSL_CTX_new")
+fn ssl_ctx_new(method: void*) -> void*
+
+@extern("C")
+@rename("SSL_CTX_free")
+fn ssl_ctx_free(ctx: void*) -> void
+
+@extern("C")
+@rename("SSL_CTX_ctrl")
+fn ssl_ctx_ctrl(ctx: void*, command: I32, value: I64, argument: void*) -> I64
+
+@extern("C")
+@rename("SSL_CTX_set_verify")
+fn ssl_ctx_set_verify(ctx: void*, mode: I32, callback: void*) -> void
+
+@extern("C")
+@rename("SSL_CTX_set_default_verify_paths")
+fn ssl_ctx_set_default_verify_paths(ctx: void*) -> I32
+
+@extern("C")
+@rename("SSL_CTX_use_certificate_chain_file")
+fn ssl_ctx_use_certificate_chain_file(ctx: void*, path: *I8) -> I32
+
+@extern("C")
+@rename("SSL_CTX_use_PrivateKey_file")
+fn ssl_ctx_use_private_key_file(ctx: void*, path: *I8, file_type: I32) -> I32
+
+@extern("C")
+@rename("SSL_CTX_check_private_key")
+fn ssl_ctx_check_private_key(ctx: void*) -> I32
+
+@extern("C")
+@rename("SSL_new")
+fn ssl_new(ctx: void*) -> void*
+
+@extern("C")
+@rename("SSL_free")
+fn ssl_free(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set0_rbio")
+fn ssl_set0_rbio(ssl: void*, bio: void*) -> void
+
+@extern("C")
+@rename("SSL_set0_wbio")
+fn ssl_set0_wbio(ssl: void*, bio: void*) -> void
+
+@extern("C")
+@rename("SSL_set_connect_state")
+fn ssl_set_connect_state(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set_accept_state")
+fn ssl_set_accept_state(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set1_host")
+fn ssl_set1_host(ssl: void*, name: *I8) -> I32
+
+@extern("C")
+@rename("SSL_ctrl")
+fn ssl_ctrl(ssl: void*, command: I32, value: I64, argument: *I8) -> I64
+
+@extern("C")
+@rename("SSL_do_handshake")
+fn ssl_do_handshake(ssl: void*) -> I32
+
+@extern("C")
+@rename("SSL_read_ex")
+fn ssl_read_ex(ssl: void*, buffer: *U8, size: U64, read_bytes: *U64) -> I32
+
+@extern("C")
+@rename("SSL_write_ex")
+fn ssl_write_ex(ssl: void*, buffer: *U8, size: U64, written_bytes: *U64) -> I32
+
+@extern("C")
+@rename("SSL_shutdown")
+fn ssl_shutdown(ssl: void*) -> I32
+
+@extern("C")
+@rename("SSL_get_error")
+fn ssl_get_error(ssl: void*, result: I32) -> I32
+
+@extern("C")
+@rename("SSL_get_verify_result")
+fn ssl_get_verify_result(ssl: void*) -> I64
+
+@extern("C")
+@rename("BIO_s_mem")
+fn bio_s_mem() -> void*
+
+@extern("C")
+@rename("BIO_new")
+fn bio_new(method: void*) -> void*
+
+@extern("C")
+@rename("BIO_free")
+fn bio_free(bio: void*) -> I32
+
+@extern("C")
+@rename("BIO_ctrl")
+fn bio_ctrl(bio: void*, command: I32, value: I64, argument: void*) -> I64
+
+@extern("C")
+@rename("BIO_ctrl_pending")
+fn bio_ctrl_pending(bio: void*) -> U64
+
+@extern("C")
+@rename("BIO_read_ex")
+fn bio_read_ex(bio: void*, buffer: *U8, size: U64, read_bytes: *U64) -> I32
+
+@extern("C")
+@rename("BIO_write_ex")
+fn bio_write_ex(bio: void*, buffer: *U8, size: U64, written_bytes: *U64) -> I32
+
+@extern("C")
+@rename("ERR_clear_error")
+fn err_clear_error() -> void
+
+@extern("C")
+@rename("ERR_get_error")
+fn err_get_error() -> U64
+
+@extern("C")
+@rename("ERR_error_string_n")
+fn err_error_string_n(code: U64, buffer: *U8, size: U64) -> void
+
+@extern("C")
+@rename("X509_verify_cert_error_string")
+fn x509_verify_cert_error_string(code: I64) -> *U8
+
+@extern("C")
+@rename("OpenSSL_version")
+fn openssl_version(kind: I32) -> *U8
+
+// Header-only OpenSSL macros, copied from the installed OpenSSL 3 headers.
+let SSL_CTRL_SET_TLSEXT_HOSTNAME: I32 = 55;
+let SSL_CTRL_SET_MIN_PROTO_VERSION: I32 = 123;
+let SSL_CTRL_SET_MAX_PROTO_VERSION: I32 = 124;
+let TLSEXT_NAMETYPE_HOST_NAME: I64 = 0;
+let BIO_C_SET_BUF_MEM_EOF_RETURN: I32 = 130;
+let SSL_VERIFY_PEER: I32 = 0x01;
+let SSL_FILETYPE_PEM: I32 = 1;
+
+let SSL_ERROR_SSL: I32 = 1;
+let SSL_ERROR_WANT_READ: I32 = 2;
+let SSL_ERROR_WANT_WRITE: I32 = 3;
+let SSL_ERROR_SYSCALL: I32 = 5;
+let SSL_ERROR_ZERO_RETURN: I32 = 6;
+
+let TLS1_2_VERSION: I64 = 0x0303;
+let TLS1_3_VERSION: I64 = 0x0304;
+let X509_V_OK: I64 = 0;
+let PUMP_BUFFER_SIZE: Int = 16384;
+
+@derive(Clone, PartialEq, Eq)
+pub enum Version {
+    Tls12,
+    Tls13,
+}
+
+fn version_code(version: Version) -> I64 {
+    match version {
+        Version.Tls12 => TLS1_2_VERSION,
+        Version.Tls13 => TLS1_3_VERSION,
+    }
+}
+
+@derive(Clone)
+pub struct Config {
+    server_name: Option[String],
+    insecure_skip_verify: Bool,
+    min_version: Version,
+    max_version: Option[Version],
+    certificate_file: Option[String],
+    private_key_file: Option[String],
+
+    pub fn new() -> Config {
+        Config(
+            server_name: None,
+            insecure_skip_verify: False,
+            min_version: Version.Tls12,
+            max_version: None,
+            certificate_file: None,
+            private_key_file: None,
+        )
+    }
+
+    pub fn with_server_name(c: Config, server_name: String) -> Config {
+        c.server_name = Some(server_name);
+        c
+    }
+
+    pub fn with_insecure_skip_verify(c: Config, insecure: Bool) -> Config {
+        c.insecure_skip_verify = insecure;
+        c
+    }
+
+    pub fn with_min_version(c: Config, version: Version) -> Config {
+        c.min_version = version;
+        c
+    }
+
+    pub fn with_max_version(c: Config, version: Version) -> Config {
+        c.max_version = Some(version);
+        c
+    }
+
+    // File-based identities keep this PoC focused on the TLS engine. A real API
+    // should own parsed certificate/key material, like Go's tls.Certificate.
+    pub fn with_certificate_files(c: Config, certificate_file: String, private_key_file: String) -> Config {
+        c.certificate_file = Some(certificate_file);
+        c.private_key_file = Some(private_key_file);
+        c
+    }
+}
+
+pub enum SslError {
+    InvalidConfiguration(String),
+    Library(String, I32, String),
+    Verification(String, I64, String),
+    UnexpectedEof,
+    WriteZero,
+    Closed,
+}
+
+pub enum Error {
+    Io(IO.Error),
+    Ssl(SslError),
+}
+
+instance ToString[SslError] {
+    fn to_string(error: SslError) -> String {
+        match error {
+            SslError.InvalidConfiguration(message) => "invalid TLS configuration: ${message}",
+            SslError.Library(operation, class, message) => {
+                "OpenSSL ${operation} failed (class ${class}): ${message}"
+            }
+            SslError.Verification(operation, code, message) => {
+                "TLS certificate verification failed during ${operation} (${code}): ${message}"
+            }
+            SslError.UnexpectedEof => "TLS peer closed the TCP stream without close_notify",
+            SslError.WriteZero => "TLS transport returned a zero-length write",
+            SslError.Closed => "TLS stream is closed",
+        }
+    }
+}
+
+instance ToString[Error] {
+    fn to_string(error: Error) -> String {
+        match error {
+            Error.Io(error) => error.to_string(),
+            Error.Ssl(error) => error.to_string(),
+        }
+    }
+}
+
+instance E.Error[Error] {
+    fn message(error: Error) -> String {
+        error.to_string()
+    }
+
+    fn source(error: Error) -> Option[E.Error] {
+        match error {
+            Error.Io(error) => Some(E.Error(error)),
+            Error.Ssl(_) => None,
+        }
+    }
+}
+
+@safe
+pub fn backend_version() -> String {
+    LibcString.from_cstring(openssl_version(0))
+}
+
+fn contains_nul(value: String) -> Bool {
+    value.as_slice().contains(0)
+}
+
+fn invalid_configuration(message: String) -> E.Error {
+    E.Error(Error.Ssl(SslError.InvalidConfiguration(message)))
+}
+
+fn transport_error(error: E.Error) -> E.Error {
+    if error is IO.Error {
+        E.Error(Error.Io(error))
+    } else {
+        E.with_context(error, "unexpected error from TLS TCP transport")
+    }
+}
+
+@safe
+fn drain_error_queue(fallback: String) -> String {
+    let messages: Vec[String] = Vec.new();
+    loop {
+        let code = err_get_error();
+        if code == 0 {
+            break;
+        }
+        let buffer: Vec[U8] = Vec.with_value(256, 0);
+        err_error_string_n(code, buffer.as_ptr(), 256);
+        messages.push(LibcString.from_cstring(buffer.as_ptr()));
+    }
+    if messages.is_empty() {
+        fallback
+    } else {
+        Std.Vec.join(messages, " | ")
+    }
+}
+
+fn library_error(operation: String, class: I32, fallback: String) -> E.Error {
+    E.Error(Error.Ssl(SslError.Library(operation, class, drain_error_queue(fallback))))
+}
+
+@safe
+fn stream_operation_error(stream: TlsStream, operation: String, class: I32) -> E.Error {
+    let details = drain_error_queue("OpenSSL returned no error-queue entry");
+    if stream.verify_peer {
+        let verify_code = ssl_get_verify_result(stream.ssl);
+        if verify_code != X509_V_OK {
+            let verify_text = LibcString.from_cstring(x509_verify_cert_error_string(verify_code));
+            let message = if details == "OpenSSL returned no error-queue entry" {
+                verify_text
+            } else {
+                "${verify_text}: ${details}"
+            };
+            return E.Error(Error.Ssl(SslError.Verification(operation, verify_code, message)));
+        }
+    }
+    E.Error(Error.Ssl(SslError.Library(operation, class, details)))
+}
+
+fn validate_config(config: Config, server: Bool) -> Result[(), E.Error] {
+    match config.max_version {
+        Some(max_version) => {
+            if version_code(max_version) < version_code(config.min_version) {
+                return Err(invalid_configuration("maximum TLS version is lower than minimum TLS version"));
+            }
+        }
+        None => {}
+    }
+    match config.server_name {
+        Some(name) => {
+            if name.is_empty() || contains_nul(name) {
+                return Err(invalid_configuration("server name is empty or contains NUL"));
+            }
+        }
+        None => {
+            if !server && !config.insecure_skip_verify {
+                return Err(invalid_configuration("verified clients require a server name"));
+            }
+        }
+    }
+    if server {
+        match (config.certificate_file, config.private_key_file) {
+            (Some(certificate), Some(private_key)) => {
+                if certificate.is_empty() || contains_nul(certificate) ||
+                   private_key.is_empty() || contains_nul(private_key) {
+                    return Err(invalid_configuration("certificate or private-key path is empty or contains NUL"));
+                }
+            }
+            _ => return Err(invalid_configuration("servers require a certificate and private key")),
+        }
+    }
+    Ok(())
+}
+
+@safe
+fn configure_versions(ctx: void*, config: Config) -> Result[(), E.Error] {
+    err_clear_error();
+    if ssl_ctx_ctrl(
+        ctx,
+        SSL_CTRL_SET_MIN_PROTO_VERSION,
+        version_code(config.min_version),
+        get_null_voidptr(),
+    ) <= 0 {
+        return Err(library_error("set minimum protocol version", 0, "SSL_CTX_ctrl failed"));
+    }
+    match config.max_version {
+        Some(max_version) => {
+            err_clear_error();
+            if ssl_ctx_ctrl(
+                ctx,
+                SSL_CTRL_SET_MAX_PROTO_VERSION,
+                version_code(max_version),
+                get_null_voidptr(),
+            ) <= 0 {
+                return Err(library_error("set maximum protocol version", 0, "SSL_CTX_ctrl failed"));
+            }
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+@safe
+fn new_context(config: Config, server: Bool) -> Result[void*, E.Error] {
+    validate_config(config, server)?;
+    let method = if server { tls_server_method() } else { tls_client_method() };
+    if is_null_voidptr(method) {
+        return Err(library_error("select TLS method", 0, "TLS method is null"));
+    }
+    err_clear_error();
+    let ctx = ssl_ctx_new(method);
+    if is_null_voidptr(ctx) {
+        return Err(library_error("create context", 0, "SSL_CTX_new returned null"));
+    }
+    match configure_versions(ctx, config) {
+        Ok(_) => {}
+        Err(error) => {
+            ssl_ctx_free(ctx);
+            return Err(error);
+        }
+    }
+    if server {
+        let certificate = config.certificate_file.unwrap();
+        let private_key = config.private_key_file.unwrap();
+        let certificate_path = LibcString.CString.from_string(certificate);
+        let private_key_path = LibcString.CString.from_string(private_key);
+        err_clear_error();
+        if ssl_ctx_use_certificate_chain_file(ctx, certificate_path.as_ptr()) != 1 {
+            let error = library_error("load certificate chain", 0, "certificate loading failed");
+            ssl_ctx_free(ctx);
+            return Err(error);
+        }
+        err_clear_error();
+        if ssl_ctx_use_private_key_file(ctx, private_key_path.as_ptr(), SSL_FILETYPE_PEM) != 1 {
+            let error = library_error("load private key", 0, "private-key loading failed");
+            ssl_ctx_free(ctx);
+            return Err(error);
+        }
+        err_clear_error();
+        if ssl_ctx_check_private_key(ctx) != 1 {
+            let error = library_error("check private key", 0, "certificate and key do not match");
+            ssl_ctx_free(ctx);
+            return Err(error);
+        }
+    } else {
+        if !config.insecure_skip_verify {
+            ssl_ctx_set_verify(ctx, SSL_VERIFY_PEER, get_null_voidptr());
+            err_clear_error();
+            if ssl_ctx_set_default_verify_paths(ctx) != 1 {
+                let error = library_error("load default trust paths", 0, "default trust paths unavailable");
+                ssl_ctx_free(ctx);
+                return Err(error);
+            }
+        }
+    }
+    Ok(ctx)
+}
+
+@safe
+fn configure_client_name(ssl: void*, config: Config) -> Result[(), E.Error] {
+    match config.server_name {
+        Some(server_name) => {
+            let name = LibcString.CString.from_string(server_name);
+            err_clear_error();
+            if ssl_ctrl(
+                ssl,
+                SSL_CTRL_SET_TLSEXT_HOSTNAME,
+                TLSEXT_NAMETYPE_HOST_NAME,
+                name.as_ptr(),
+            ) <= 0 {
+                return Err(library_error("set SNI server name", 0, "SSL_ctrl failed"));
+            }
+            if !config.insecure_skip_verify {
+                err_clear_error();
+                if ssl_set1_host(ssl, name.as_ptr()) != 1 {
+                    return Err(library_error("set verification server name", 0, "SSL_set1_host failed"));
+                }
+            }
+        }
+        None => {}
+    }
+    Ok(())
+}
+
+pub struct TlsStream {
+    tcp: TcpStream,
+    ctx: void*,
+    ssl: void*,
+    read_bio: void*,
+    write_bio: void*,
+    verify_peer: Bool,
+    handshake_complete: Bool,
+    transport_eof: Bool,
+    received_close_notify: Bool,
+    closed: Bool,
+
+    pub fn client(tcp: TcpStream, config: Config) -> Result[TlsStream, E.Error] {
+        TlsStream.create(tcp, config, False)
+    }
+
+    pub fn server(tcp: TcpStream, config: Config) -> Result[TlsStream, E.Error] {
+        TlsStream.create(tcp, config, True)
+    }
+
+    pub fn connect(address: String, port: U16, config: Config) -> Result[TlsStream, E.Error] {
+        let config = config.clone();
+        if config.server_name == None {
+            config.server_name = Some(address.clone());
+        }
+        let tcp = match TcpStream.connect(address, port) {
+            Ok(tcp) => tcp,
+            Err(error) => return Err(transport_error(error)),
+        };
+        TlsStream.client(tcp, config)
+    }
+
+    @safe
+    fn create(tcp: TcpStream, config: Config, server: Bool) -> Result[TlsStream, E.Error] {
+        let ctx = match new_context(config, server) {
+            Ok(ctx) => ctx,
+            Err(error) => {
+                defer tcp.close();
+                return Err(error);
+            }
+        };
+        err_clear_error();
+        let ssl = ssl_new(ctx);
+        if is_null_voidptr(ssl) {
+            let error = library_error("create stream", 0, "SSL_new returned null");
+            ssl_ctx_free(ctx);
+            defer tcp.close();
+            return Err(error);
+        }
+        let read_bio = bio_new(bio_s_mem());
+        if is_null_voidptr(read_bio) {
+            let error = library_error("create read BIO", 0, "BIO_new returned null");
+            ssl_free(ssl);
+            ssl_ctx_free(ctx);
+            defer tcp.close();
+            return Err(error);
+        }
+        let write_bio = bio_new(bio_s_mem());
+        if is_null_voidptr(write_bio) {
+            let error = library_error("create write BIO", 0, "BIO_new returned null");
+            bio_free(read_bio);
+            ssl_free(ssl);
+            ssl_ctx_free(ctx);
+            defer tcp.close();
+            return Err(error);
+        }
+        bio_ctrl(read_bio, BIO_C_SET_BUF_MEM_EOF_RETURN, -1, get_null_voidptr());
+        ssl_set0_rbio(ssl, read_bio);
+        ssl_set0_wbio(ssl, write_bio);
+        if server {
+            ssl_set_accept_state(ssl);
+        } else {
+            match configure_client_name(ssl, config) {
+                Ok(_) => {}
+                Err(error) => {
+                    ssl_free(ssl);
+                    ssl_ctx_free(ctx);
+                    defer tcp.close();
+                    return Err(error);
+                }
+            }
+            ssl_set_connect_state(ssl);
+        }
+        Ok(TlsStream(
+            tcp: tcp,
+            ctx: ctx,
+            ssl: ssl,
+            read_bio: read_bio,
+            write_bio: write_bio,
+            verify_peer: !server && !config.insecure_skip_verify,
+            handshake_complete: False,
+            transport_eof: False,
+            received_close_notify: False,
+            closed: False,
+        ))
+    }
+
+    @safe
+    fn flush_outbound(stream: TlsStream) -> Result[(), E.Error] {
+        loop {
+            let pending = bio_ctrl_pending(stream.write_bio);
+            if pending == 0 {
+                return Ok(());
+            }
+            let count = if pending.as_int() < PUMP_BUFFER_SIZE {
+                pending.as_int()
+            } else {
+                PUMP_BUFFER_SIZE
+            };
+            let buffer: Vec[U8] = Vec.with_value(count, 0);
+            let read_bytes: U64 = 0;
+            err_clear_error();
+            if bio_read_ex(stream.write_bio, buffer.as_ptr(), count.as_u64(), &read_bytes) != 1 {
+                return Err(library_error("drain write BIO", 0, "BIO_read_ex failed"));
+            }
+            let total = read_bytes.as_int();
+            let offset = 0;
+            while offset < total {
+                match stream.tcp.write(buffer.slice().sub(offset, total)) {
+                    Ok(0) => return Err(E.Error(Error.Ssl(SslError.WriteZero))),
+                    Ok(written) => { offset = offset + written; }
+                    Err(error) => return Err(transport_error(error)),
+                }
+            }
+        }
+    }
+
+    @safe
+    fn feed_inbound(stream: TlsStream) -> Result[Bool, E.Error] {
+        let buffer: Vec[U8] = Vec.with_value(PUMP_BUFFER_SIZE, 0);
+        let count = match stream.tcp.read(buffer.slice()) {
+            Ok(count) => count,
+            Err(error) => return Err(transport_error(error)),
+        };
+        if count == 0 {
+            stream.transport_eof = True;
+            return Ok(False);
+        }
+        let offset = 0;
+        while offset < count {
+            let written: U64 = 0;
+            err_clear_error();
+            if bio_write_ex(
+                stream.read_bio,
+                buffer.slice().sub(offset, count).as_ptr(),
+                (count - offset).as_u64(),
+                &written,
+            ) != 1 {
+                return Err(library_error("fill read BIO", 0, "BIO_write_ex failed"));
+            }
+            if written == 0 {
+                return Err(E.Error(Error.Ssl(SslError.WriteZero)));
+            }
+            offset = offset + written.as_int();
+        }
+        Ok(True)
+    }
+
+    @safe
+    pub fn handshake(stream: TlsStream) -> Result[(), E.Error] {
+        if stream.closed {
+            return Err(E.Error(Error.Ssl(SslError.Closed)));
+        }
+        if stream.handshake_complete {
+            return Ok(());
+        }
+        loop {
+            err_clear_error();
+            let result = ssl_do_handshake(stream.ssl);
+            if result == 1 {
+                stream.flush_outbound()?;
+                stream.handshake_complete = True;
+                return Ok(());
+            }
+            let class = ssl_get_error(stream.ssl, result);
+            if class == SSL_ERROR_WANT_READ {
+                stream.flush_outbound()?;
+                if !stream.feed_inbound()? {
+                    return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+                }
+            } else if class == SSL_ERROR_WANT_WRITE {
+                stream.flush_outbound()?;
+            } else if class == SSL_ERROR_ZERO_RETURN {
+                stream.received_close_notify = True;
+                return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+            } else if class == SSL_ERROR_SYSCALL && stream.transport_eof {
+                return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+            } else {
+                return Err(stream_operation_error(stream, "handshake", class));
+            }
+        }
+    }
+
+    @safe
+    pub fn read(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, E.Error] {
+        if stream.closed {
+            return Err(E.Error(Error.Ssl(SslError.Closed)));
+        }
+        if buffer.len() == 0 {
+            return Ok(0);
+        }
+        stream.handshake()?;
+        loop {
+            let read_bytes: U64 = 0;
+            err_clear_error();
+            let result = ssl_read_ex(
+                stream.ssl,
+                buffer.as_ptr(),
+                buffer.len().as_u64(),
+                &read_bytes,
+            );
+            if result == 1 {
+                stream.flush_outbound()?;
+                return Ok(read_bytes.as_int());
+            }
+            let class = ssl_get_error(stream.ssl, result);
+            if class == SSL_ERROR_WANT_READ {
+                stream.flush_outbound()?;
+                if !stream.feed_inbound()? {
+                    return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+                }
+            } else if class == SSL_ERROR_WANT_WRITE {
+                stream.flush_outbound()?;
+            } else if class == SSL_ERROR_ZERO_RETURN {
+                stream.received_close_notify = True;
+                stream.flush_outbound()?;
+                return Ok(0);
+            } else if class == SSL_ERROR_SYSCALL && stream.transport_eof {
+                return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+            } else {
+                return Err(stream_operation_error(stream, "read", class));
+            }
+        }
+    }
+
+    @safe
+    pub fn write(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, E.Error] {
+        if stream.closed {
+            return Err(E.Error(Error.Ssl(SslError.Closed)));
+        }
+        if buffer.len() == 0 {
+            return Ok(0);
+        }
+        stream.handshake()?;
+        loop {
+            let written: U64 = 0;
+            err_clear_error();
+            let result = ssl_write_ex(
+                stream.ssl,
+                buffer.as_ptr(),
+                buffer.len().as_u64(),
+                &written,
+            );
+            if result == 1 {
+                stream.flush_outbound()?;
+                return Ok(written.as_int());
+            }
+            let class = ssl_get_error(stream.ssl, result);
+            if class == SSL_ERROR_WANT_READ {
+                stream.flush_outbound()?;
+                if !stream.feed_inbound()? {
+                    return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+                }
+            } else if class == SSL_ERROR_WANT_WRITE {
+                stream.flush_outbound()?;
+            } else if class == SSL_ERROR_ZERO_RETURN {
+                stream.received_close_notify = True;
+                return Err(E.Error(Error.Ssl(SslError.Closed)));
+            } else if class == SSL_ERROR_SYSCALL && stream.transport_eof {
+                return Err(E.Error(Error.Ssl(SslError.UnexpectedEof)));
+            } else {
+                return Err(stream_operation_error(stream, "write", class));
+            }
+        }
+    }
+
+    // Sends close_notify and flushes it. It deliberately does not wait for the
+    // peer's close_notify, so close cannot hang forever on an uncooperative peer.
+    @safe
+    pub fn shutdown(stream: TlsStream) -> Result[(), E.Error] {
+        if stream.closed || !stream.handshake_complete {
+            return Ok(());
+        }
+        err_clear_error();
+        let result = ssl_shutdown(stream.ssl);
+        if result >= 0 {
+            return stream.flush_outbound();
+        }
+        let class = ssl_get_error(stream.ssl, result);
+        if class == SSL_ERROR_WANT_READ || class == SSL_ERROR_WANT_WRITE || class == SSL_ERROR_ZERO_RETURN {
+            stream.flush_outbound()
+        } else {
+            Err(stream_operation_error(stream, "shutdown", class))
+        }
+    }
+
+    @safe
+    pub fn close(stream: TlsStream) -> Result[(), E.Error] {
+        if stream.closed {
+            return Ok(());
+        }
+        let shutdown_error = match stream.shutdown() {
+            Ok(_) => None,
+            Err(error) => Some(error),
+        };
+        ssl_free(stream.ssl);
+        ssl_ctx_free(stream.ctx);
+        stream.ssl = get_null_voidptr();
+        stream.ctx = get_null_voidptr();
+        stream.read_bio = get_null_voidptr();
+        stream.write_bio = get_null_voidptr();
+        stream.closed = True;
+        let close_result = match stream.tcp.close() {
+            Ok(_) => Ok(()),
+            Err(error) => Err(transport_error(error)),
+        };
+        match shutdown_error {
+            Some(error) => Err(error),
+            None => close_result,
+        }
+    }
+
+    pub fn is_handshake_complete(stream: TlsStream) -> Bool {
+        stream.handshake_complete
+    }
+}
+
+instance Reader[TlsStream] {
+    fn read(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, E.Error] {
+        stream.read(buffer)
+    }
+}
+
+instance Writer[TlsStream] {
+    fn write(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, E.Error] {
+        stream.write(buffer)
+    }
+}
+
+instance Closer[TlsStream] {
+    fn close(stream: TlsStream) -> Result[(), E.Error] {
+        stream.close()
+    }
+}
+
+pub struct TlsListener {
+    tcp: TcpListener,
+    config: Config,
+    closed: Bool,
+
+    pub fn bind(port: U16, config: Config) -> Result[TlsListener, E.Error] {
+        validate_config(config, True)?;
+        let tcp = match TcpListener.bind(port) {
+            Ok(tcp) => tcp,
+            Err(error) => return Err(transport_error(error)),
+        };
+        Ok(TlsListener(tcp: tcp, config: config.clone(), closed: False))
+    }
+
+    pub fn from_tcp_listener(tcp: TcpListener, config: Config) -> Result[TlsListener, E.Error] {
+        validate_config(config, True)?;
+        Ok(TlsListener(tcp: tcp, config: config.clone(), closed: False))
+    }
+
+    // The TLS handshake stays lazy so one slow client does not block accept.
+    pub fn accept(listener: TlsListener) -> Result[TlsStream, E.Error] {
+        if listener.closed {
+            return Err(E.Error(Error.Ssl(SslError.Closed)));
+        }
+        let tcp = match listener.tcp.accept() {
+            Ok(tcp) => tcp,
+            Err(error) => return Err(transport_error(error)),
+        };
+        TlsStream.server(tcp, listener.config.clone())
+    }
+
+    pub fn accept_and_handshake(listener: TlsListener) -> Result[TlsStream, E.Error] {
+        let stream = listener.accept()?;
+        match stream.handshake() {
+            Ok(_) => Ok(stream),
+            Err(error) => {
+                defer stream.close();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn close(listener: TlsListener) -> Result[(), E.Error] {
+        if listener.closed {
+            return Ok(());
+        }
+        listener.closed = True;
+        match listener.tcp.close() {
+            Ok(_) => Ok(()),
+            Err(error) => Err(transport_error(error)),
+        }
+    }
+}
+
+instance Closer[TlsListener] {
+    fn close(listener: TlsListener) -> Result[(), E.Error] {
+        listener.close()
+    }
+}
+
+}
