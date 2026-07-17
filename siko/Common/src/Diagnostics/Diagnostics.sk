@@ -1,0 +1,105 @@
+module Siko.Diagnostics {
+
+import Siko.FileManager
+import Siko.Location
+import Std.Libc.FileDescriptor
+import Siko.Diagnostics.Util
+
+pub enum Severity {
+    Error,
+    Warning,
+
+    pub fn is_error(s: Severity) -> Bool {
+         match s {
+            Error => True,
+            Warning => False,
+        }
+    }
+
+    pub fn get_label_color(s: Severity) -> String {
+        match s {
+            Error => "\x1b[1;31m",
+            Warning => "\x1b[1;33m",
+        }
+    }
+
+    pub fn get_label(s: Severity) -> String {
+        match s {
+            Error => "ERROR",
+            Warning => "WARNING",
+        }
+    }
+}
+
+pub struct Diagnostic {
+    pub severity: Severity,
+    pub message: String,
+    pub location: Option[Location],
+
+    pub fn print(d: Diagnostic) {
+        let is_terminal = get_stdout().is_terminal().expect("is_terminal failed");
+        let (colored_label, yellow_bold, reset) = if is_terminal {
+            (d.severity.get_label_color(), "\x1b[1;33m", "\x1b[0m")
+        } else {
+            ("", "", "")
+        };
+
+        println("${colored_label}${d.severity.get_label()}${reset}: ${d.message}");
+
+        let location = match d.location {
+            Some(l) => l,
+            None => {
+                // Multi-line messages bring their own layout; only pad out single-line ones.
+                if !d.message.contains("\n") {
+                    println("");
+                }
+                return;
+            }
+        };
+
+        let span_start = location.span.start;
+        let span_end = location.span.end;
+
+        let path = Siko.FileManager.get_name(location.file_id);
+        let source = Siko.FileManager.get_content(location.file_id);
+
+        let line_starts = compute_line_starts(source);
+
+        let start_line = line_of(line_starts, span_start);
+        let end_line = line_of(line_starts, if span_end > span_start { span_end - 1 } else { span_start });
+        let start_col = span_start - line_starts[start_line];
+
+        println("  --> ${path}:${start_line + 1}:${start_col + 1}");
+        println("");
+
+        let context = 2;
+        let first = start_line.saturating_sub(context);
+        let last = (end_line + context).min(line_starts.len().saturating_sub(1));
+        let gutter = "${last + 1}".len();
+
+        for idx in first..last+1 {
+            let ls = line_starts[idx];
+            let le = if idx + 1 < line_starts.len() {
+                line_starts[idx + 1] - 1
+            } else {
+                source.len()
+            };
+
+            let hi_start = span_start.max(ls);
+            let hi_end = span_end.min(le);
+
+            if hi_start < hi_end {
+                let before = source.substring(ls, hi_start);
+                let mid = source.substring(hi_start, hi_end);
+                let after = source.substring(hi_end, le);
+                println("${pad_left(idx + 1, gutter)} | ${before}${yellow_bold}${mid}${reset}${after}");
+            } else {
+                println("${pad_left(idx + 1, gutter)} | ${source.substring(ls, le)}");
+            }
+        }
+
+        println("");
+    }
+}
+
+}

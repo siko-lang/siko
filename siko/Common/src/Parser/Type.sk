@@ -1,0 +1,155 @@
+module Siko.Parser.Type {
+
+import Siko.AST.Type
+import Siko.AST.Name
+import Siko.Parser.Token
+import Siko.Parser.Parser
+import Siko.Interner as I
+
+pub trait TypeParser[T] {
+    fn parse_type_def(p: T) -> Result[TypeDef, ParseError]
+    fn parse_type_annotation(p: T) -> Result[TypeDef, ParseError]
+    fn parse_type_def_inner(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+    fn parse_fn_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+    fn parse_co_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+    fn parse_paren_or_tuple_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+    fn parse_named_type(p: T, allow_wildcard: Bool) -> Result[TypeDef, ParseError]
+}
+
+instance TypeParser[Parser] {
+    fn parse_type_def(parser: Parser) -> Result[TypeDef, ParseError] {
+        parser.parse_type_def_inner(False)
+    }
+
+    fn parse_type_annotation(parser: Parser) -> Result[TypeDef, ParseError] {
+        parser.parse_type_def_inner(True)
+    }
+
+    fn parse_type_def_inner(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        match parser.peek() {
+            TokenKind.LParen => parser.parse_paren_or_tuple_type(allow_wildcard),
+            TokenKind.Bang => {
+                parser.advance();
+                Ok(TypeDef.Never(True))
+            }
+            TokenKind.KwFn => parser.parse_fn_type(allow_wildcard),
+            TokenKind.KwCo => parser.parse_co_type(allow_wildcard),
+            TokenKind.Wildcard if allow_wildcard => {
+                parser.advance();
+                Ok(TypeDef.Wildcard)
+            }
+            TokenKind.Star => {
+                parser.advance();
+                Ok(TypeDef.Ptr(parser.parse_type_def_inner(allow_wildcard)?))
+            }
+            TokenKind.LBracket => {
+                parser.advance();
+                let elem_ty = parser.parse_type_def_inner(allow_wildcard)?;
+                parser.expect(TokenKind.Semicolon)?;
+                let n = match parser.peek() {
+                    TokenKind.IntLiteral(s) => match String.parse_int(I.resolve(s), 10) {
+                        Ok(n) => {
+                            parser.advance();
+                            n
+                        }
+                        Err(_) => return Err(ParseError.new("invalid array size literal", parser.cur_pos())),
+                    },
+                    _ => return Err(ParseError.new("expected integer array size", parser.cur_pos())),
+                };
+                parser.expect(TokenKind.RBracket)?;
+                Ok(TypeDef.Array(elem_ty, n))
+            }
+            TokenKind.KwVoid => {
+                parser.advance();
+                if parser.peek() == TokenKind.Star {
+                    parser.advance();
+                    Ok(TypeDef.VoidPtr)
+                } else {
+                    Ok(TypeDef.Void)
+                }
+            }
+            _ => parser.parse_named_type(allow_wildcard),
+        }
+    }
+
+    fn parse_fn_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        parser.expect(TokenKind.KwFn)?;
+        let is_fn_ptr = if parser.peek() == TokenKind.Star {
+            parser.advance();
+            True
+        } else {
+            False
+        };
+        parser.expect(TokenKind.LParen)?;
+        let args = Vec.new();
+        while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+            args.push(parser.parse_type_def_inner(allow_wildcard)?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RParen)?;
+        parser.expect(TokenKind.Arrow)?;
+        let result = parser.parse_type_def_inner(allow_wildcard)?;
+        if is_fn_ptr {
+            Ok(TypeDef.FnPtr(args, result))
+        } else {
+            Ok(TypeDef.Fn(ClosureInfo(args, result, None)))
+        }
+    }
+
+    fn parse_co_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        parser.expect(TokenKind.KwCo)?;
+        parser.expect(TokenKind.LParen)?;
+        let yield_ty = parser.parse_type_def_inner(allow_wildcard)?;
+        parser.expect(TokenKind.RParen)?;
+        parser.expect(TokenKind.Arrow)?;
+        let return_ty = parser.parse_type_def_inner(allow_wildcard)?;
+        Ok(TypeDef.Co(CoroutineInfo(yield_ty, return_ty)))
+    }
+
+    fn parse_paren_or_tuple_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        parser.expect(TokenKind.LParen)?;
+        if parser.peek() == TokenKind.RParen {
+            parser.advance();
+            return Ok(TypeDef.Tuple(Vec.new()));
+        }
+        let first = parser.parse_type_def_inner(allow_wildcard)?;
+        if parser.peek() == TokenKind.RParen {
+            parser.advance();
+            return Ok(TypeDef.Paren(first));
+        }
+        let types = [first];
+        while parser.peek() == TokenKind.Comma {
+            parser.advance();
+            if parser.peek() == TokenKind.RParen {
+                break;
+            }
+            types.push(parser.parse_type_def_inner(allow_wildcard)?);
+        }
+        parser.expect(TokenKind.RParen)?;
+        Ok(TypeDef.Tuple(types))
+    }
+
+    fn parse_named_type(parser: Parser, allow_wildcard: Bool) -> Result[TypeDef, ParseError] {
+        let ident = parser.parse_dotted_name()?;
+        let name = Name.Unresolved(ident);
+        let args = if parser.peek() == TokenKind.LBracket {
+            parser.advance();
+            let args = Vec.new();
+            while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+                args.push(parser.parse_type_def_inner(allow_wildcard)?);
+                if parser.peek() == TokenKind.Comma {
+                    parser.advance();
+                }
+            }
+            parser.expect(TokenKind.RBracket)?;
+            args
+        } else {
+            Vec.new()
+        };
+        Ok(TypeDef.Named(NamedInfo(name, args)))
+    }
+}
+
+}

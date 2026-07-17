@@ -1,0 +1,1399 @@
+module Siko.Resolver {
+
+import Siko.Resolver.ModuleItem
+import Siko.Resolver.ModuleResolver
+import Siko.Resolver.Error
+import Siko.Resolver.Module
+import Siko.Resolver.Import
+import Siko.Resolver.TypeResolver
+import Siko.Resolver.TraitObjectCheck
+import Siko.Resolver.Autoderive.PartialEq
+import Siko.Resolver.Autoderive.Eq
+import Siko.Resolver.Autoderive.PartialOrd
+import Siko.Resolver.Autoderive.Ord
+import Siko.Resolver.Autoderive.Clone
+import Siko.Resolver.Autoderive.Map
+import Siko.Resolver.Autoderive.Fold
+import Siko.Resolver.Autoderive.FromInt
+import Siko.Resolver.Autoderive.Json
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Data
+import Siko.AST.Generics
+import Siko.AST.Traits
+import Siko.AST.Instances
+import Siko.AST.Function
+import Siko.AST.Effects as Eff
+import Siko.AST.Globals
+import Siko.AST.Implicits
+import Siko.AST.Type
+import Siko.AST.Module as M
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Report
+import Siko.Constants.Builtins as B
+import Siko.Utils.VarAllocator
+import Siko.Utils.LabelAllocator
+import Std.Map
+import Std.Set
+import Siko.Interner as I
+
+pub struct EffectInstanceInfo {
+    pub effect_qname: QualifiedName,
+    pub method_pairs: Vec[(QualifiedName, QualifiedName)],
+    pub assoc_type_pairs: Vec[(QualifiedName, TypeDef)],
+}
+
+pub struct GlobalResolverContext {
+    exported_items: Map[I.String, Vec[ModuleItem]],
+    module_resolvers: Map[I.String, ModuleResolver],
+    structs: Map[QualifiedName, StructDef],
+    enums: Map[QualifiedName, EnumDef],
+    variant_enum_map: Map[QualifiedName, QualifiedName],
+    traits: Map[QualifiedName, TraitDef],
+    named_instances: Map[QualifiedName, InstanceDef],
+    canonical_instances: Vec[InstanceDef],
+    all_instances: Map[QualifiedName, InstanceDef],
+    functions: Map[QualifiedName, FunctionDef],
+    effects: Map[QualifiedName, Eff.EffectDef],
+    effect_associated_types: Map[QualifiedName, Eff.AssociatedTypeDef],
+    implicits: Map[QualifiedName, ImplicitDef],
+    module_names: Vec[I.String],
+    module_instance_imports: Map[I.String, Vec[QualifiedName]],
+    effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
+
+    pub fn new() -> GlobalResolverContext {
+        GlobalResolverContext(
+            exported_items: Map.new(),
+            module_resolvers: Map.new(),
+            structs: Map.new(),
+            enums: Map.new(),
+            variant_enum_map: Map.new(),
+            traits: Map.new(),
+            named_instances: Map.new(),
+            canonical_instances: Vec.new(),
+            all_instances: Map.new(),
+            functions: Map.new(),
+            effects: Map.new(),
+            effect_associated_types: Map.new(),
+            implicits: Map.new(),
+            module_names: Vec.new(),
+            module_instance_imports: Map.new(),
+            effect_instance_infos: Map.new(),
+        )
+    }
+
+    pub fn get_effect_instance_info(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EffectInstanceInfo] {
+        ctx.effect_instance_infos.get(qname)
+    }
+
+    pub fn get_exported_items_by_module(ctx: GlobalResolverContext, module_name: I.String) -> Option[Vec[ModuleItem]] {
+        ctx.exported_items.get(module_name)
+    }
+
+    pub fn get_struct(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[StructDef] {
+        ctx.structs.get(qname)
+    }
+
+    pub fn get_enum(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EnumDef] {
+        ctx.enums.get(qname)
+    }
+
+    pub fn get_enum_for_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[EnumDef] {
+        ctx.variant_enum_map.get(variant_qname).and_then(|enum_qname| ctx.enums.get(enum_qname))
+    }
+}
+
+pub struct Resolver {
+    ctx: GlobalResolverContext,
+    module_traits_map: Map[I.String, Set[QualifiedName]],
+
+    pub fn new() -> Resolver {
+        Resolver(
+            GlobalResolverContext.new(),
+            Map.new(),
+        )
+    }
+
+    fn build_module_visibility(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        pkg_reachability: Map[String, Set[String]],
+    ) -> Map[I.String, Set[I.String]] {
+        let pkg_to_modules: Map[String, Vec[I.String]] = Map.new();
+        for m in modules {
+            let pkg_name = m.source_package.info.name;
+            pkg_to_modules.entry(pkg_name).or_insert_with(|| Vec.new()).push(m.name.name());
+        }
+        let module_visibility: Map[I.String, Set[I.String]] = Map.new();
+        for m in modules {
+            let pkg_name = m.source_package.info.name;
+            let visible: Set[I.String] = Set.new();
+            let reachable_pkgs = pkg_reachability.get(pkg_name).unwrap_or(Set.new());
+            for rp in reachable_pkgs {
+                for mod_name in pkg_to_modules.get(rp).unwrap_or([]) {
+                    visible.insert(mod_name);
+                }
+            }
+            module_visibility.insert(m.name.name(), visible);
+        }
+        module_visibility
+    }
+
+    pub fn resolve(resolver: Resolver, modules: Vec[M.Module], pkg_reachability: Map[String, Set[String]]) -> Result[Program, ResolveError] {
+        //println("Resolving...");
+        add_preludes(modules);
+        check_trait_objects(modules);
+
+        let module_visibility = resolver.build_module_visibility(modules, pkg_reachability);
+        let groups = create_module_groups(modules)?;
+        for group in groups {
+            //println("processing module group..");
+            // collect exported items for each module_def in SCC
+            for module_name in group {
+                //println("Processing module in group ${module_name}");
+                let module_def = modules
+                    .iter()
+                    .find(|m| m.name.name() == module_name);
+                let module_def = module_def.unwrap();
+                let exported_items = get_exported_items(module_def);
+                resolver.ctx
+                    .exported_items
+                    .insert(module_name, exported_items);
+                //println("Found ${exported_items.len()} exported items");
+            }
+
+            for module_name in group {
+                //println("Initializing module ${module_name}");
+                resolver.init_module(modules, module_name, module_visibility)?;
+                //println("Initialized module ${module_name}");
+            }
+
+            for module_name in group {
+                //println("Processing data types in module ${module_name}");
+                resolver.process_data_items(modules, module_name)?;
+            }
+
+            for module_name in group {
+                //println("Processing non-data types in module ${module_name}");
+                resolver.process_non_data_items(modules, module_name)?;
+            }
+
+            for module_name in group {
+                resolver.process_methods(modules, module_name)?;
+            }
+
+            for module_name in group {
+                resolver.process_external_derives(modules, module_name)?;
+            }
+
+            for module_name in group {
+                resolver.warn_unused_imports(modules, module_name);
+            }
+        }
+
+        let module_trait_method_map = resolver.build_module_trait_method_map();
+
+        Ok(Program(
+            structs: resolver.ctx.structs,
+            enums: resolver.ctx.enums,
+            variant_enum_map: resolver.ctx.variant_enum_map,
+            traits: resolver.ctx.traits,
+            named_instances: resolver.ctx.named_instances,
+            canonical_instances: resolver.ctx.canonical_instances,
+            all_instances: resolver.ctx.all_instances,
+            functions: resolver.ctx.functions,
+            effects: resolver.ctx.effects,
+            effect_associated_types: resolver.ctx.effect_associated_types,
+            implicits: resolver.ctx.implicits,
+            module_names: resolver.ctx.module_names,
+            module_instance_imports: resolver.ctx.module_instance_imports,
+            module_trait_method_map: module_trait_method_map,
+            instance_resolver: InstanceResolver.empty(),
+        ))
+    }
+
+    fn build_module_trait_method_map(
+        resolver: Resolver,
+    ) -> Map[I.String, Map[I.String, Vec[QualifiedName]]] {
+        let module_trait_method_map = Map.new();
+        for (module_def, traits) in resolver.module_traits_map {
+            let method_map = Map.new();
+            for trait_name in traits {
+                let traitdef = resolver.ctx.traits.get(trait_name).unwrap();
+                for (name, qname) in traitdef.method_map.names {
+                    let names = method_map.entry(name).or_insert_with(|| Vec.new());
+                    names.push(qname);
+                }
+            }
+            module_trait_method_map.insert(module_def, method_map);
+        }
+        module_trait_method_map
+    }
+
+    fn init_module(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+        module_visibility: Map[I.String, Set[I.String]],
+    ) -> Result[(), ResolveError] {
+        //println("Initializing module ${module_name}");
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        let local_items = get_local_items(module_def);
+        let import_items = Vec.new();
+        let implicit_items = Vec.new();
+        let visible = module_visibility.get(module_name).unwrap();
+        //println("Found ${local_items.len()} local items")
+        for item in module_def.items {
+            if let M.ModuleItem.Import(import_def) = item {
+                if !import_def.is_implicit && !visible.contains(import_def.module_name.name()) {
+                    let importing_pkg = module_def.source_package.info.name;
+                    let imported_pkg = modules
+                        .iter()
+                        .find(|m| m.name.name() == import_def.module_name.name())
+                        .unwrap()
+                        .source_package.info.name;
+                    return Err(ResolveError.ImportNotVisible(
+                        name: import_def.module_name,
+                        importing_pkg: importing_pkg,
+                        imported_pkg: imported_pkg,
+                    ));
+                }
+                match process_import(import_def, resolver.ctx) {
+                    Ok(items) => {
+                        if import_def.is_implicit {
+                            implicit_items.extend(items);
+                        } else {
+                            import_items.extend(items);
+                        }
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+        //println("Found ${import_items.len()} import items");
+        //println("Found ${implicit_items.len()} implicit items");
+        let instance_imports: Vec[QualifiedName] = import_items
+            .iter()
+            .chain(implicit_items.iter())
+            .filter(|i| match i.kind {
+                ModuleItemKind.Instance(_) => True,
+                _ => False,
+            })
+            .map(|i| {
+                if let Some(def) = i.import_def { def.used = True; }
+                i.qualified_name
+            })
+            .collect();
+        instance_imports.sort();
+        instance_imports.dedup();
+        resolver.ctx
+            .module_instance_imports
+            .insert(module_name, instance_imports);
+        resolver.ctx.module_names.push(module_name);
+        let all_items = [local_items, import_items, implicit_items];
+        for item_list in all_items {
+            for item in item_list {
+                if let ModuleItemKind.Trait(_, _, _, _) = item.kind {
+                    if let Some(def) = item.import_def { def.used = True; }
+                    let traits = resolver
+                        .module_traits_map
+                        .entry(module_name)
+                        .or_insert_with(|| Set.new());
+                    traits.insert(item.qualified_name);
+                }
+            }
+        }
+        //println("Initializing module ${module_name} done")
+        let module_resolver = ModuleResolver.new(
+            module_name,
+            local_items,
+            import_items,
+            implicit_items,
+        );
+        resolver.ctx
+            .module_resolvers
+            .insert(module_name, module_resolver);
+        Ok(())
+    }
+
+    fn process_data_items(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        for item in module_def.items {
+            match item {
+                M.ModuleItem.Struct(struct_def) => {
+                    resolver.process_struct(module_name, module_def, struct_def)?;
+                }
+                M.ModuleItem.Enum(enum_def) => {
+                    resolver.process_enum(module_name, module_def, enum_def)?;
+                }
+                M.ModuleItem.Effect(effect_def) => {
+                    resolver.process_effect(module_name, module_def, effect_def)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn process_non_data_items(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        for item in module_def.items {
+            match item {
+                M.ModuleItem.Trait(trait_def) => {
+                    resolver.process_trait(module_name, module_def, trait_def)?;
+                }
+                M.ModuleItem.Instance(instance_def) => {
+                    if instance_def.external_derived_instance_info.is_none() {
+                        resolver.process_instance(module_name, module_def, instance_def)?;
+                    }
+                }
+                M.ModuleItem.Implicit(implicit_def) => {
+                    resolver.process_implicit(module_name, module_def, implicit_def)?;
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn process_methods(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        for item in module_def.items {
+            match item {
+                M.ModuleItem.Trait(trait_def) => {
+                    resolver.process_trait_methods(module_name, module_def, trait_def)?;
+                }
+                M.ModuleItem.Effect(effect_def) => {
+                    resolver.process_effect_methods(module_name, module_def, effect_def)?;
+                }
+                M.ModuleItem.Struct(struct_def) => {
+                    resolver.process_struct_methods(module_name, module_def, struct_def)?;
+                }
+                M.ModuleItem.Enum(enum_def) => {
+                    resolver.process_enum_methods(module_name, module_def, enum_def)?;
+                }
+                M.ModuleItem.Function(function_def) => {
+                    resolver.process_function(module_name, module_def, function_def)?;
+                }
+                M.ModuleItem.Global(global_def) => {
+                    resolver.process_global(module_name, module_def, global_def)?;
+                }
+                M.ModuleItem.Instance(instance_def) => {
+                    if instance_def.external_derived_instance_info.is_none() {
+                        resolver.process_instance_methods(module_name, instance_def)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn process_external_derives(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let module_def = modules
+            .iter()
+            .find(|m| m.name.name() == module_name)
+            .unwrap();
+        for item in module_def.items {
+            match item {
+                M.ModuleItem.Instance(instance_def) => {
+                    if instance_def.external_derived_instance_info.is_some() {
+                        resolver.process_external_instance(module_name, module_def, instance_def)?;
+                    }
+                }
+                _ => {}
+            }
+        }
+        Ok(())
+    }
+
+    fn process_function(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        function_def: FunctionDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_function_def = function_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_function(module_def.name.name(), function_def.name.name());
+        let default_value_names = resolver.process_function_args(module_name, qualified_name, function_def, True)?;
+        resolved_function_def.default_value_names = default_value_names;
+        resolver.ctx.functions.insert(qualified_name, resolved_function_def);
+        Ok(())
+    }
+
+    fn process_struct(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        struct_def: StructDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_struct_def = struct_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_struct(module_def.name.name(), struct_def.name.name());
+        let ctor_default_value_names = resolver.process_default_value_fields(module_name, qualified_name, struct_def)?;
+        resolved_struct_def.default_value_names = ctor_default_value_names;
+        for method in struct_def.methods {
+            resolved_struct_def
+                .method_map
+                .names
+                .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
+        }
+        resolver.ctx.structs.insert(qualified_name, resolved_struct_def);
+        resolver.process_struct_derives(module_name, resolved_struct_def)?;
+        Ok(())
+    }
+
+    fn process_struct_methods(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        struct_def: StructDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        for method in struct_def.methods {
+            let type_resolver = TypeResolver.new(module_resolver);
+            type_resolver.add_args(struct_def.type_arg_defs);
+            let method_ctx = ResolverContext.new(type_resolver, resolver.ctx);
+            let resolved_method = method.resolve(method_ctx)?;
+            let parent_qn = QualifiedName.new_struct(module_def.name.name(), struct_def.name.name());
+            let full_name = method.name.with_prefix(I.intern(I.resolve(module_def.name.name()) + "." + I.resolve(struct_def.name.name())));
+            resolved_method.name = full_name;
+            let injected = inject_bounds(method.type_arg_defs, struct_def.type_arg_defs);
+            resolved_method.type_arg_defs = injected.resolve(method_ctx)?;
+            let method_qn = QualifiedName.new_method(parent_qn.name(), method.name.name());
+            resolved_method.qualified_name = Some(method_qn);
+            let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
+            resolved_method.default_value_names = default_value_names;
+            resolver.ctx.functions.insert(method_qn, resolved_method);
+        }
+        Ok(())
+    }
+
+    fn process_enum(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        enum_def: EnumDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_enum_def = enum_def.resolve(ctx)?;
+        let qualified_name = resolved_enum_def.qualified_name.unwrap();
+        for variant in resolved_enum_def.variants {
+            let full_name = QualifiedName.new_variant(module_def.name.name(), enum_def.name.name(), variant.name.name());
+            variant.qualified_name = Some(full_name);
+            resolver.ctx
+                .variant_enum_map
+                .insert(full_name, qualified_name);
+        }
+        for method in enum_def.methods {
+            resolved_enum_def
+                .method_map
+                .names
+                .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
+        }
+        resolver.process_derives(module_name, resolved_enum_def)?;
+        resolver.ctx.enums.insert(qualified_name, resolved_enum_def);
+        Ok(())
+    }
+
+    fn process_enum_methods(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        enum_def: EnumDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        for method in enum_def.methods {
+            let type_resolver = TypeResolver.new(module_resolver);
+            type_resolver.add_args(enum_def.type_arg_defs);
+            let method_ctx = ResolverContext.new(type_resolver, resolver.ctx);
+            let resolved_method = method.resolve(method_ctx)?;
+            let parent_qn = QualifiedName.new_enum(module_def.name.name(), enum_def.name.name());
+            let full_name = method.name.with_prefix(I.intern(I.resolve(module_def.name.name()) + "." + I.resolve(enum_def.name.name())));
+            resolved_method.name = full_name;
+            let injected = inject_bounds(method.type_arg_defs, enum_def.type_arg_defs);
+            resolved_method.type_arg_defs = injected.resolve(method_ctx)?;
+            let method_qn = QualifiedName.new_method(parent_qn.name(), method.name.name());
+            resolved_method.qualified_name = Some(method_qn);
+            let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
+            resolved_method.default_value_names = default_value_names;
+            resolver.ctx.functions.insert(method_qn, resolved_method);
+        }
+        Ok(())
+    }
+
+    fn process_struct_derives(resolver: Resolver, module_name: I.String, resolved_struct_def: StructDef) -> Result[(), ResolveError] {
+        for derived in [
+            derive_partialeq_struct(resolved_struct_def, module_name),
+            derive_eq_struct(resolved_struct_def, module_name),
+            derive_partialord_struct(resolved_struct_def, module_name),
+            derive_ord_struct(resolved_struct_def, module_name),
+            derive_clone_struct(resolved_struct_def, module_name),
+            derive_json_serialize_struct(resolved_struct_def, module_name),
+            derive_json_deserialize_struct(resolved_struct_def, module_name),
+        ]
+        {
+            if let Some(derived) = derived {
+                resolver.register_derived_instance(derived)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn process_derives(resolver: Resolver, module_name: I.String, resolved_enum_def: EnumDef) -> Result[(), ResolveError] {
+        for derived in [
+            derive_partialeq_enum(resolved_enum_def, module_name),
+            derive_eq_enum(resolved_enum_def, module_name),
+            derive_partialord_enum(resolved_enum_def, module_name),
+            derive_ord_enum(resolved_enum_def, module_name),
+            derive_clone_enum(resolved_enum_def, module_name),
+            derive_from_int_enum(resolved_enum_def, module_name),
+            derive_json_serialize_enum(resolved_enum_def, module_name),
+            derive_json_deserialize_enum(resolved_enum_def, module_name),
+        ]
+        {
+            if let Some(derived) = derived {
+                resolver.register_derived_instance(derived)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) -> Result[(), ResolveError] {
+        let synth = instance_def.synth_name()?;
+        let trait_name = instance_def.subject.try_trait_name()?;
+        let synth_qname = QualifiedName.new_unnamed_instance(trait_name.name(), instance_def.args.clone());
+        for method in instance_def.methods {
+            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+        }
+        instance_def.methods = Vec.new();
+        instance_def.name = Some(synth);
+        instance_def.qualified_name = Some(synth_qname);
+        resolver.ctx.canonical_instances.push(instance_def);
+        resolver.ctx.all_instances.insert(synth_qname, instance_def);
+        Ok(())
+    }
+
+    fn process_instance(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        instance_def: InstanceDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_instance_def = instance_def.resolve(ctx)?;
+        for method in instance_def.methods {
+            resolved_instance_def.method_names.push(method.name);
+        }
+        let name = resolved_instance_def.get_instance_name()?;
+        let qualified_name = if let Some(explicit_name) = instance_def.name {
+            QualifiedName.new_named_instance(module_name, explicit_name.name())
+        } else {
+            let trait_name = resolved_instance_def.subject.try_trait_name()?;
+            QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone())
+        };
+        resolved_instance_def.qualified_name = Some(qualified_name);
+        resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
+        if let Some(name) = instance_def.name {
+            resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
+        } else {
+            resolved_instance_def.name = Some(name);
+            resolver.ctx.canonical_instances.push(resolved_instance_def);
+        }
+        if let Some(effect_name) = resolved_instance_def.subject.try_effect_name() {
+            let effect_qname = effect_name.resolved();
+            let effect_def = resolver.ctx.effects.get(effect_qname).unwrap();
+            let method_pairs = Vec.new();
+            for method in instance_def.methods {
+                let short_name = method.name.name;
+                if effect_def.method_map.names.get(short_name).is_none() {
+                    return Err(ResolveError.InvalidEffectInstanceMethod(method.name, effect_qname));
+                }
+                let effect_method = QualifiedName.new_method(effect_qname.name(), short_name);
+                let instance_method = QualifiedName.new_method(qualified_name.name(), short_name);
+                method_pairs.push((effect_method, instance_method));
+            }
+            let assoc_type_pairs = Vec.new();
+            let (effect_module, effect_short) = match effect_qname {
+                QualifiedName.Base(bni) => match bni.base() {
+                    BaseName.Effect(m, e) => (m, e),
+                    _ => panic("expected Effect baseName"),
+                },
+                _ => panic("expected Base qname for effect"),
+            };
+            for ta in resolved_instance_def.type_assignments {
+                let assoc_qname = QualifiedName.new_effect_associated_type(
+                    effect_module,
+                    effect_short,
+                    ta.name.name,
+                );
+                if resolver.ctx.effect_associated_types.get(assoc_qname).is_none() {
+                    return Err(ResolveError.UnknownAssociatedType(ta.name));
+                }
+                assoc_type_pairs.push((assoc_qname, ta.ty));
+            }
+            resolver.ctx.effect_instance_infos.insert(qualified_name, EffectInstanceInfo(effect_qname, method_pairs, assoc_type_pairs));
+        }
+        Ok(())
+    }
+
+    fn process_external_instance(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        instance_def: InstanceDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_instance_def = instance_def.resolve(ctx)?;
+
+        Ok(if let Some(name) = instance_def.name {
+            let qualified_name = QualifiedName.new_named_instance(module_def.name.name(), name.name());
+            resolver.derive_instance_methods(
+                resolved_instance_def,
+                qualified_name,
+                module_name,
+            )?;
+            resolved_instance_def.qualified_name = Some(qualified_name);
+            resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
+            resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
+        } else {
+            let synth_ident = resolved_instance_def.synth_name()?;
+            let trait_name = resolved_instance_def.subject.try_trait_name()?;
+            let synth_qname = QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone());
+            resolver.derive_instance_methods(
+                resolved_instance_def,
+                synth_qname,
+                module_name,
+            )?;
+            resolved_instance_def.name = Some(synth_ident);
+            resolved_instance_def.qualified_name = Some(synth_qname);
+            resolver.ctx.canonical_instances.push(resolved_instance_def);
+            resolver.ctx.all_instances.insert(synth_qname, resolved_instance_def);
+        })
+    }
+
+    fn process_instance_methods(
+        resolver: Resolver,
+        module_name: I.String,
+        instance_def: InstanceDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_instance_def = instance_def.resolve(ctx)?;
+        let assoc_type_names: Vec[I.String] = resolved_instance_def
+            .type_assignments
+            .iter()
+            .map(|ta| ta.name.name)
+            .collect();
+        let base_type_resolver = TypeResolver.new(module_resolver);
+        base_type_resolver.add_args(instance_def.type_arg_defs);
+        base_type_resolver.add_assoc_type_names(assoc_type_names);
+        let instance_qn = if let Some(explicit_name) = instance_def.name {
+            QualifiedName.new_named_instance(module_name, explicit_name.name())
+        } else {
+            let trait_name = resolved_instance_def.subject.try_trait_name()?;
+            QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone())
+        };
+        let instance_name = resolved_instance_def.get_instance_name()?;
+        for method in instance_def.methods {
+            if method.is_unsafe() {
+                return Err(ResolveError.UnsafeInstanceMethod(method.name));
+            }
+            let method_ctx = ResolverContext.new(base_type_resolver, resolver.ctx);
+            let resolved_method = method.resolve(method_ctx)?;
+            let full_name = method.name.with_prefix(instance_name.name());
+            resolved_method.name = full_name;
+            let injected = inject_bounds(method.type_arg_defs, instance_def.type_arg_defs);
+            resolved_method.type_arg_defs = injected.resolve(method_ctx)?;
+            let method_qn = QualifiedName.new_method(instance_qn.name(), method.name.name());
+            resolved_method.qualified_name = Some(method_qn);
+            resolver.process_function_args(module_name, method_qn, method, False)?;
+            resolver.ctx.functions.insert(method_qn, resolved_method);
+        }
+        Ok(())
+    }
+
+    fn derive_instance_methods(
+        resolver: Resolver,
+        resolved_instance_def: InstanceDef,
+        parent_qn: QualifiedName,
+        module_name: I.String,
+    ) -> Result[(), ResolveError] {
+        let type_qname = resolved_instance_def.args[0].name();
+        let self_type = resolved_instance_def.args[0];
+        let type_arg_defs = resolved_instance_def.type_arg_defs;
+        let trait_name_qn = resolved_instance_def.subject.try_trait_name()?.resolved();
+        let external_info = resolved_instance_def
+            .external_derived_instance_info
+
+            .unwrap();
+
+
+        let type_data = if let Some(e) = resolver.ctx.enums.get(type_qname) {
+            TypeData.Enum(e)
+        } else if let Some(s) = resolver.ctx.structs.get(type_qname) {
+            TypeData.Struct(s)
+        } else {
+            return Ok(());
+        };
+
+        let maybe_method = match external_info.params {
+            None => match trait_name_qn {
+                s if s == B.get_trait_partial_eq_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_partialeq_method(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_partialeq_struct_method(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_partial_ord_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_partialord_method(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_partialord_struct_method(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_ord_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_ord_method(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_ord_struct_method(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_clone_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_clone_method_enum(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_clone_method_struct(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_from_int_qn() => match type_data {
+                    TypeData.Enum(e) => Some(build_from_int_method(
+                        e, parent_qn, self_type, module_name,
+                    )),
+                    _ => None,
+                },
+                s if s == B.get_trait_json_serialize_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_json_serialize_method_enum(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_json_serialize_method_struct(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                s if s == B.get_trait_json_deserialize_qn() => Some(match type_data {
+                    TypeData.Enum(e) => build_json_deserialize_method_enum(
+                        e, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                    TypeData.Struct(s) => build_json_deserialize_method_struct(
+                        s, parent_qn, type_arg_defs, self_type, module_name,
+                    ),
+                }),
+                _ => None,
+            }
+            Some(params) => {
+                let trait_qname = resolved_instance_def.subject.try_trait_name()?.resolved();
+                let trait_def = if let Some(trait_def) = resolver.ctx.traits.get(trait_qname) {
+                    trait_def
+                } else {
+                    return Ok(());
+                };
+                let mode = params.mode;
+                let body_strategy = params.body;
+                let loc = resolved_instance_def.location;
+                let (short_ident, fn_qname) = match params.fn_name {
+                    FnName.Inferred => {
+                        if trait_def.method_map.names.len() != 1 {
+                            return Ok(());
+                        }
+                        let (short, qname) = trait_def.method_map.names.iter().next().unwrap();
+                        (Identifier.new(short, loc), qname)
+                    }
+                    FnName.Explicit(var) => {
+                        let short = var.name();
+                        let qname = if let Some(qname) = trait_def.method_map.names.get(short) {
+                            qname
+                        } else {
+                            return Ok(());
+                        };
+                        (Identifier.new(short, loc), qname)
+                    }
+                };
+                let extra_args: Vec[FunctionArg] = {
+                    match resolver.ctx.functions.get(fn_qname) {
+                        None => [],
+                        Some(m) => {
+                            m.args.iter().skip(1).collect()
+                        }
+                    }
+                };
+                Some(match mode {
+                    ExternalDeriveMode.Map => match type_data {
+                        TypeData.Enum(e) => build_map_method(
+                            e, parent_qn, type_arg_defs, self_type,
+                            fn_qname, short_ident, module_name, extra_args, body_strategy,
+                        ),
+                        TypeData.Struct(s) => build_map_method_struct(
+                            s, parent_qn, type_arg_defs, self_type,
+                            fn_qname, short_ident, module_name, extra_args, body_strategy,
+                        ),
+                    }
+                    ExternalDeriveMode.Fold => match type_data {
+                        TypeData.Enum(e) => build_fold_method(
+                            e, parent_qn, type_arg_defs,
+                            fn_qname, short_ident, module_name, extra_args, body_strategy,
+                        ),
+                        TypeData.Struct(s) => build_fold_method_struct(
+                            s, parent_qn, type_arg_defs,
+                            fn_qname, short_ident, module_name, extra_args, body_strategy,
+                        ),
+                    }
+                })
+            }
+        };
+
+        if let Some((method, short_name)) = maybe_method {
+            resolved_instance_def.method_names.push(short_name);
+            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+        }
+        Ok(())
+    }
+
+    fn process_trait(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        trait_def: TraitDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_trait_def = trait_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_trait(module_def.name.name(), trait_def.name.name());
+        for method in trait_def.methods {
+            resolved_trait_def
+                .method_map
+                .names
+                .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
+            if method.body.is_none() {
+                resolved_trait_def
+                    .required_method_names
+                    .push(method.name);
+            }
+        }
+        resolver.ctx.traits.insert(qualified_name, resolved_trait_def);
+        Ok(())
+    }
+
+    fn process_trait_methods(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        trait_def: TraitDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_trait_def = trait_def.resolve(ctx)?;
+        let assoc_names: Vec[I.String] = trait_def
+            .associated_types
+            .iter()
+            .map(|at| at.name.name)
+            .collect();
+        let base_trait_resolver = TypeResolver.new(module_resolver);
+        base_trait_resolver.add_type_args(trait_def.type_args);
+        base_trait_resolver.add_args(trait_def.type_arg_defs);
+        base_trait_resolver.add_assoc_type_names(assoc_names);
+        for method in trait_def.methods {
+            let method_ctx = ResolverContext.new(base_trait_resolver, resolver.ctx);
+            let resolved_method = method.resolve(method_ctx)?;
+            let trait_qn = QualifiedName.new_trait(module_def.name.name(), trait_def.name.name());
+            let full_name = method.name.with_prefix(I.intern(I.resolve(module_def.name.name()) + "." + I.resolve(trait_def.name.name())));
+            resolved_method.name = full_name;
+            update_type_arg_def(module_def, trait_def, resolved_method);
+            resolved_method.kind = FunctionDefKind.TraitMethod;
+            let method_qn = QualifiedName.new_method(trait_qn.name(), method.name.name());
+            resolved_method.qualified_name = Some(method_qn);
+            let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
+            resolved_method.default_value_names = default_value_names;
+            resolver.ctx.functions.insert(method_qn, resolved_method);
+        }
+        Ok(())
+    }
+
+    fn process_effect(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        effect_def: Eff.EffectDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_effect_def = effect_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_effect(module_def.name.name(), effect_def.name.name());
+        for method in effect_def.methods {
+            resolved_effect_def.method_map.names.insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
+        }
+        resolver.ctx.effects.insert(qualified_name, resolved_effect_def);
+        for assoc_type in effect_def.associated_types {
+            let assoc_qname = QualifiedName.new_effect_associated_type(module_def.name.name(), effect_def.name.name(), assoc_type.name.name());
+            resolver.ctx.effect_associated_types.insert(assoc_qname, Eff.AssociatedTypeDef(effect_name: qualified_name));
+        }
+        Ok(())
+    }
+
+    fn process_effect_methods(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        effect_def: Eff.EffectDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_effect_def = effect_def.resolve(ctx)?;
+        let base_effect_resolver = TypeResolver.new(module_resolver);
+        // The effect's bracket params (`[Foo: MyTrait[Foo]]`) are bounds on the
+        // effect's associated types, not real type variables. They must NOT be
+        // added to the type-var scope: their names are associated types and have
+        // to resolve to EATs (e.g. Main.MyEff.Foo) in the method signatures.
+        for method in effect_def.methods {
+            let method_ctx = ResolverContext.new(base_effect_resolver, resolver.ctx);
+            let resolved_method = method.resolve(method_ctx)?;
+            let effect_qn = QualifiedName.new_effect(module_def.name.name(), effect_def.name.name());
+            let full_name = method.name.with_prefix(I.intern(I.resolve(module_def.name.name()) + "." + I.resolve(effect_def.name.name())));
+            resolved_method.name = full_name;
+            resolved_method.kind = FunctionDefKind.EffectMethod;
+            let method_qn = QualifiedName.new_method(effect_qn.name(), method.name.name());
+            resolved_method.qualified_name = Some(method_qn);
+            let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
+            resolved_method.default_value_names = default_value_names;
+            resolver.ctx.functions.insert(method_qn, resolved_method);
+        }
+        Ok(())
+    }
+
+    fn process_global(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        global_def: GlobalDef,
+    ) -> Result[(), ResolveError] {
+        let function_def = FunctionDef(
+            annotations: global_def.annotations,
+            public: global_def.public,
+            name: global_def.name,
+            qualified_name: Some(QualifiedName.new_global(module_def.name.name(), global_def.name.name())),
+            kind: FunctionDefKind.Regular,
+            type_arg_defs: None,
+            args: Vec.new(),
+            yield_type: None,
+            result_type: Some(global_def.ty),
+            body: Some(global_def.expr),
+            module_name: module_name,
+            var_allocator: VarAllocator.new(),
+            label_allocator: LabelAllocator.new(),
+            is_varargs: False,
+            default_value_names: Vec.new(),
+            source_package: None,
+        );
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_function_def = function_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_global(module_def.name.name(), global_def.name.name());
+        resolver.ctx.functions.insert(qualified_name, resolved_function_def);
+        Ok(())
+    }
+
+    fn process_implicit(
+        resolver: Resolver,
+        module_name: I.String,
+        module_def: M.Module,
+        implicit_def: ImplicitDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let type_resolver = TypeResolver.new(module_resolver);
+        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+        let resolved_implicit_def = implicit_def.resolve(ctx)?;
+        let qualified_name = QualifiedName.new_implicit(module_def.name.name(), implicit_def.name.name());
+        resolver.ctx
+            .implicits
+            .insert(qualified_name, resolved_implicit_def);
+        Ok(())
+    }
+
+    fn warn_unused_imports(resolver: Resolver, modules: Vec[M.Module], module_name: I.String) {
+        let module_def = modules.iter().find(|m| m.name.name() == module_name).unwrap();
+        for item in module_def.items {
+            if let M.ModuleItem.Import(def) = item {
+                if !def.is_implicit && !def.used {
+                    warn(
+                        "unused import: " + I.resolve(def.module_name.name()),
+                        Some(def.module_name.location),
+                    );
+                }
+            }
+        }
+    }
+
+    fn process_function_args(
+        resolver: Resolver,
+        module_name: I.String,
+        qualified_fn_name: QualifiedName,
+        function_def: FunctionDef,
+        allowed: Bool,
+    ) -> Result[Vec[DefaultValueInfo], ResolveError] {
+        let seen_default = False;
+        for arg in function_def.args {
+            match arg.default_value {
+                Some(_) => {
+                    if !allowed {
+                        return Err(ResolveError.DefaultArgNotAllowed(function_def.name));
+                    }
+                    seen_default = True;
+                }
+                None => {
+                    if seen_default {
+                        return Err(ResolveError.DefaultArgNotAtEnd(function_def.name));
+                    }
+                }
+            }
+        }
+
+        let default_value_names = Vec.new();
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        for (index, arg) in function_def.args.iter().enumerate() {
+            if let Some(expr) = arg.default_value {
+                let qualified_name = QualifiedName.new_default_arg(qualified_fn_name.name(), index);
+                let def_name = Identifier(qualified_name.name(), function_def.name.location);
+                let helper_def = FunctionDef(
+                    annotations: Vec.new(),
+                    public: False,
+                    name: def_name,
+                    qualified_name: Some(qualified_name),
+                    kind: FunctionDefKind.Regular,
+                    type_arg_defs: None,
+                    args: Vec.new(),
+                    yield_type: None,
+                    result_type: Some(arg.type_def),
+                    body: Some(expr),
+                    module_name: module_name,
+                    var_allocator: VarAllocator.new(),
+                    label_allocator: LabelAllocator.new(),
+                    is_varargs: False,
+                    default_value_names: Vec.new(),
+                    source_package: None,
+                );
+                let type_resolver = TypeResolver.new(module_resolver);
+                let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+                let resolved_helper = helper_def.resolve(ctx)?;
+                resolver.ctx.functions.insert(qualified_name, resolved_helper);
+                default_value_names.push(DefaultValueInfo(index, qualified_name));
+            }
+        }
+        Ok(default_value_names)
+    }
+
+    fn process_default_value_fields(
+        resolver: Resolver,
+        module_name: I.String,
+        qualified_struct_name: QualifiedName,
+        struct_def: StructDef,
+    ) -> Result[Vec[DefaultValueInfo], ResolveError] {
+        let seen_default = False;
+        for field in struct_def.fields {
+            match field.default_value {
+                Some(_) => { seen_default = True; }
+                None => {
+                    if seen_default {
+                        return Err(ResolveError.StructFieldDefaultNotAtEnd(field.name));
+                    }
+                }
+            }
+        }
+
+        let default_value_names = Vec.new();
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        for (index, field) in struct_def.fields.iter().enumerate() {
+            if let Some(expr) = field.default_value {
+                let qualified_name = QualifiedName.new_default_arg(qualified_struct_name.name(), index);
+                let def_name = Identifier(qualified_name.name(), struct_def.name.location);
+                let helper_def = FunctionDef(
+                    annotations: Vec.new(),
+                    public: False,
+                    name: def_name,
+                    qualified_name: Some(qualified_name),
+                    kind: FunctionDefKind.Regular,
+                    type_arg_defs: None,
+                    args: Vec.new(),
+                    yield_type: None,
+                    result_type: Some(field.ty),
+                    body: Some(expr),
+                    module_name: module_name,
+                    var_allocator: VarAllocator.new(),
+                    label_allocator: LabelAllocator.new(),
+                    is_varargs: False,
+                    default_value_names: Vec.new(),
+                    source_package: None,
+                );
+                let type_resolver = TypeResolver.new(module_resolver);
+                let ctx = ResolverContext.new(type_resolver, resolver.ctx);
+                let resolved_helper = helper_def.resolve(ctx)?;
+                resolver.ctx.functions.insert(qualified_name, resolved_helper);
+                default_value_names.push(DefaultValueInfo(index, qualified_name));
+            }
+        }
+        Ok(default_value_names)
+    }
+}
+
+enum TypeData {
+    Enum(EnumDef),
+     Struct(StructDef),
+}
+
+fn add_preludes(modules: Vec[M.Module]) {
+    let prelude_names: Vec[_] = modules
+        .iter()
+        .filter(|m| m.annotations.iter().any(|a| a.is_prelude()))
+        .map(|m| m.name)
+        .collect();
+
+    for module_def in modules {
+        for prelude_name in prelude_names {
+            if prelude_name.name != module_def.name.name {
+                module_def
+                    .items
+                    .push(M.ModuleItem.Import(M.ImportDef(
+                        module_name: prelude_name,
+                        alias: None,
+                        is_implicit: True,
+                        used: False,
+                    )));
+            }
+        }
+    }
+}
+
+pub struct ResolverContext {
+    pub type_resolver: TypeResolver,
+    pub global_ctx: GlobalResolverContext,
+
+    pub fn new(type_resolver: TypeResolver, global_ctx: GlobalResolverContext) -> ResolverContext {
+        ResolverContext(type_resolver, global_ctx)
+    }
+
+    pub fn module_name(ctx: ResolverContext) -> I.String {
+        ctx.type_resolver.module_name()
+    }
+
+    pub fn module_resolver(ctx: ResolverContext) -> ModuleResolver {
+        ctx.type_resolver.module_resolver()
+    }
+}
+
+pub trait Resolvable[T] {
+    fn resolve(t: T, ctx: ResolverContext) -> Result[T, ResolveError]
+}
+
+instance [T: Resolvable[T]] Resolvable[Vec[T]] {
+    fn resolve(v: Vec[T], ctx: ResolverContext) -> Result[Vec[T], ResolveError] {
+        let result = Vec.new();
+        for t in v {
+            result.push(t.resolve(ctx)?);
+        }
+        Ok(result)
+    }
+}
+
+instance [T: Resolvable[T]] Resolvable[Option[T]] {
+    fn resolve(o: Option[T], ctx: ResolverContext) -> Result[Option[T], ResolveError] {
+        match o {
+            None => Ok(None),
+            Some(t) => Ok(Some(t.resolve(ctx)?)),
+        }
+    }
+}
+
+fn inject_bounds(
+    target: Option[TypeArgDefs],
+    source: Option[TypeArgDefs],
+) -> Option[TypeArgDefs] {
+    let s = if let Some(s) = source {
+        s
+    } else {
+        return target;
+    };
+    if s.type_args.is_empty() && s.bounds.is_empty() {
+        return target;
+    }
+    // The injected (container) bounds come from the instance/struct/enum, so
+    // they are context bounds: marked InstanceContext so the monomorphizer fills
+    // their witnesses from the dispatch module rather than forwarding them.
+    let context_bounds: Vec[Bound] = s.bounds.iter().map(|b| {
+        let b = b.clone();
+        b.origin = BoundOrigin.InstanceContext;
+        b
+    }).collect();
+    Some(match target {
+        None => {
+            let marked = s.clone();
+            marked.bounds = context_bounds;
+            marked
+        }
+        Some(existing) => {
+            let existing_names: Vec[I.String] =
+                existing.type_args.iter().map(|a| a.name).collect();
+            let extra_from_struct: Vec[_] = s
+                .type_args
+                .iter()
+                .filter(|a| !existing_names.contains(a.name))
+                .collect();
+            let combined_bounds = context_bounds;
+            for b in existing.bounds {
+                // Dedup ignoring origin: a bound repeated on the method keeps the
+                // context entry already injected from the container.
+                let already = combined_bounds.iter().any(|cb|
+                    cb.trait_name == b.trait_name
+                    && cb.type_args == b.type_args
+                    && cb.constraints == b.constraints);
+                if !already {
+                    combined_bounds.push(b);
+                }
+            }
+            TypeArgDefs(
+                existing
+                    .type_args
+                    .iter()
+                    .chain(extra_from_struct.iter())
+                    .collect(),
+                combined_bounds,
+            )
+        }
+    })
+}
+
+fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_method: FunctionDef) {
+    // Extend type_arg_defs with the trait's own type params (including
+    // associated types) and a self-bound with assoc constraints pre-filled.
+    // Filling the constraints here means bound_expansion never needs to
+    // invent a self-referential name for trait methods — it sees the
+    // constraint already present and skips it.
+    let trait_qname = QualifiedName.new_trait(module_def.name.name(), trait_def.name.name());
+    let assoc_constraints: Vec[Constraint] = trait_def
+        .associated_types
+        .iter()
+        .map(|at| Constraint(
+            at.name.clone(),
+            TypeDef.Var(TypeVar.Named(at.name.name.clone())),
+        ))
+        .collect();
+    // The trait self-bound is the dispatch bound (consumed at dispatch, never
+    // filled as an instance-method context bound), so it is MethodOwn.
+    let self_bound = Bound(
+        Name.inner(trait_qname.clone()),
+        trait_def
+            .type_args
+            .iter()
+            .map(|id| Name.Unresolved(id.clone()))
+            .collect(),
+        assoc_constraints,
+        BoundOrigin.MethodOwn,
+    );
+    // assoc type names become proper type params on every trait method
+    let assoc_type_args: Vec[Identifier] = trait_def
+        .associated_types
+        .iter()
+        .map(|at| at.name.clone())
+        .collect();
+    let type_arg_defs = match resolved_method.type_arg_defs {
+        None => TypeArgDefs(
+            trait_def
+                .type_args
+                .iter()
+                .cloned()
+                .chain(assoc_type_args)
+                .collect(),
+            [self_bound],
+        ),
+        Some(existing_defs) => {
+            let type_args = trait_def
+                .type_args
+                .iter()
+                .cloned()
+                .chain(assoc_type_args)
+                .chain(existing_defs.type_args)
+                .collect();
+            let bounds = [self_bound];
+            bounds.extend(existing_defs.bounds);
+            TypeArgDefs ( type_args, bounds )
+        }
+    };
+    resolved_method.type_arg_defs = Some(type_arg_defs);
+}
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

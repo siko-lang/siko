@@ -407,7 +407,9 @@ fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: B
     }
     subdirs.sort();
     for subdir in subdirs {
-        if Path.exists(Path.join(subdir, "main.sk")) {
+        let has_main = Path.exists(Path.join(subdir, "main.sk")) ||
+            Path.exists(Path.join(subdir, "src/main.sk"));
+        if has_main {
             if filters.is_empty() || any_filter_matches(subdir, filters) {
                 out.push(build_test_case(subdir, nostd));
             }

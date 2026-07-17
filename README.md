@@ -23,21 +23,6 @@ make runner.bin
 ./runner.bin --c ./siko2.bin typecheck # runs everything containing typecheck using siko2.bin as compiler
 ```
 
-The runner discovers cases under `test/success/nostd`, `test/success/std`, and
-`test/failure`. A directory containing `main.sk` is a case; if it also has
-`package.toml`, the directory is built as a package, otherwise `main.sk` is
-built directly. Success cases compile and run the binary from the case
-directory, then compare stdout with `output.txt`. Failure cases expect the
-compiler to fail and compare compiler stdout with `output.txt`. Add a `SKIP`
-file in a case directory to skip it.
-
-Useful flags:
-
-- `--bless`: rewrite `output.txt` snapshots from current output.
-- `--valgrind`: run success-case binaries under Valgrind.
-- `--llvm`: pass `--llvm` to every compiler invocation.
-- `--c <compiler>`: use a compiler other than `./siko.bin`.
-
 ## License
 
 MIT
