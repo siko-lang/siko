@@ -1,0 +1,292 @@
+module TLS.BIO {
+
+import Std.Error
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Closer
+import Std.Libc.String
+import Std.Net.TcpStream
+import Std.Ptr
+import Std.Slice
+import Std.Intrinsics
+import TLS.OpenSSL.CApi
+import TLS.Error
+
+pub struct State {
+    tcp: TcpStream,
+    last_error: Option[Error],
+    eof: Bool,
+    closed: Bool,
+
+    @safe
+    pub fn new(tcp: TcpStream) -> *State {
+        let state: *State = gc_allocate();
+        *state = State(tcp: tcp, last_error: None, eof: False, closed: False);
+        state
+    }
+}
+
+pub struct Bios {
+    state: *State,
+    method: void*,
+    read_bio: void*,
+    write_bio: void*,
+    name: CString,
+
+    @safe
+    pub fn new(tcp: TcpStream) -> Result[Bios, Error] {
+        let state = State.new(tcp);
+        let name = CString.from_string("siko-blocking-tcp-bio");
+        let method = create_method(name);
+        if is_null_voidptr(method) {
+            let error = bio_error("create BIO method", "BIO_meth_new or callback installation failed");
+            defer close_state(state);
+            return Err(error).context();
+        }
+        let read_bio = create_bio(method, state);
+        if is_null_voidptr(read_bio) {
+            let error = bio_error("create read BIO", "BIO_new returned null");
+            CApi.bio_meth_free(method);
+            defer close_state(state);
+            return Err(error).context();
+        }
+        let write_bio = create_bio(method, state);
+        if is_null_voidptr(write_bio) {
+            let error = bio_error("create write BIO", "BIO_new returned null");
+            CApi.bio_free(read_bio);
+            CApi.bio_meth_free(method);
+            defer close_state(state);
+            return Err(error).context();
+        }
+        Ok(Bios(
+            state: state,
+            method: method,
+            read_bio: read_bio,
+            write_bio: write_bio,
+            name: name,
+        ))
+    }
+
+    @safe
+    pub fn read_bio(bios: Bios) -> void* {
+        bios.read_bio
+    }
+
+    @safe
+    pub fn write_bio(bios: Bios) -> void* {
+        bios.write_bio
+    }
+
+    @safe
+    pub fn clear_error(bios: Bios) {
+        let state = *bios.state;
+        state.last_error = None;
+    }
+
+    @safe
+    pub fn take_error(bios: Bios) -> Option[Error] {
+        let state = *bios.state;
+        let error = state.last_error;
+        state.last_error = None;
+        error
+    }
+
+    @safe
+    pub fn saw_eof(bios: Bios) -> Bool {
+        let state = *bios.state;
+        state.eof
+    }
+
+    @safe
+    pub fn close_transport(bios: Bios) -> Result[(), Error] {
+        close_state(bios.state)
+    }
+
+    @safe
+    pub fn free_method(bios: Bios) {
+        if !is_null_voidptr(bios.method) {
+            CApi.bio_meth_free(bios.method);
+            bios.method = get_null_voidptr();
+        }
+    }
+}
+
+fn bio_error(operation: String, message: String) -> SslError {
+    SslError.Library(operation, 0, message)
+}
+
+@safe
+fn close_state(state_ptr: *State) -> Result[(), Error] {
+    let state = *state_ptr;
+    if state.closed {
+        return Ok(());
+    }
+    state.closed = True;
+    match state.tcp.close() {
+        Ok(_) => Ok(()),
+        Err(error) => Err(error),
+    }
+}
+
+@unsafe
+fn create_method(name: CString) -> void* {
+    CApi.err_clear_error();
+    let method = CApi.bio_meth_new(CApi.BIO_TYPE_SOURCE_SINK, name.as_ptr());
+    if is_null_voidptr(method) {
+        return get_null_voidptr();
+    }
+    if CApi.bio_meth_set_write_ex(method, bio_write) != 1 {
+        CApi.bio_meth_free(method);
+        return get_null_voidptr();
+    }
+    if CApi.bio_meth_set_read_ex(method, bio_read) != 1 {
+        CApi.bio_meth_free(method);
+        return get_null_voidptr();
+    }
+    if CApi.bio_meth_set_ctrl(method, bio_ctrl) != 1 {
+        CApi.bio_meth_free(method);
+        return get_null_voidptr();
+    }
+    if CApi.bio_meth_set_create(method, bio_create) != 1 {
+        CApi.bio_meth_free(method);
+        return get_null_voidptr();
+    }
+    if CApi.bio_meth_set_destroy(method, bio_destroy) != 1 {
+        CApi.bio_meth_free(method);
+        return get_null_voidptr();
+    }
+    method
+}
+
+@unsafe
+fn create_bio(method: void*, state: *State) -> void* {
+    CApi.err_clear_error();
+    let bio = CApi.bio_new(method);
+    if is_null_voidptr(bio) {
+        return get_null_voidptr();
+    }
+    CApi.bio_set_data(bio, transmute(state));
+    CApi.bio_set_init(bio, 1);
+    bio
+}
+
+@unsafe
+fn state_from_bio(bio: void*) -> *State {
+    transmute(CApi.bio_get_data(bio))
+}
+
+@unsafe
+fn record_error(state_ptr: *State, error: Error) {
+    let state = *state_ptr;
+    state.last_error = Some(error);
+}
+
+@unsafe
+@c_callback
+fn bio_create(bio: void*) -> I32 {
+    CApi.bio_set_data(bio, get_null_voidptr());
+    CApi.bio_set_init(bio, 0);
+    1
+}
+
+@unsafe
+@c_callback
+fn bio_destroy(bio: void*) -> I32 {
+    CApi.bio_set_data(bio, get_null_voidptr());
+    CApi.bio_set_init(bio, 0);
+    1
+}
+
+@unsafe
+@c_callback
+fn bio_read(bio: void*, data: *U8, size: U64, read_bytes: *U64) -> I32 {
+    *read_bytes = 0;
+    if size == 0 {
+        return 1;
+    }
+    let state_ptr = state_from_bio(bio);
+    if is_null_ptr(state_ptr) {
+        return 0;
+    }
+    let state = *state_ptr;
+    match state.tcp.read(Slice.from_raw(data, size.as_int())) {
+        Ok(0) => {
+            state.eof = True;
+            0
+        }
+        Ok(count) => {
+            *read_bytes = count.as_u64();
+            1
+        }
+        Err(error) => {
+            record_error(state_ptr, error);
+            0
+        }
+    }
+}
+
+@unsafe
+@c_callback
+fn bio_write(bio: void*, data: *U8, size: U64, written_bytes: *U64) -> I32 {
+    *written_bytes = 0;
+    if size == 0 {
+        return 1;
+    }
+    let state_ptr = state_from_bio(bio);
+    if is_null_ptr(state_ptr) {
+        return 0;
+    }
+    let state = *state_ptr;
+    let offset = 0;
+    let total = size.as_int();
+    while offset < total {
+        match state.tcp.write(Slice.from_raw(offset_of(data, offset), total - offset)) {
+            Ok(0) => {
+                let result: Result[(), Error] = Err(SslError.WriteZero).context();
+                match result {
+                    Err(error) => record_error(state_ptr, error),
+                    Ok(_) => {}
+                }
+                return 0;
+            }
+            Ok(count) => {
+                offset = offset + count;
+                *written_bytes = offset.as_u64();
+            }
+            Err(error) => {
+                record_error(state_ptr, error);
+                return 0;
+            }
+        }
+    }
+    1
+}
+
+@unsafe
+@c_callback
+fn bio_ctrl(bio: void*, command: I32, value: I64, argument: void*) -> I64 {
+    if command == CApi.BIO_CTRL_FLUSH {
+        return 1;
+    }
+    if command == CApi.BIO_CTRL_PENDING || command == CApi.BIO_CTRL_WPENDING {
+        return 0;
+    }
+    if command == CApi.BIO_CTRL_GET_CLOSE {
+        return 0;
+    }
+    if command == CApi.BIO_CTRL_SET_CLOSE {
+        return 1;
+    }
+    if command == CApi.BIO_CTRL_EOF {
+        let state_ptr = state_from_bio(bio);
+        if is_null_ptr(state_ptr) {
+            return 1;
+        }
+        let state = *state_ptr;
+        if state.eof { 1 } else { 0 }
+    } else {
+        0
+    }
+}
+
+}

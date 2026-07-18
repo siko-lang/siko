@@ -51,7 +51,7 @@ pub struct Vec[T] {
 
     @safe
     pub fn get(v: Vec[T], index: Int) -> T {
-        if index >= v.size {
+        if index < 0 || index >= v.size {
             panic("Index out of bounds");
         }
         *offset_of(v.data, index)
@@ -59,7 +59,7 @@ pub struct Vec[T] {
 
     @safe
     pub fn get_opt(v: Vec[T], index: Int) -> Option[T] {
-        if index >= v.size {
+        if index < 0 || index >= v.size {
             return None;
         }
         Some(*offset_of(v.data, index))
@@ -112,6 +112,9 @@ pub struct Vec[T] {
 
     @safe
     pub fn insert(v: Vec[T], index: Int, item: T) {
+        if index < 0 || index > v.size {
+            panic("Index out of bounds");
+        }
         if v.size == v.capacity {
             v.grow();
         }
@@ -122,7 +125,7 @@ pub struct Vec[T] {
 
     @safe
     pub fn remove(v: Vec[T], index: Int) -> T {
-        if index >= v.size {
+        if index < 0 || index >= v.size {
             panic("Index out of bounds");
         }
         let item = *offset_of(v.data, index);
@@ -315,6 +318,9 @@ instance[T] IndexAssign[Vec[T]] {
 
     @safe
     fn index_assign(a: Vec[T], index: Int, value: T) {
+        if index < 0 || index >= a.size {
+            panic("Index out of bounds");
+        }
         *offset_of(a.data, index) = value;
     }
 }

@@ -1,0 +1,37 @@
+module TLS.Error {
+
+import Std.Error
+
+pub enum SslError {
+    InvalidConfiguration(String),
+    Library(String, I32, String),
+    Verification(String, I64, String),
+    UnexpectedEof,
+    WriteZero,
+    Closed,
+}
+
+instance ToString[SslError] {
+    fn to_string(error: SslError) -> String {
+        match error {
+            SslError.InvalidConfiguration(message) => "invalid TLS configuration: ${message}",
+            SslError.Library(operation, class, message) => {
+                "OpenSSL ${operation} failed (class ${class}): ${message}"
+            }
+            SslError.Verification(operation, code, message) => {
+                "TLS certificate verification failed during ${operation} (${code}): ${message}"
+            }
+            SslError.UnexpectedEof => "TLS peer closed the TCP stream without close_notify",
+            SslError.WriteZero => "TLS transport returned a zero-length write",
+            SslError.Closed => "TLS stream is closed",
+        }
+    }
+}
+
+instance Error[SslError] {
+    fn message(error: SslError) -> String {
+        error.to_string()
+    }
+}
+
+}

@@ -1,9 +1,9 @@
 module SSG.Site {
 
-import Std.Fs.File as FsFile
+import Std.Fs.File
 import Std.Fs.Directory
 import Std.Fs.Path
-import Std.IO.Error
+import Std.Error
 import SSG.MD
 import SSG.Template
 import SSG.NavGen
@@ -53,7 +53,7 @@ struct DirMeta {
 
 fn read_dir_meta(dir: String, folder_name: String) -> DirMeta {
     let default_title = folder_name.capitalize();
-    match FsFile.read_file(Path.join(dir, "metadata.md")) {
+    match File.read_file(Path.join(dir, "metadata.md")) {
         Err(_) => DirMeta(title: default_title, priority: 0),
         Ok(src) => {
             let doc = parse(src);
@@ -119,12 +119,12 @@ fn build_recursive(src_dir: String, out_dir: String, layouts_dir: String, ancest
             if name == "metadata.md" { continue; }
             let slug = slug_from_filename(name);
             let src_path = Path.join(src_dir, name);
-            let src = FsFile.read_file(src_path)?;
+            let src = File.read_file(src_path)?;
             let doc = parse(src);
             let title = title_from_doc(doc);
             let date = date_from_doc(doc);
             let layout_name = layout_from_doc(doc);
-            let layout = FsFile.read_file(Path.join(layouts_dir, "${layout_name}.html"))?;
+            let layout = File.read_file(Path.join(layouts_dir, "${layout_name}.html"))?;
             let breadcrumb = make_breadcrumb(ancestors, title);
             let prefix = root_prefix(ancestors.len());
             let html = render(layout, doc)
@@ -132,7 +132,7 @@ fn build_recursive(src_dir: String, out_dir: String, layouts_dir: String, ancest
                 .replace("{{style_path}}", prefix)
                 .replace("{{nav_path}}", "");
             let out_path = Path.join(out_dir, "${slug}.html");
-            FsFile.write_file(out_path, html)?;
+            File.write_file(out_path, html)?;
             println("  ${src_path} -> ${out_path}");
             posts.push(PostInfo(title: title, date: date, slug: slug, is_dir: False, priority: priority_from_doc(doc)));
         } else if entry.is_directory() {
@@ -149,7 +149,7 @@ fn build_recursive(src_dir: String, out_dir: String, layouts_dir: String, ancest
     }
 
     let nav = generate(posts);
-    FsFile.write_file(Path.join(out_dir, "nav.html"), nav)?;
+    File.write_file(Path.join(out_dir, "nav.html"), nav)?;
 
     Ok(posts)
 }
@@ -173,14 +173,14 @@ fn build_section_index(posts: Vec[PostInfo], folder: String, label: String, ance
     }
     crumb = crumb + " · ${label}";
     let style_prefix = root_prefix(depth);
-    let layout = FsFile.read_file(Path.join(layouts_dir, "index.html"))?;
+    let layout = File.read_file(Path.join(layouts_dir, "index.html"))?;
     let html = layout
         .replace("{{title}}", label)
         .replace("{{content}}", nav)
         .replace("{{breadcrumb}}", crumb)
         .replace("{{style_path}}", style_prefix);
     let out_path = Path.join(out_dir, "${folder}.html");
-    FsFile.write_file(out_path, html)?;
+    File.write_file(out_path, html)?;
     println("  index -> ${out_path}");
     Ok(())
 }
@@ -195,7 +195,7 @@ fn best_target(src_root: String, folder: String) -> Result[String, Error] {
         let filename = entry.name();
         if !filename.ends_with(".md") { continue; }
         let slug = slug_from_filename(filename);
-        let src = FsFile.read_file(Path.join(src_subdir, filename))?;
+        let src = File.read_file(Path.join(src_subdir, filename))?;
         let doc = parse(src);
         let date = date_from_doc(doc);
         if best_slug.is_empty() || date > best_date {
@@ -231,13 +231,13 @@ pub fn build(src_root: String, out_root: String, layouts_dir: String) -> Result[
             if name == "metadata.md" { continue; }
             let slug = slug_from_filename(name);
             let src_path = Path.join(src_root, name);
-            let src = FsFile.read_file(src_path)?;
+            let src = File.read_file(src_path)?;
             let doc = parse(src);
             let title = title_from_doc(doc);
             let date = date_from_doc(doc);
             let priority = priority_from_doc(doc);
             let layout_name = layout_from_doc(doc);
-            let layout = FsFile.read_file(Path.join(layouts_dir, "${layout_name}.html"))?;
+            let layout = File.read_file(Path.join(layouts_dir, "${layout_name}.html"))?;
             let top_ancestors: Vec[Ancestor] = Vec.new();
             let breadcrumb = make_breadcrumb(top_ancestors, title);
             let html = render(layout, doc)
@@ -245,7 +245,7 @@ pub fn build(src_root: String, out_root: String, layouts_dir: String) -> Result[
                 .replace("{{style_path}}", "")
                 .replace("{{nav_path}}", "");
             let out_path = Path.join(out_root, "${slug}.html");
-            FsFile.write_file(out_path, html)?;
+            File.write_file(out_path, html)?;
             println("  ${src_path} -> ${out_path}");
             nav_entries.push(PostInfo(title: title, date: date, slug: slug, is_dir: False, priority: priority));
         }
@@ -261,13 +261,13 @@ pub fn build(src_root: String, out_root: String, layouts_dir: String) -> Result[
         site_nav = site_nav + "  <a href=\"${target}\">${nav_entry.title}</a>\n";
     }
     let extra_nav_path = Path.join(out_root, "../_nav_extra.html");
-    let extra = match FsFile.read_file(extra_nav_path) {
+    let extra = match File.read_file(extra_nav_path) {
         Ok(s) => s,
         Err(_) => "",
     };
     site_nav = site_nav + extra + "</nav>\n";
     let site_nav_path = Path.join(out_root, "site-nav.html");
-    FsFile.write_file(site_nav_path, site_nav)?;
+    File.write_file(site_nav_path, site_nav)?;
     println("  site-nav -> ${site_nav_path}");
     let static_dir = Path.join(out_root, "../static");
     for entry in list_entries(static_dir)? {
@@ -275,8 +275,8 @@ pub fn build(src_root: String, out_root: String, layouts_dir: String) -> Result[
         let name = entry.name();
         let static_path = Path.join(static_dir, name);
         let out_path = Path.join(out_root, name);
-        let content = FsFile.read_file(static_path)?;
-        FsFile.write_file(out_path, content)?;
+        let content = File.read_file(static_path)?;
+        File.write_file(out_path, content)?;
         println("  ${static_path} -> ${out_path}");
     }
     Ok(())

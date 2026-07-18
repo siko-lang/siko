@@ -1,0 +1,132 @@
+module TLS.Config {
+
+import Std.Error
+import TLS.Error
+import TLS.Util
+
+@derive(Clone)
+pub struct Config {
+    server_name: Option[String],
+    insecure_skip_verify: Bool,
+    min_version: Version,
+    max_version: Option[Version],
+    certificate_file: Option[String],
+    private_key_file: Option[String],
+
+    pub fn new() -> Config {
+        Config(
+            server_name: None,
+            insecure_skip_verify: False,
+            min_version: Version.Tls12,
+            max_version: None,
+            certificate_file: None,
+            private_key_file: None,
+        )
+    }
+
+    pub fn with_server_name(c: Config, server_name: String) -> Config {
+        c.server_name = Some(server_name);
+        c
+    }
+
+    pub fn with_insecure_skip_verify(c: Config, insecure: Bool) -> Config {
+        c.insecure_skip_verify = insecure;
+        c
+    }
+
+    pub fn with_min_version(c: Config, version: Version) -> Config {
+        c.min_version = version;
+        c
+    }
+
+    pub fn with_max_version(c: Config, version: Version) -> Config {
+        c.max_version = Some(version);
+        c
+    }
+
+    // File-based identities keep this PoC focused on the TLS engine. A real API
+    // should own parsed certificate/key material, like Go's tls.Certificate.
+    pub fn with_certificate_files(c: Config, certificate_file: String, private_key_file: String) -> Config {
+        c.certificate_file = Some(certificate_file);
+        c.private_key_file = Some(private_key_file);
+        c
+    }
+
+    pub fn server_name(c: Config) -> Option[String] {
+        c.server_name
+    }
+
+    pub fn insecure_skip_verify(c: Config) -> Bool {
+        c.insecure_skip_verify
+    }
+
+    pub fn min_version(c: Config) -> Version {
+        c.min_version
+    }
+
+    pub fn max_version(c: Config) -> Option[Version] {
+        c.max_version
+    }
+
+    pub fn certificate_file(c: Config) -> Option[String] {
+        c.certificate_file
+    }
+
+    pub fn private_key_file(c: Config) -> Option[String] {
+        c.private_key_file
+    }
+
+    fn validate_config(config: Config, server: Bool) -> Result[(), Error] {
+        match config.max_version {
+            Some(max_version) => {
+                if version_code(max_version) < version_code(config.min_version) {
+                    return Err(invalid_configuration("maximum TLS version is lower than minimum TLS version")).context();
+                }
+            }
+            None => {}
+        }
+        match config.server_name {
+            Some(name) => {
+                if name.is_empty() || contains_nul(name) {
+                    return Err(invalid_configuration("server name is empty or contains NUL")).context();
+                }
+            }
+            None => {
+                if !server && !config.insecure_skip_verify {
+                    return Err(invalid_configuration("verified clients require a server name")).context();
+                }
+            }
+        }
+        if server {
+            match (config.certificate_file, config.private_key_file) {
+                (Some(certificate), Some(private_key)) => {
+                    if certificate.is_empty() || contains_nul(certificate) ||
+                    private_key.is_empty() || contains_nul(private_key) {
+                        return Err(invalid_configuration("certificate or private-key path is empty or contains NUL")).context();
+                    }
+                }
+                _ => return Err(invalid_configuration("servers require a certificate and private key")).context(),
+            }
+        }
+        Ok(())
+    }
+
+    pub fn validate_client_config(config: Config) -> Result[(), Error] {
+        validate_config(config, False)
+    }
+
+    pub fn validate_server_config(config: Config) -> Result[(), Error] {
+        validate_config(config, True)
+    }
+
+}
+
+fn contains_nul(value: String) -> Bool {
+    value.as_slice().contains(0)
+}
+
+fn invalid_configuration(message: String) -> SslError {
+    SslError.InvalidConfiguration(message)
+}
+
+}

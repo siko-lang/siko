@@ -1,7 +1,7 @@
 SIKO_COMMON_SK := $(shell find siko/Common std -name '*.sk')
 SIKO_COMPILER_SK := $(shell find siko/Compiler -name '*.sk') $(SIKO_COMMON_SK)
 SIKO_LSP_SK := $(shell find siko/LSP -name '*.sk') $(SIKO_COMMON_SK)
-HTTPD_SK := $(shell find httpd -name '*.sk')
+HTTPD_SK := $(shell find apps/httpd -name '*.sk')
 TESTRUNNER_SK := $(shell find testrunner -name '*.sk')
 SSG_SK := $(shell find ssg -name '*.sk')
 
@@ -65,5 +65,5 @@ web: site
 runner.bin: siko.bin ${TESTRUNNER_SK}
 	./siko.bin build testrunner -o runner.bin
 
-httpd: siko.bin $(HTTPD_SK)
-	./siko.bin build httpd -o httpd.bin
+httpd.bin: siko.bin $(HTTPD_SK)
+	./siko.bin build apps/httpd -o httpd.bin

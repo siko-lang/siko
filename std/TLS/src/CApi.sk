@@ -1,0 +1,213 @@
+module TLS.OpenSSL.CApi {
+
+import Std.Ptr
+
+// Direct OpenSSL 3 bindings for the LP64 platforms targeted by this experiment.
+// Handles remain opaque and ownership is managed by TLS.Tls.
+
+@extern("C")
+@rename("TLS_client_method")
+pub fn tls_client_method() -> void*
+
+@extern("C")
+@rename("TLS_server_method")
+pub fn tls_server_method() -> void*
+
+@extern("C")
+@rename("SSL_CTX_new")
+pub fn ssl_ctx_new(method: void*) -> void*
+
+@extern("C")
+@rename("SSL_CTX_free")
+pub fn ssl_ctx_free(ctx: void*) -> void
+
+@extern("C")
+@rename("SSL_CTX_ctrl")
+fn ssl_ctx_ctrl(ctx: void*, command: I32, value: I64, argument: void*) -> I64
+
+@extern("C")
+@rename("SSL_CTX_set_verify")
+pub fn ssl_ctx_set_verify(ctx: void*, mode: I32, callback: void*) -> void
+
+@extern("C")
+@rename("SSL_CTX_set_default_verify_paths")
+pub fn ssl_ctx_set_default_verify_paths(ctx: void*) -> I32
+
+@extern("C")
+@rename("SSL_CTX_use_certificate_chain_file")
+pub fn ssl_ctx_use_certificate_chain_file(ctx: void*, path: *I8) -> I32
+
+@extern("C")
+@rename("SSL_CTX_use_PrivateKey_file")
+pub fn ssl_ctx_use_private_key_file(ctx: void*, path: *I8, file_type: I32) -> I32
+
+@extern("C")
+@rename("SSL_CTX_check_private_key")
+pub fn ssl_ctx_check_private_key(ctx: void*) -> I32
+
+@extern("C")
+@rename("SSL_new")
+pub fn ssl_new(ctx: void*) -> void*
+
+@extern("C")
+@rename("SSL_free")
+pub fn ssl_free(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set0_rbio")
+pub fn ssl_set0_rbio(ssl: void*, bio: void*) -> void
+
+@extern("C")
+@rename("SSL_set0_wbio")
+pub fn ssl_set0_wbio(ssl: void*, bio: void*) -> void
+
+@extern("C")
+@rename("SSL_set_connect_state")
+pub fn ssl_set_connect_state(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set_accept_state")
+pub fn ssl_set_accept_state(ssl: void*) -> void
+
+@extern("C")
+@rename("SSL_set1_host")
+pub fn ssl_set1_host(ssl: void*, name: *I8) -> I32
+
+@extern("C")
+@rename("SSL_ctrl")
+fn ssl_ctrl(ssl: void*, command: I32, value: I64, argument: *I8) -> I64
+
+@extern("C")
+@rename("SSL_do_handshake")
+pub fn ssl_do_handshake(ssl: void*) -> I32
+
+@extern("C")
+@rename("SSL_read_ex")
+pub fn ssl_read_ex(ssl: void*, buffer: *U8, size: U64, read_bytes: *U64) -> I32
+
+@extern("C")
+@rename("SSL_write_ex")
+pub fn ssl_write_ex(ssl: void*, buffer: *U8, size: U64, written_bytes: *U64) -> I32
+
+@extern("C")
+@rename("SSL_shutdown")
+pub fn ssl_shutdown(ssl: void*) -> I32
+
+@extern("C")
+@rename("SSL_get_error")
+pub fn ssl_get_error(ssl: void*, result: I32) -> I32
+
+@extern("C")
+@rename("SSL_get_verify_result")
+pub fn ssl_get_verify_result(ssl: void*) -> I64
+
+@extern("C")
+@rename("BIO_new")
+pub fn bio_new(method: void*) -> void*
+
+@extern("C")
+@rename("BIO_free")
+pub fn bio_free(bio: void*) -> I32
+
+@extern("C")
+@rename("BIO_meth_new")
+pub fn bio_meth_new(bio_type: I32, name: *I8) -> void*
+
+@extern("C")
+@rename("BIO_meth_free")
+pub fn bio_meth_free(method: void*) -> void
+
+@extern("C")
+@rename("BIO_meth_set_write_ex")
+pub fn bio_meth_set_write_ex(method: void*, callback: fn*(void*, *U8, U64, *U64) -> I32) -> I32
+
+@extern("C")
+@rename("BIO_meth_set_read_ex")
+pub fn bio_meth_set_read_ex(method: void*, callback: fn*(void*, *U8, U64, *U64) -> I32) -> I32
+
+@extern("C")
+@rename("BIO_meth_set_ctrl")
+pub fn bio_meth_set_ctrl(method: void*, callback: fn*(void*, I32, I64, void*) -> I64) -> I32
+
+@extern("C")
+@rename("BIO_meth_set_create")
+pub fn bio_meth_set_create(method: void*, callback: fn*(void*) -> I32) -> I32
+
+@extern("C")
+@rename("BIO_meth_set_destroy")
+pub fn bio_meth_set_destroy(method: void*, callback: fn*(void*) -> I32) -> I32
+
+@extern("C")
+@rename("BIO_set_data")
+pub fn bio_set_data(bio: void*, data: void*) -> void
+
+@extern("C")
+@rename("BIO_get_data")
+pub fn bio_get_data(bio: void*) -> void*
+
+@extern("C")
+@rename("BIO_set_init")
+pub fn bio_set_init(bio: void*, init: I32) -> void
+
+@extern("C")
+@rename("ERR_clear_error")
+pub fn err_clear_error() -> void
+
+@extern("C")
+@rename("ERR_get_error")
+pub fn err_get_error() -> U64
+
+@extern("C")
+@rename("ERR_error_string_n")
+pub fn err_error_string_n(code: U64, buffer: *U8, size: U64) -> void
+
+@extern("C")
+@rename("X509_verify_cert_error_string")
+pub fn x509_verify_cert_error_string(code: I64) -> *U8
+
+@extern("C")
+@rename("OpenSSL_version")
+pub fn openssl_version(kind: I32) -> *U8
+
+pub let SSL_VERIFY_PEER: I32 = 0x01;
+pub let SSL_FILETYPE_PEM: I32 = 1;
+
+pub let SSL_ERROR_SSL: I32 = 1;
+pub let SSL_ERROR_WANT_READ: I32 = 2;
+pub let SSL_ERROR_WANT_WRITE: I32 = 3;
+pub let SSL_ERROR_SYSCALL: I32 = 5;
+pub let SSL_ERROR_ZERO_RETURN: I32 = 6;
+
+pub let TLS1_2_VERSION: I64 = 0x0303;
+pub let TLS1_3_VERSION: I64 = 0x0304;
+pub let X509_V_OK: I64 = 0;
+pub let BIO_TYPE_SOURCE_SINK: I32 = 0x0400;
+pub let BIO_CTRL_EOF: I32 = 2;
+pub let BIO_CTRL_GET_CLOSE: I32 = 8;
+pub let BIO_CTRL_SET_CLOSE: I32 = 9;
+pub let BIO_CTRL_PENDING: I32 = 10;
+pub let BIO_CTRL_FLUSH: I32 = 11;
+pub let BIO_CTRL_WPENDING: I32 = 13;
+
+// Reimplementations of header-only OpenSSL macros used by the TLS layer.
+let SSL_CTRL_SET_TLSEXT_HOSTNAME: I32 = 55;
+let SSL_CTRL_SET_MIN_PROTO_VERSION: I32 = 123;
+let SSL_CTRL_SET_MAX_PROTO_VERSION: I32 = 124;
+let TLSEXT_NAMETYPE_HOST_NAME: I64 = 0;
+
+@unsafe
+pub fn ssl_ctx_set_min_proto_version(ctx: void*, version: I64) -> I64 {
+    ssl_ctx_ctrl(ctx, SSL_CTRL_SET_MIN_PROTO_VERSION, version, get_null_voidptr())
+}
+
+@unsafe
+pub fn ssl_ctx_set_max_proto_version(ctx: void*, version: I64) -> I64 {
+    ssl_ctx_ctrl(ctx, SSL_CTRL_SET_MAX_PROTO_VERSION, version, get_null_voidptr())
+}
+
+@unsafe
+pub fn ssl_set_tlsext_host_name(ssl: void*, name: *I8) -> I64 {
+    ssl_ctrl(ssl, SSL_CTRL_SET_TLSEXT_HOSTNAME, TLSEXT_NAMETYPE_HOST_NAME, name)
+}
+
+}

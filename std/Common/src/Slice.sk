@@ -8,10 +8,7 @@ pub struct Slice[T] {
 
     @safe
     pub fn sub(s: Slice[T], start: Int, end: Int) -> Slice[T] {
-        if s.size < end {
-            panic("Slice out of bounds");
-        }
-        if end < start {
+        if start < 0 || end < start || end > s.size {
             panic("Slice out of bounds");
         }
         Slice(offset_of(s.data, start), end - start)
@@ -100,6 +97,7 @@ pub struct Slice[T] {
 
     @safe
     pub fn copy(dest: Slice[T], src: Slice[T], src_index: Int, dest_index: Int, size: Int) {
+        assert(size >= 0, "size out of bounds");
         assert(src_index >= 0, "src_index out of bounds");
         assert(src_index + size <= src.size, "src range out of bounds");
         assert(dest_index >= 0, "dest_index out of bounds");
@@ -114,7 +112,7 @@ instance[T] Index[Slice[T]] {
 
     @safe
     fn index(a: Slice[T], index: Int) -> T {
-        if a.size < index {
+        if index < 0 || index >= a.size {
             panic("Slice out of bounds");
         }
         *offset_of(a.data, index)
@@ -127,7 +125,7 @@ instance[T] IndexAssign[Slice[T]] {
 
     @safe
     fn index_assign(a: Slice[T], index: Int, value: T) {
-        if a.size < index {
+        if index < 0 || index >= a.size {
             panic("Slice out of bounds");
         }
         *offset_of(a.data, index) = value;

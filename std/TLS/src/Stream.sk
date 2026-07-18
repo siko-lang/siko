@@ -1,0 +1,268 @@
+module TLS.Stream {
+
+import Std.Error
+import Std.IO.Reader
+import Std.IO.Writer
+import Std.IO.Closer
+import Std.Net.TcpStream
+import Std.Ptr
+import Std.Slice
+import TLS.OpenSSL.CApi
+import TLS.Context
+import TLS.BIO
+import TLS.Config
+import TLS.Error
+
+pub struct TlsStream {
+    ctx: void*,
+    ssl: void*,
+    bios: BIO.Bios,
+    verify_peer: Bool,
+    handshake_complete: Bool,
+    received_close_notify: Bool,
+    closed: Bool,
+
+    pub fn client(tcp: TcpStream, config: Config) -> Result[TlsStream, Error] {
+        TlsStream.create(tcp, config, False)
+    }
+
+    pub fn server(tcp: TcpStream, config: Config) -> Result[TlsStream, Error] {
+        TlsStream.create(tcp, config, True)
+    }
+
+    pub fn connect(address: String, port: U16, config: Config) -> Result[TlsStream, Error] {
+        let config = if config.server_name() == None {
+            config.clone().with_server_name(address.clone())
+        } else {
+            config.clone()
+        };
+        let tcp = match TcpStream.connect(address, port) {
+            Ok(tcp) => tcp,
+            Err(error) => return Err(error),
+        };
+        let stream = TlsStream.client(tcp, config)?;
+        match stream.handshake() {
+            Ok(_) => Ok(stream),
+            Err(error) => {
+                defer stream.close();
+                Err(error)
+            }
+        }
+    }
+
+    @safe
+    fn create(tcp: TcpStream, config: Config, server: Bool) -> Result[TlsStream, Error] {
+        let ctx = match Context.new_context(config, server) {
+            Ok(ctx) => ctx,
+            Err(error) => {
+                defer tcp.close();
+                return Err(error);
+            }
+        };
+        CApi.err_clear_error();
+        let ssl = CApi.ssl_new(ctx);
+        if is_null_voidptr(ssl) {
+            let error = Context.library_error("create stream", 0, "SSL_new returned null");
+            CApi.ssl_ctx_free(ctx);
+            defer tcp.close();
+            return Err(error).context();
+        }
+        if server {
+            CApi.ssl_set_accept_state(ssl);
+        } else {
+            match Context.configure_client_name(ssl, config) {
+                Ok(_) => {}
+                Err(error) => {
+                    CApi.ssl_free(ssl);
+                    CApi.ssl_ctx_free(ctx);
+                    defer tcp.close();
+                    return Err(error);
+                }
+            }
+            CApi.ssl_set_connect_state(ssl);
+        }
+        let bios = match BIO.Bios.new(tcp) {
+            Ok(bios) => bios,
+            Err(error) => {
+                CApi.ssl_free(ssl);
+                CApi.ssl_ctx_free(ctx);
+                return Err(error);
+            }
+        };
+        CApi.ssl_set0_rbio(ssl, bios.read_bio());
+        CApi.ssl_set0_wbio(ssl, bios.write_bio());
+        Ok(TlsStream(
+            ctx: ctx,
+            ssl: ssl,
+            bios: bios,
+            verify_peer: !server && !config.insecure_skip_verify(),
+            handshake_complete: False,
+            received_close_notify: False,
+            closed: False,
+        ))
+    }
+
+    @safe
+    pub fn handshake(stream: TlsStream) -> Result[(), Error] {
+        if stream.closed {
+            return Err(SslError.Closed).context();
+        }
+        if stream.handshake_complete {
+            return Ok(());
+        }
+        stream.bios.clear_error();
+        CApi.err_clear_error();
+        let result = CApi.ssl_do_handshake(stream.ssl);
+        if result == 1 {
+            stream.handshake_complete = True;
+            return Ok(());
+        }
+        let class = CApi.ssl_get_error(stream.ssl, result);
+        if class == CApi.SSL_ERROR_ZERO_RETURN {
+            stream.received_close_notify = True;
+            return Err(SslError.UnexpectedEof).context();
+        }
+        if class == CApi.SSL_ERROR_SYSCALL && stream.bios.saw_eof() {
+            return Err(SslError.UnexpectedEof).context();
+        }
+        stream_operation_failed(stream, "handshake", class)
+    }
+
+    @safe
+    pub fn read(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, Error] {
+        if stream.closed {
+            return Err(SslError.Closed).context();
+        }
+        if buffer.len() == 0 {
+            return Ok(0);
+        }
+        stream.handshake()?;
+        let read_bytes: U64 = 0;
+        stream.bios.clear_error();
+        CApi.err_clear_error();
+        let result = CApi.ssl_read_ex(
+            stream.ssl,
+            buffer.as_ptr(),
+            buffer.len().as_u64(),
+            &read_bytes,
+        );
+        if result == 1 {
+            return Ok(read_bytes.as_int());
+        }
+        let class = CApi.ssl_get_error(stream.ssl, result);
+        if class == CApi.SSL_ERROR_ZERO_RETURN {
+            stream.received_close_notify = True;
+            return Ok(0);
+        }
+        if class == CApi.SSL_ERROR_SYSCALL && stream.bios.saw_eof() {
+            return Err(SslError.UnexpectedEof).context();
+        }
+        stream_operation_failed(stream, "read", class)
+    }
+
+    @safe
+    pub fn write(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, Error] {
+        if stream.closed {
+            return Err(SslError.Closed).context();
+        }
+        if buffer.len() == 0 {
+            return Ok(0);
+        }
+        stream.handshake()?;
+        let written: U64 = 0;
+        stream.bios.clear_error();
+        CApi.err_clear_error();
+        let result = CApi.ssl_write_ex(
+            stream.ssl,
+            buffer.as_ptr(),
+            buffer.len().as_u64(),
+            &written,
+        );
+        if result == 1 {
+            return Ok(written.as_int());
+        }
+        let class = CApi.ssl_get_error(stream.ssl, result);
+        if class == CApi.SSL_ERROR_ZERO_RETURN {
+            stream.received_close_notify = True;
+            return Err(SslError.Closed).context();
+        }
+        if class == CApi.SSL_ERROR_SYSCALL && stream.bios.saw_eof() {
+            return Err(SslError.UnexpectedEof).context();
+        }
+        stream_operation_failed(stream, "write", class)
+    }
+
+    // Sends close_notify. It deliberately does not wait for the peer's
+    // close_notify, so close cannot hang forever on an uncooperative peer.
+    @safe
+    pub fn shutdown(stream: TlsStream) -> Result[(), Error] {
+        if stream.closed || !stream.handshake_complete {
+            return Ok(());
+        }
+        stream.bios.clear_error();
+        CApi.err_clear_error();
+        let result = CApi.ssl_shutdown(stream.ssl);
+        if result >= 0 {
+            return Ok(());
+        }
+        let class = CApi.ssl_get_error(stream.ssl, result);
+        if class == CApi.SSL_ERROR_ZERO_RETURN {
+            return Ok(());
+        }
+        if class == CApi.SSL_ERROR_SYSCALL && stream.bios.saw_eof() {
+            return Ok(());
+        }
+        stream_operation_failed(stream, "shutdown", class)
+    }
+
+    @safe
+    pub fn close(stream: TlsStream) -> Result[(), Error] {
+        if stream.closed {
+            return Ok(());
+        }
+        let shutdown_error = match stream.shutdown() {
+            Ok(_) => None,
+            Err(error) => Some(error),
+        };
+        CApi.ssl_free(stream.ssl);
+        CApi.ssl_ctx_free(stream.ctx);
+        stream.bios.free_method();
+        stream.ssl = get_null_voidptr();
+        stream.ctx = get_null_voidptr();
+        stream.closed = True;
+        let close_result = stream.bios.close_transport();
+        match shutdown_error {
+            Some(error) => Err(error),
+            None => close_result,
+        }
+    }
+
+    @safe
+    fn stream_operation_failed[T](stream: TlsStream, operation: String, class: I32) -> Result[T, Error] {
+        match stream.bios.take_error() {
+            Some(error) => return Err(error),
+            None => {}
+        }
+        Err(Context.operation_error(stream.ssl, stream.verify_peer, operation, class)).context()
+    }
+}
+
+instance Reader[TlsStream] {
+    fn read(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, Error] {
+        stream.read(buffer)
+    }
+}
+
+instance Writer[TlsStream] {
+    fn write(stream: TlsStream, buffer: Slice[U8]) -> Result[Int, Error] {
+        stream.write(buffer)
+    }
+}
+
+instance Closer[TlsStream] {
+    fn close(stream: TlsStream) -> Result[(), Error] {
+        stream.close()
+    }
+}
+
+}
