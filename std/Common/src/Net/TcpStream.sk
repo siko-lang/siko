@@ -8,13 +8,14 @@ import Std.Libc.FileDescriptor
 import Std.Arch.Errno
 import Std.Arch.Socket
 import Std.Libc.Socket
-import Std.Net.Utils
+import Std.Net.Address
+import Std.Net.SocketAddress
 import Std.Slice
 
 pub struct TcpStream {
     fd: FileDescriptor,
 
-    pub fn new(fd: I32) -> TcpStream {
+    pub fn from_accept(fd: I32) -> TcpStream {
         TcpStream(FileDescriptor.new(fd))
     }
 
@@ -22,43 +23,45 @@ pub struct TcpStream {
         s.fd
     }
 
-    @safe
-    pub fn connect(host: String, port: U16) -> Result[TcpStream, Error] {
-        let addr = parse_address(host)?;
-        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
-        if sock < 0 {
-            return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
+    pub fn connect(address: String) -> Result[TcpStream, Error] {
+        let (host, port) = parse_host_port(address)?;
+        let host = if host.is_empty() { "localhost" } else { host };
+        let last_error: Option[Error] = None;
+        for ip in resolve(host)? {
+            let socket_address = SocketAddress.from_ip(ip, port);
+            match TcpStream.start_connect(socket_address, False) {
+                Ok(stream) => return Ok(stream),
+                Err(error) => { last_error = Some(error); }
+            }
         }
-        let fd = FileDescriptor.new(sock);
-        let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
-        let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
-        if ret < 0 {
-            let errno = Std.Arch.Errno.get_errno();
-            defer fd.close();
-            return Err(IO.Error.new(errno)).context();
-        }
-        Ok(TcpStream.new(sock))
+        Err(last_error.unwrap())
     }
 
     @safe
-    pub fn connect_async(host: String, port: U16) -> Result[TcpStream, Error] {
-        let addr = parse_address(host)?;
-        let sock = Std.Libc.Socket.socket(Domain.code(Domain.AF_INET), SockType.code(SockType.SOCK_STREAM), 0);
+    pub fn start_connect(address: SocketAddress, nonblocking: Bool) -> Result[TcpStream, Error] {
+        let sock = Std.Libc.Socket.socket(address.family(), address.socket_type(), address.protocol());
         if sock < 0 {
             return Err(IO.Error.new(Std.Arch.Errno.get_errno())).context();
         }
         let s = FileDescriptor.new(sock);
-        s.set_nonblocking(True);
-        let sockaddr = SockaddrIn.new(Domain.AF_INET, port, addr);
-        let ret = Std.Libc.Socket.connect(sock, &sockaddr, sockaddr.len().as_int().as_i32());
+        if nonblocking {
+            match s.set_nonblocking(True) {
+                Ok(()) => {}
+                Err(error) => {
+                    defer s.close();
+                    return Err(error);
+                }
+            }
+        }
+        let ret = Std.Libc.Socket.connect(sock, address.as_ptr(), address.len());
         if ret < 0 {
             let errno = Std.Arch.Errno.get_errno();
-            if errno != Std.Arch.Errno.Errno.EINPROGRESS {
+            if !nonblocking || errno != Std.Arch.Errno.Errno.EINPROGRESS {
                 defer s.close();
                 return Err(IO.Error.new(errno)).context();
             }
         }
-        Ok(TcpStream.new(sock))
+        Ok(TcpStream(s))
     }
 
     @safe

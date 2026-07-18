@@ -5,27 +5,42 @@ import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
 import Std.IO.Async.Scheduler as Async
+import Std.Net.Address
 import Std.Net.TcpStream as Base
+import Std.Net.SocketAddress
 import Std.Slice
 
 pub struct TcpStream {
     inner: Base.TcpStream,
 
-    pub fn new(s: Base.TcpStream) -> TcpStream {
+    pub fn from_accept(s: Base.TcpStream) -> TcpStream {
         TcpStream(s)
     }
 
-    pub fn connect(host: String, port: U16) -> Result[TcpStream, Error] {
-        let stream = Base.TcpStream.connect_async(host, port)?;
-        let fd = stream.get_fd().get_fd();
-        Async.await_writable(fd);
-        match stream.check_connect_result() {
-            Ok(()) => Ok(TcpStream(stream)),
-            Err(e) => {
-                defer stream.close();
-                Err(e)
+    pub fn connect(address: String) -> Result[TcpStream, Error] {
+        let (host, port) = parse_host_port(address)?;
+        let host = if host.is_empty() { "localhost" } else { host };
+        let last_error: Option[Error] = None;
+        for ip in resolve(host)? {
+            let socket_address = SocketAddress.from_ip(ip, port);
+            match Base.TcpStream.start_connect(socket_address, True) {
+                Ok(stream) => {
+                    let fd = stream.get_fd().get_fd();
+                    Async.await_writable(fd);
+                    match stream.check_connect_result() {
+                        Ok(()) => return Ok(TcpStream(stream)),
+                        Err(error) => {
+                            defer stream.close();
+                            last_error = Some(error);
+                        }
+                    }
+                }
+                Err(error) => {
+                    last_error = Some(error);
+                }
             }
         }
+        Err(last_error.unwrap())
     }
 
     pub fn get_fd(s: TcpStream) -> I32 {

@@ -5,6 +5,7 @@ import Std.IO.Reader
 import Std.IO.Writer
 import Std.IO.Closer
 import Std.Net.TcpStream
+import Std.Net.Address
 import Std.Ptr
 import Std.Slice
 import TLS.OpenSSL.CApi
@@ -22,25 +23,22 @@ pub struct TlsStream {
     received_close_notify: Bool,
     closed: Bool,
 
-    pub fn client(tcp: TcpStream, config: Config) -> Result[TlsStream, Error] {
-        TlsStream.create(tcp, config, False)
-    }
-
-    pub fn server(tcp: TcpStream, config: Config) -> Result[TlsStream, Error] {
+    pub fn from_accept(tcp: TcpStream, config: Config) -> Result[TlsStream, Error] {
         TlsStream.create(tcp, config, True)
     }
 
-    pub fn connect(address: String, port: U16, config: Config) -> Result[TlsStream, Error] {
+    pub fn connect(address: String, config: Config) -> Result[TlsStream, Error] {
+        let (host, _) = split_host_port(address.clone())?;
         let config = if config.server_name() == None {
-            config.clone().with_server_name(address.clone())
+            config.clone().with_server_name(host)
         } else {
             config.clone()
         };
-        let tcp = match TcpStream.connect(address, port) {
+        let tcp = match TcpStream.connect(address) {
             Ok(tcp) => tcp,
             Err(error) => return Err(error),
         };
-        let stream = TlsStream.client(tcp, config)?;
+        let stream = TlsStream.create(tcp, config, False)?;
         match stream.handshake() {
             Ok(_) => Ok(stream),
             Err(error) => {

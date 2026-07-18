@@ -1,11 +1,40 @@
 module Std.Arch.Socket {
 
 import Std.Array
+import Std.Intrinsics
 import Std.Libc.Socket
+import Std.Ptr
 
 pub let SOL_SOCKET   : I32 = 0xffff;
 pub let SO_REUSEADDR : I32 = 4;
 pub let SO_ERROR     : I32 = 0x1007;
+pub let AF_INET6     : I32 = 30;
+
+@value_type
+pub struct AddrInfo {
+    pub ai_flags: I32,
+    pub ai_family: I32,
+    pub ai_socktype: I32,
+    pub ai_protocol: I32,
+    pub ai_addrlen: U32,
+    pub ai_canonname: *I8,
+    pub ai_addr: void*,
+    pub ai_next: *AddrInfo,
+
+    @unsafe
+    pub fn ip() -> AddrInfo {
+        AddrInfo(
+            ai_flags: 0,
+            ai_family: Domain.code(Domain.AF_UNSPEC),
+            ai_socktype: 0,
+            ai_protocol: 0,
+            ai_addrlen: 0,
+            ai_canonname: get_null_ptr(),
+            ai_addr: get_null_voidptr(),
+            ai_next: get_null_ptr(),
+        )
+    }
+}
 
 @value_type
 pub struct SockaddrIn {
@@ -31,6 +60,55 @@ pub struct SockaddrIn {
 
     pub fn len(s: SockaddrIn) -> U32 {
         s.sin_len.as_int().as_u32()
+    }
+
+    @unsafe
+    pub fn from_ip(port: U16, address: Vec[U8]) -> SockaddrIn {
+        let raw = 0.as_u32();
+        Std.Ptr.copy(transmute(&raw), address.as_ptr(), 0, 0, 4);
+        SockaddrIn.new(Domain.AF_INET, port, raw)
+    }
+
+    @unsafe
+    pub fn address(s: SockaddrIn) -> Vec[U8] {
+        let address = Vec.with_value(4, 0);
+        Std.Ptr.copy(address.as_ptr(), transmute(&s.sin_addr.s_addr), 0, 0, 4);
+        address
+    }
+}
+
+@value_type
+pub struct SockaddrIn6 {
+    pub sin6_len: U8,
+    pub sin6_family: U8,
+    pub sin6_port: U16,
+    pub sin6_flowinfo: U32,
+    pub sin6_addr: [U8; 16],
+    pub sin6_scope_id: U32,
+
+    @unsafe
+    pub fn from_ip(port: U16, address: Vec[U8], scope_id: U32) -> SockaddrIn6 {
+        let raw_address: [U8; 16] = uninitialized();
+        Std.Ptr.copy(Std.Array.as_ptr(&raw_address), address.as_ptr(), 0, 0, 16);
+        SockaddrIn6(
+            sin6_len: sizeof(SockaddrIn6).as_int().as_u8(),
+            sin6_family: AF_INET6.as_int().as_u8(),
+            sin6_port: htons(port),
+            sin6_flowinfo: 0,
+            sin6_addr: raw_address,
+            sin6_scope_id: scope_id,
+        )
+    }
+
+    pub fn len(s: SockaddrIn6) -> U32 {
+        s.sin6_len.as_int().as_u32()
+    }
+
+    @unsafe
+    pub fn address(s: SockaddrIn6) -> Vec[U8] {
+        let address = Vec.with_value(16, 0);
+        Std.Ptr.copy(address.as_ptr(), Std.Array.as_ptr(&s.sin6_addr), 0, 0, 16);
+        address
     }
 }
 

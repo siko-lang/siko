@@ -3,6 +3,7 @@ module Std.Http.Client {
 import Std.Effects.Network
 import Std.IO.Closer
 import Std.Http
+import Std.Net.Address
 
 pub enum ClientError {
     InvalidUrl(String),
@@ -124,29 +125,63 @@ pub struct Url {
     }
 
     pub fn host_header(u: Url) -> String {
-        if u.port == 80 {
-            u.host
+        let host = if u.host.contains(":") {
+            "[${u.host}]"
         } else {
-            "${u.host}:${u.port}"
+            u.host
+        };
+        if u.port == 80 {
+            host
+        } else {
+            "${host}:${u.port}"
         }
+    }
+
+    pub fn socket_address(u: Url) -> String {
+        join_host_port(u.host, u.port)
     }
 }
 
 fn parse_authority(authority: String) -> Result[(String, U16), ClientError] {
+    if authority.starts_with("[") {
+        let close = match authority.find("]") {
+            Some(i) => i,
+            None => return Err(ClientError.InvalidUrl(authority)),
+        };
+        let host = authority.substring(1, close);
+        if host.is_empty() {
+            return Err(ClientError.InvalidUrl(authority));
+        }
+        if close + 1 == authority.len() {
+            return Ok((host, 80));
+        }
+        if close + 2 > authority.len() || authority.substring(close + 1, close + 2) != ":" {
+            return Err(ClientError.InvalidUrl(authority));
+        }
+        let port_text = authority.substring(close + 2, authority.len());
+        return Ok((host, parse_port(port_text)?));
+    }
     match authority.rfind(':') {
         Some(i) => {
+            match authority.find(":") {
+                Some(first) if first != i => return Err(ClientError.InvalidUrl(authority)),
+                _ => {}
+            }
             let host = authority.substring(0, i);
             let port_text = authority.substring(i + 1, authority.len());
             if host == "" || port_text == "" {
                 return Err(ClientError.InvalidUrl(authority));
             }
-            let port = match port_text.parse_int(10) {
-                Ok(p) if p > 0 && p <= 65535 => p.as_u16(),
-                _ => return Err(ClientError.InvalidPort(port_text)),
-            };
-            Ok((host, port))
+            Ok((host, parse_port(port_text)?))
         }
         None => Ok((authority, 80)),
+    }
+}
+
+fn parse_port(port: String) -> Result[U16, ClientError] {
+    match port.parse_int(10) {
+        Ok(p) if p > 0 && p <= 65535 => Ok(p.as_u16()),
+        _ => Err(ClientError.InvalidPort(port)),
     }
 }
 
@@ -197,7 +232,7 @@ pub struct Client {
     }
 
     pub fn do(c: Client, req: Request) -> Result[Response, ClientError] {
-        let socket = TcpNetwork.connect(req.url.host(), req.url.port())?;
+        let socket = TcpNetwork.connect(req.url.socket_address())?;
         defer socket.close();
         write_string(socket, format_request(req))?;
         let raw = read_message(socket)?;

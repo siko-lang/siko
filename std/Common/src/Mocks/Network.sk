@@ -56,16 +56,11 @@ instance Closer[MockSocket] {
 }
 
 pub struct MockConnection {
-    host: String,
-    port: U16,
+    address: String,
     peer: MockPeer,
 
-    pub fn host(c: MockConnection) -> String {
-        c.host
-    }
-
-    pub fn port(c: MockConnection) -> U16 {
-        c.port
+    pub fn address(c: MockConnection) -> String {
+        c.address
     }
 
     pub fn peer(c: MockConnection) -> MockPeer {
@@ -75,7 +70,7 @@ pub struct MockConnection {
 
 struct ConnectHandler {
     config: Config,
-    handler: fn(String, U16, MockPeer) -> (),
+    handler: fn(String, MockPeer) -> (),
 }
 
 // The backdoor that bridges concrete test code and pure-EAT network code:
@@ -101,7 +96,7 @@ pub struct Gateway {
     // Register the remote side for the next TcpNetwork.connect call. The handler
     // gets the remote peer immediately when connect happens, before the client code
     // starts using its socket.
-    pub fn on_connect(g: Gateway, config: Config, handler: fn(String, U16, MockPeer) -> ()) {
+    pub fn on_connect(g: Gateway, config: Config, handler: fn(String, MockPeer) -> ()) {
         g.connect_handlers.push_back(ConnectHandler(config, handler));
     }
 
@@ -113,12 +108,12 @@ pub struct Gateway {
         g.pending.pop_front()
     }
 
-    fn connect_client(g: Gateway, host: String, port: U16) -> Option[MockSocket] {
+    fn connect_client(g: Gateway, address: String) -> Option[MockSocket] {
         match g.connect_handlers.pop_front() {
             Some(h) => {
                 let (socket, peer) = connect(h.config);
-                (h.handler)(host, port, peer);
-                g.connected.push_back(MockConnection(host, port, peer));
+                (h.handler)(address, peer);
+                g.connected.push_back(MockConnection(address, peer));
                 Some(socket)
             }
             None => None,
@@ -155,8 +150,8 @@ pub instance MockNet TcpNetwork {
         }
     }
 
-    fn connect(host: String, port: U16) -> Result[MockSocket, Error] {
-        match mock_gateway.connect_client(host, port) {
+    fn connect(address: String) -> Result[MockSocket, Error] {
+        match mock_gateway.connect_client(address) {
             Some(s) => Ok(s),
             None => panic("MockNet.connect: no connect handler"),
         }

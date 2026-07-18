@@ -5,6 +5,8 @@ import Std.IO.Reader
 import Std.IO.Async.Scheduler as Async
 import Std.Net.TcpListener
 import Std.Net.TcpStream
+import Std.Net.Address
+import Std.Net.SocketAddress
 
 fn listen(port: U16) -> Result[TcpListener, Error] {
     let listener = TcpListener.bind(port)?;
@@ -30,7 +32,8 @@ fn server(port: U16) {
 }
 
 fn client(port: U16) {
-    let stream = TcpStream.connect_async("127.0.0.1", port).unwrap();
+    let socket_address = SocketAddress.from_ip(resolve("127.0.0.1").unwrap()[0], port);
+    let stream = TcpStream.start_connect(socket_address, True).unwrap();
     let fd = stream.get_fd().get_fd();
     Async.await_writable(fd);
     stream.write("hello".as_slice()).unwrap();

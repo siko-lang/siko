@@ -37,12 +37,23 @@ fn test_url_parse() {
     assert(default_port.port() == 80);
     assert(default_port.path() == "/");
     assert(default_port.host_header() == "127.0.0.1");
+
+    let ipv6 = Url.parse("http://[::1]:8080/hello").unwrap();
+    assert(ipv6.host() == "::1");
+    assert(ipv6.port() == 8080);
+    assert(ipv6.host_header() == "[::1]:8080");
+    assert(ipv6.socket_address() == "[::1]:8080");
+
+    match Url.parse("http://::1/") {
+        Err(ClientError.InvalidUrl(_)) => {}
+        _ => panic("expected unbracketed IPv6 URL to be rejected"),
+    }
 }
 
 @test
 fn test_get() {
     let gateway = Gateway.new();
-    gateway.on_connect(Config.new(64, 64, 1024), |_host, _port, peer| {
+    gateway.on_connect(Config.new(64, 64, 1024), |_address, peer| {
         peer.send(ok_response("ok").as_slice()).unwrap();
     });
 
@@ -51,8 +62,7 @@ fn test_get() {
     };
 
     let connection = gateway.connected().unwrap();
-    assert(connection.host() == "127.0.0.1");
-    assert(connection.port() == 8080);
+    assert(connection.address() == "127.0.0.1:8080");
     assert(response.proto() == "HTTP/1.1");
     assert(response.status() == "200 OK");
     assert(response.body() == "ok");
@@ -62,7 +72,7 @@ fn test_get() {
 @test
 fn test_post() {
     let gateway = Gateway.new();
-    gateway.on_connect(Config.new(64, 64, 1024), |_host, _port, peer| {
+    gateway.on_connect(Config.new(64, 64, 1024), |_address, peer| {
         peer.send(ok_response("created").as_slice()).unwrap();
     });
 
@@ -71,8 +81,7 @@ fn test_post() {
     };
 
     let connection = gateway.connected().unwrap();
-    assert(connection.host() == "127.0.0.1");
-    assert(connection.port() == 80);
+    assert(connection.address() == "127.0.0.1:80");
     assert(response.status() == "200 OK");
     assert(response.body() == "created");
     assert(drain(connection.peer()) == "POST /api HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Type: application/json\r\nContent-Length: 12\r\nConnection: close\r\n\r\n{\"ok\": true}");

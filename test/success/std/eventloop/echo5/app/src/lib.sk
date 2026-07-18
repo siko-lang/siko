@@ -45,10 +45,10 @@ pub fn server(port: U16) {
     spawn(|| handler(conn));
 }
 
-fn connect_with_retry(host: String, port: U16) -> Socket {
+fn connect_with_retry(address: String) -> Socket {
     let max_attempts = 100;
     for attempt in 0..max_attempts {
-        match connect(host, port) {
+        match connect(address) {
             Ok(s) => return s,
             Err(e) => {
                 if e is IO.Error {
@@ -65,7 +65,7 @@ fn connect_with_retry(host: String, port: U16) -> Socket {
 }
 
 pub fn client(port: U16) {
-    let stream = connect_with_retry("127.0.0.1", port);
+    let stream = connect_with_retry("localhost:${port}");
     let reader = Buffered.Reader.new(stream, 1024);
     let writer = Buffered.Writer.new(stream);
     for i in 0..3 {

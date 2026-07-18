@@ -1,0 +1,73 @@
+module Std.Net.SocketAddress {
+
+import Std.Arch.Socket
+import Std.Intrinsics
+import Std.Libc.Socket
+import Std.Net.Address
+import Std.Ptr
+
+pub struct SocketAddress {
+    family: I32,
+    socket_type: I32,
+    protocol: I32,
+    data: Vec[U8],
+
+    pub fn family(a: SocketAddress) -> I32 {
+        a.family
+    }
+
+    pub fn socket_type(a: SocketAddress) -> I32 {
+        a.socket_type
+    }
+
+    pub fn protocol(a: SocketAddress) -> I32 {
+        a.protocol
+    }
+
+    pub fn len(a: SocketAddress) -> I32 {
+        a.data.len().as_i32()
+    }
+
+    @unsafe
+    pub fn as_ptr(a: SocketAddress) -> void* {
+        transmute(a.data.as_ptr())
+    }
+
+    @safe
+    pub fn from_ip(address: IpAddress, port: U16) -> SocketAddress {
+        match address {
+            IpAddress.V4(address) => {
+                if address.len() != 4 {
+                    panic("invalid IPv4 address length");
+                }
+                let raw = SockaddrIn.from_ip(port, address);
+                let size = raw.len().as_int();
+                let data = Vec.with_value(size, 0);
+                Std.Ptr.copy(data.as_ptr(), transmute(&raw), 0, 0, size);
+                SocketAddress(
+                    family: Domain.code(Domain.AF_INET),
+                    socket_type: SockType.code(SockType.SOCK_STREAM),
+                    protocol: 0,
+                    data: data,
+                )
+            }
+            IpAddress.V6(address, scope_id) => {
+                if address.len() != 16 {
+                    panic("invalid IPv6 address length");
+                }
+                let raw = SockaddrIn6.from_ip(port, address, scope_id);
+                let size = raw.len().as_int();
+                let data = Vec.with_value(size, 0);
+                Std.Ptr.copy(data.as_ptr(), transmute(&raw), 0, 0, size);
+                SocketAddress(
+                    family: AF_INET6,
+                    socket_type: SockType.code(SockType.SOCK_STREAM),
+                    protocol: 0,
+                    data: data,
+                )
+            }
+        }
+    }
+}
+
+}

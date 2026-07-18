@@ -1,0 +1,229 @@
+module Std.Net.Address {
+
+import Std.Arch.Socket
+import Std.Intrinsics
+import Std.Libc.Socket
+import Std.Libc.String
+import Std.Ptr
+
+pub struct AddressError {
+    address: String,
+    detail: String,
+}
+
+instance ToString[AddressError] {
+    fn to_string(e: AddressError) -> String {
+        "invalid address `${e.address}`: ${e.detail}"
+    }
+}
+
+instance Error[AddressError] {
+    fn message(e: AddressError) -> String {
+        e.to_string()
+    }
+}
+
+pub struct ResolveError {
+    address: String,
+    code: I32,
+    detail: String,
+
+    pub fn new(address: String, code: I32, detail: String) -> ResolveError {
+        ResolveError(address: address, code: code, detail: detail)
+    }
+
+    pub fn address(e: ResolveError) -> String {
+        e.address
+    }
+
+    pub fn code(e: ResolveError) -> I32 {
+        e.code
+    }
+}
+
+instance ToString[ResolveError] {
+    fn to_string(e: ResolveError) -> String {
+        "resolve `${e.address}`: ${e.detail}"
+    }
+}
+
+instance Error[ResolveError] {
+    fn message(e: ResolveError) -> String {
+        e.to_string()
+    }
+}
+
+@derive(Clone, PartialEq, Eq)
+pub enum IpAddress {
+    V4(Vec[U8]),
+    V6(Vec[U8], U32),
+
+    pub fn value(a: IpAddress) -> String {
+        match a {
+            V4(address) => format_ipv4(address),
+            V6(address, scope_id) => format_ipv6(address, scope_id),
+        }
+    }
+}
+
+fn format_ipv4(address: Vec[U8]) -> String {
+    "${address[0]}.${address[1]}.${address[2]}.${address[3]}"
+}
+
+fn format_ipv6_group(address: Vec[U8], index: Int) -> String {
+    let group = to_hex(address[index * 2].as_int()) + to_hex(address[index * 2 + 1].as_int());
+    let trimmed = group.trim_start_matches("0");
+    if trimmed.is_empty() { "0" } else { trimmed }
+}
+
+fn format_ipv6(address: Vec[U8], scope_id: U32) -> String {
+    let best_start = -1;
+    let best_len = 0;
+    let current_start = -1;
+    let current_len = 0;
+    for i in 0..8 {
+        if address[i * 2] == 0 && address[i * 2 + 1] == 0 {
+            if current_start == -1 {
+                current_start = i;
+            }
+            current_len = current_len + 1;
+            if current_len > best_len {
+                best_start = current_start;
+                best_len = current_len;
+            }
+        } else {
+            current_start = -1;
+            current_len = 0;
+        }
+    }
+
+    let result = "";
+    let i = 0;
+    while i < 8 {
+        if best_len >= 2 && i == best_start {
+            result = result + "::";
+            i = i + best_len;
+        } else {
+            if !result.is_empty() && !result.ends_with(":") {
+                result = result + ":";
+            }
+            result = result + format_ipv6_group(address, i);
+            i = i + 1;
+        }
+    }
+    if scope_id == 0 {
+        result
+    } else {
+        "${result}%${scope_id}"
+    }
+}
+
+instance ToString[IpAddress] {
+    fn to_string(a: IpAddress) -> String {
+        a.value()
+    }
+}
+
+fn invalid_address[T](address: String, detail: String) -> Result[T, Error] {
+    Err(AddressError(address: address, detail: detail)).context()
+}
+
+pub fn split_host_port(address: String) -> Result[(String, String), Error] {
+    if address.starts_with("[") {
+        let close = match address.find("]") {
+            Some(i) => i,
+            None => return invalid_address(address, "missing closing bracket"),
+        };
+        if close + 1 >= address.len() || address.substring(close + 1, close + 2) != ":" {
+            return invalid_address(address, "missing port");
+        }
+        let host = address.substring(1, close);
+        let port = address.substring(close + 2, address.len());
+        if host.is_empty() {
+            return invalid_address(address, "empty host");
+        }
+        if port.is_empty() {
+            return invalid_address(address, "empty port");
+        }
+        return Ok((host, port));
+    }
+
+    let separator = match address.rfind(':') {
+        Some(i) => i,
+        None => return invalid_address(address, "missing port"),
+    };
+    match address.find(":") {
+        Some(i) if i != separator => return invalid_address(address, "IPv6 addresses must be enclosed in brackets"),
+        _ => {}
+    }
+    let host = address.substring(0, separator);
+    let port = address.substring(separator + 1, address.len());
+    if port.is_empty() {
+        return invalid_address(address, "empty port");
+    }
+    Ok((host, port))
+}
+
+pub fn parse_host_port(address: String) -> Result[(String, U16), Error] {
+    let (host, port) = split_host_port(address.clone())?;
+    match port.parse_int(10) {
+        Ok(value) if value >= 0 && value <= 65535 => Ok((host, value.as_u16())),
+        _ => invalid_address(address, "invalid port"),
+    }
+}
+
+pub fn join_host_port(host: String, port: U16) -> String {
+    if host.contains(":") {
+        "[${host}]:${port}"
+    } else {
+        "${host}:${port}"
+    }
+}
+
+@safe
+pub fn resolve(host: String) -> Result[Vec[IpAddress], Error] {
+    if host.is_empty() {
+        return Err(ResolveError.new(host, 0, "empty host")).context();
+    }
+    let host_string = CString.from_string(host.clone());
+    let hints = AddrInfo.ip();
+    let result: *AddrInfo = get_null_ptr();
+    let code = getaddrinfo(host_string.as_ptr(), get_null_ptr(), &hints, &result);
+    if code != 0 {
+        let detail = from_cstring(gai_strerror(code));
+        return Err(ResolveError.new(host, code, detail)).context();
+    }
+    defer freeaddrinfo(result);
+
+    let addresses: Vec[IpAddress] = Vec.new();
+    let current = result;
+    while !is_null_ptr(current) {
+        let info = *current;
+        let address: Option[IpAddress] = if info.ai_family == Domain.code(Domain.AF_INET) {
+            let socket_address: *SockaddrIn = transmute(info.ai_addr);
+            Some(IpAddress.V4((*socket_address).address()))
+        } else {
+            if info.ai_family == AF_INET6 {
+                let socket_address: *SockaddrIn6 = transmute(info.ai_addr);
+                Some(IpAddress.V6((*socket_address).address(), (*socket_address).sin6_scope_id))
+            } else {
+                None
+            }
+        };
+        match address {
+            Some(address) => {
+                if !addresses.contains(address) {
+                    addresses.push(address);
+                }
+            }
+            None => {}
+        }
+        current = info.ai_next;
+    }
+    if addresses.is_empty() {
+        return Err(ResolveError.new(host, 0, "no addresses found")).context();
+    }
+    Ok(addresses)
+}
+
+}
