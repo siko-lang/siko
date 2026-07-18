@@ -1,0 +1,86 @@
+module Siko.Interpreter.Value {
+
+import Siko.AST.Expr
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Interner as I
+import Siko.Interpreter.Memory
+
+// A runtime value. Expressions are untyped when the interpreter runs (right
+// after name resolution), so every value carries its own type; dispatch
+// decisions are made from value types, never from expression types.
+pub struct Value {
+    pub ty: TypeDef,
+    pub kind: ValueKind,
+
+    pub fn unit() -> Value {
+        Value(TypeDef.Tuple(Vec.new()), ValueKind.Tuple(Vec.new()))
+    }
+
+    pub fn uninitialized() -> Value {
+        Value(TypeDef.Wildcard, ValueKind.Uninitialized)
+    }
+}
+
+pub enum ValueKind {
+    // Payload for Int/I8..I64/U8..U64; the value's ty says which.
+    Int(Int),
+    // Payload for F32/F64.
+    Float(F64),
+    Struct(StructBox),
+    Variant(VariantBox),
+    // Includes unit as Tuple([]).
+    Tuple(Vec[Value]),
+    // A function referenced as a value.
+    FnRef(QualifiedName),
+    Closure(ClosureBox),
+    Ptr(PtrValue),
+    // Declared but never assigned storage; reading it is an error.
+    Uninitialized,
+}
+
+// A ResolvedLambda plus the captured values snapshotted where it was
+// evaluated. Lambdas are not lifted at this stage; captures are the first
+// capture_count entries of args.
+pub struct ClosureBox {
+    pub args: Vec[LambdaArg],
+    pub capture_count: Int,
+    pub captured: Vec[Value],
+    pub body: Expr,
+    // Module of the enclosing function; instance dispatch inside the lambda
+    // body resolves in this module's context.
+    pub module_name: I.String,
+}
+
+// Struct values are shared boxes: copying a Value copies the reference, so
+// field mutation is visible through every copy (siko reference semantics).
+pub struct StructBox {
+    pub qname: QualifiedName,
+    // Declaration order.
+    pub fields: Vec[Value],
+}
+
+pub struct VariantBox {
+    pub enum_qname: QualifiedName,
+    pub variant_qname: QualifiedName,
+    // Index in EnumDef.variants.
+    pub tag: Int,
+    pub items: Vec[Value],
+}
+
+// Short human description of a value's shape, for error messages.
+pub fn describe(value: Value) -> String {
+    match value.kind {
+        ValueKind.Int(_) => "integer",
+        ValueKind.Float(_) => "float",
+        ValueKind.Struct(sbox) => "struct ${I.resolve(sbox.qname.name())}",
+        ValueKind.Variant(vbox) => "variant ${I.resolve(vbox.variant_qname.name())}",
+        ValueKind.Tuple(items) => "tuple of ${items.len()}",
+        ValueKind.FnRef(qname) => "function ${I.resolve(qname.name())}",
+        ValueKind.Closure(_) => "closure",
+        ValueKind.Ptr(_) => "pointer",
+        ValueKind.Uninitialized => "uninitialized value",
+    }
+}
+
+}

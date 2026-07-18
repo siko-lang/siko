@@ -5,6 +5,7 @@ import Siko.Driver.Util
 import Siko.Parser.Parser
 import Siko.Parser.Module
 import Siko.Resolver
+import Siko.Interpreter.InterpreterTestRunner
 import Siko.LowerDefer
 import Siko.Normalizer
 import Siko.BoundExpansion
@@ -57,6 +58,16 @@ pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
                 }
             },
             dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "interpreter-tests",
+            label: "Running interpreter tests...",
+            run: |driver| {
+                if !config.lsp {
+                    run_interpreter_tests(driver.program);
+                }
+            },
+            dump: None,
         ),
         Pass(
             name: "lower-defer",

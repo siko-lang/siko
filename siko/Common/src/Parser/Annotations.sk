@@ -76,6 +76,18 @@ instance AnnotationParser[Parser] {
                             parser.advance();
                             annotations.push(Annotation.ClosureAlias);
                         }
+                        "interpreter_test" => {
+                            parser.advance();
+                            parser.expect(TokenKind.LParen)?;
+                            match parser.peek() {
+                                TokenKind.VarIdentifier(name) => {
+                                    parser.advance();
+                                    parser.expect(TokenKind.RParen)?;
+                                    annotations.push(Annotation.InterpreterTest(name));
+                                }
+                                _ => return Err(ParseError.new("expected function name in @interpreter_test(...)", parser.cur_pos()))
+                            }
+                        }
                         "op" => {
                             parser.advance();
                             parser.expect(TokenKind.LParen)?;

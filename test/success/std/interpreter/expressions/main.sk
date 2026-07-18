@@ -1,0 +1,59 @@
+module Main {
+
+import Std.Macro.Debug
+
+fn with_default(message: String = "default") {
+    println(message);
+}
+
+fn early_return() {
+    defer println("defer-return");
+    println("before-return");
+    return ();
+}
+
+fn exercise_expressions() {
+    println("start");
+
+    let number = 1;
+    let pair = (number, "tuple");
+    match pair {
+        (1, "tuple") => println("tuple-match"),
+        _ => println("tuple-miss"),
+    }
+
+    if True {
+        println("if-then");
+    } else {
+        println("if-miss");
+    }
+
+    if False {
+        println("if-miss");
+    } else {
+        println("if-else");
+    }
+
+    loop {
+        println("loop");
+        break;
+    }
+
+    {
+        defer println("defer-first");
+        defer println("defer-second");
+        println("block");
+    };
+
+    with_default();
+    early_return();
+    println("end");
+}
+
+@interpreter_test(exercise_expressions)
+struct ExpressionsMacro {
+}
+
+fn main() {
+}
+}

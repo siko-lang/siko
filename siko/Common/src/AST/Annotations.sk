@@ -35,6 +35,10 @@ pub enum Annotation {
     // each other's closure content (used for functions whose bodies launder
     // pointers through integers, where closure flow is uninferable).
     ClosureAlias,
+    // @interpreter_test(foo) on a struct: run function `foo` (resolved in the
+    // annotating module) with the compile-time interpreter after resolution.
+    // Dedicated end-to-end test harness, not the language's macro feature.
+    InterpreterTest(I.String),
 
     pub fn has_derive(a: Annotation, trait_name: Name) -> Bool {
         match a {
@@ -138,6 +142,13 @@ pub enum Annotation {
         match a {
             Annotation.ClosureAlias => True,
             _ => False,
+        }
+    }
+
+    pub fn interpreter_test_name(a: Annotation) -> Option[I.String] {
+        match a {
+            Annotation.InterpreterTest(name) => Some(name),
+            _ => None,
         }
     }
 }

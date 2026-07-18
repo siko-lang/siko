@@ -1,0 +1,46 @@
+module Siko.Interpreter.InterpreterTestRunner {
+
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Interner as I
+import Siko.Interpreter.Error
+import Siko.Interpreter.Interpreter as Interp
+import Siko.Location
+import Siko.Report
+
+// Dedicated end-to-end test driver. For every struct annotated with
+// @interpreter_test(foo), execute `foo` in the struct's module immediately
+// after resolution. This is deliberately separate from the language's future
+// macro feature and remains useful independently of it.
+pub fn run_interpreter_tests(program: Program) {
+    let tests: Vec[(I.String, I.String, Location)] = Vec.new();
+    for (_, struct_def) in program.structs {
+        for annotation in struct_def.annotations {
+            if let Some(fn_name) = annotation.interpreter_test_name() {
+                tests.push((struct_def.module_name, fn_name, struct_def.name.location));
+            }
+        }
+    }
+    if tests.is_empty() {
+        return;
+    }
+    // This runs before the pipeline's instance-resolver pass, but interpreted
+    // trait calls need the same module instance tables.
+    if program.instance_resolver.modules.is_empty() {
+        program.instance_resolver = InstanceResolver.build(program);
+    }
+    for (module_name, fn_name, location) in tests {
+        let fn_qn = QualifiedName.new_function(module_name, fn_name);
+        if program.functions.get(fn_qn).is_none() {
+            report("interpreter test function `${I.resolve(fn_name)}` not found in module `${I.resolve(module_name)}`", Some(location));
+            continue;
+        }
+        match Interp.run(program, fn_qn, location) {
+            Ok(_) => {}
+            Err(e) => report(format_error(e), Some(e.location)),
+        }
+    }
+}
+
+}

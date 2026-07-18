@@ -1,0 +1,261 @@
+module Siko.Interpreter.Witnesses {
+
+import Std.Map
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Format.Utils
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Interner as I
+import Siko.Interpreter.Error
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Unification.Apply
+import Siko.Unification.Sub
+import Siko.Utils.TypeVarAllocator
+
+// A value crossing a function-call boundary, together with its type as seen
+// symbolically by the caller. The symbolic type preserves distinctions such as
+// `Int` versus a caller type parameter `T` even when both runtime values are Int.
+pub struct CallArg {
+    pub value: Value,
+    pub symbolic_ty: TypeDef,
+
+    pub fn concrete(program: Program, value: Value) -> CallArg {
+        CallArg(value, dispatch_type(program, value))
+    }
+}
+
+// One dictionary supplied to a running generic function. symbolic_args are in
+// that function's own type-parameter namespace; concrete_args describe the
+// actual runtime values. Keeping both is what makes the instances/quiz behavior
+// possible without pretending runtime Int values remember where they came from.
+pub struct RuntimeBound {
+    pub trait_name: I.String,
+    pub symbolic_args: Vec[TypeDef],
+    pub concrete_args: Vec[TypeDef],
+    pub assoc_types: Map[I.String, TypeDef],
+    pub witness: ResolvedWitness,
+}
+
+// Dynamic equivalent of a monomorphized function's witness frame.
+pub struct CallContext {
+    pub module_name: I.String,
+    pub bounds: Vec[RuntimeBound],
+
+    pub fn empty(module_name: I.String) -> CallContext {
+        CallContext(module_name, Vec.new())
+    }
+}
+
+pub struct RuntimeResolution {
+    pub witness: ResolvedWitness,
+    pub assoc_types: Map[I.String, TypeDef],
+    pub primary_args: Vec[TypeDef],
+}
+
+pub fn call_arg_values(args: Vec[CallArg]) -> Vec[Value] {
+    args.iter().map(|arg| arg.value).collect()
+}
+
+// Resolve a bound in the caller's dynamic context. Caller-provided function
+// bounds win when the symbolic arguments match. Otherwise use the existing
+// context-aware resolver with no synthetic function bounds: it validates an
+// instance's own bounds and captures their child witnesses.
+pub fn resolve_bound(
+    program: Program,
+    context: CallContext,
+    trait_name: I.String,
+    symbolic_args: Vec[TypeDef],
+    concrete_args: Vec[TypeDef],
+    constraints: Vec[Constraint],
+    out: Substitution,
+    location: Location,
+) -> Result[RuntimeResolution, InterpreterError] {
+    for bound in context.bounds {
+        if bound.trait_name == trait_name && bound.symbolic_args == symbolic_args {
+            extract_associated_types(bound.assoc_types, constraints, out);
+            return Ok(RuntimeResolution(bound.witness, bound.assoc_types, bound.concrete_args));
+        }
+    }
+
+    let module_resolver = match program.instance_resolver.for_module(context.module_name) {
+        Some(r) => r,
+        None => return Err(error(ErrorKind.Internal("no instance resolver for module ${I.resolve(context.module_name)}"), location)),
+    };
+    let resolver = FunctionInstanceResolver.new(
+        context.module_name,
+        module_resolver,
+        Vec.new(),
+        TypeVarAllocator.new(),
+        program,
+    );
+    match resolver.resolve_and_extract(trait_name, concrete_args, constraints, Substitution.new(), out) {
+        BoundResult.Satisfied(resolution) => {
+            let witness = resolve_witness(context, resolution.witness, location)?;
+            Ok(RuntimeResolution(witness, resolution.assoc_types, resolution.primary_args))
+        }
+        BoundResult.NotFound =>
+            Err(error(ErrorKind.MissingInstance(I.resolve(trait_name), format_types(concrete_args)), location)),
+        BoundResult.Ambiguous(_) =>
+            Err(error(ErrorKind.AmbiguousInstance(I.resolve(trait_name)), location)),
+    }
+}
+
+// Build the witness frame for a callee. `provided` is aligned with the
+// callee's declared bounds and is used by trait dispatch for the self witness
+// and for context bounds captured by a generic instance.
+pub fn build_call_context(
+    program: Program,
+    caller: CallContext,
+    fdef: FunctionDef,
+    args: Vec[CallArg],
+    provided: Vec[Option[ResolvedWitness]],
+    location: Location,
+) -> Result[CallContext, InterpreterError] {
+    let context = CallContext.empty(fdef.module_name);
+    let tad = match fdef.type_arg_defs {
+        Some(tad) => tad,
+        None => return Ok(context),
+    };
+    let symbolic_sub = Substitution.new();
+    let concrete_sub = Substitution.new();
+    for (i, arg_def) in fdef.args.iter().enumerate() {
+        if i < args.len() {
+            extract_named_bindings(arg_def.type_def, args[i].symbolic_ty, symbolic_sub);
+            extract_named_bindings(arg_def.type_def, dispatch_type(program, args[i].value), concrete_sub);
+        }
+    }
+
+    for (index, bound) in tad.bounds.iter().enumerate() {
+        let symbolic_query = applied_bound_args(bound, symbolic_sub);
+        let concrete_query = applied_bound_args(bound, concrete_sub);
+        let known = match provided.get_opt(index) {
+            Some(Some(witness)) => Some(witness),
+            _ => None,
+        };
+        let resolution = match known {
+            Some(witness) => resolve_provided(
+                program,
+                witness,
+                concrete_query,
+                bound.constraints,
+                concrete_sub,
+            ),
+            None => resolve_bound(
+                program,
+                caller,
+                bound.trait_name.name(),
+                symbolic_query,
+                concrete_query,
+                bound.constraints,
+                concrete_sub,
+                location,
+            )?,
+        };
+        let local_symbolic_args: Vec[TypeDef] = bound.type_args
+            .iter()
+            .map(|name| TypeDef.Var(TypeVar.Named(name.name())))
+            .collect();
+        context.bounds.push(RuntimeBound(
+            trait_name: bound.trait_name.name(),
+            symbolic_args: local_symbolic_args,
+            concrete_args: resolution.primary_args,
+            assoc_types: resolution.assoc_types,
+            witness: resolution.witness,
+        ));
+    }
+    Ok(context)
+}
+
+// Bounds for a concrete instance method are a mix of dictionaries captured by
+// the instance and method-owned dictionaries supplied by this call. Produce an
+// aligned vector for build_call_context.
+pub fn instance_method_bounds(
+    fdef: FunctionDef,
+    self_witness: ResolvedWitness,
+    location: Location,
+) -> Result[Vec[Option[ResolvedWitness]], InterpreterError] {
+    let provided: Vec[Option[ResolvedWitness]] = Vec.new();
+    let child_index = 0;
+    if let Some(tad) = fdef.type_arg_defs {
+        for bound in tad.bounds {
+            match bound.origin {
+                BoundOrigin.InstanceContext => {
+                    if child_index >= self_witness.children.len() {
+                        return Err(error(ErrorKind.Internal("instance witness is missing a context bound"), location));
+                    }
+                    provided.push(Some(self_witness.children[child_index]));
+                    child_index += 1;
+                }
+                BoundOrigin.MethodOwn => provided.push(None),
+            }
+        }
+    }
+    Ok(provided)
+}
+
+pub fn default_method_bounds(fdef: FunctionDef, self_witness: ResolvedWitness) -> Vec[Option[ResolvedWitness]] {
+    let provided: Vec[Option[ResolvedWitness]] = Vec.new();
+    if let Some(tad) = fdef.type_arg_defs {
+        for index in 0..tad.bounds.len() {
+            if index == 0 {
+                provided.push(Some(self_witness));
+            } else {
+                provided.push(None);
+            }
+        }
+    }
+    provided
+}
+
+fn resolve_provided(
+    program: Program,
+    witness: ResolvedWitness,
+    concrete_args: Vec[TypeDef],
+    constraints: Vec[Constraint],
+    out: Substitution,
+) -> RuntimeResolution {
+    let resolution = resolve_known_instance(program, witness, concrete_args, TypeVarAllocator.new());
+    extract_associated_types(resolution.assoc_types, constraints, out);
+    RuntimeResolution(witness, resolution.assoc_types, resolution.primary_args)
+}
+
+fn resolve_witness(context: CallContext, witness: BoundWitness, location: Location) -> Result[ResolvedWitness, InterpreterError] {
+    match witness {
+        BoundWitness.FunctionBound(index) => {
+            match context.bounds.get_opt(index) {
+                Some(bound) => Ok(bound.witness),
+                None => Err(error(ErrorKind.Internal("function-bound witness index ${index} is missing"), location)),
+            }
+        }
+        BoundWitness.Instance(module_name, instance_qname, children) => {
+            let resolved_children: Vec[ResolvedWitness] = Vec.new();
+            for child in children {
+                resolved_children.push(resolve_witness(context, child, location)?);
+            }
+            Ok(ResolvedWitness(module_name, instance_qname, resolved_children))
+        }
+        BoundWitness.EffectAssociatedTypeBound(_, _) =>
+            Err(error(ErrorKind.UnsupportedFunction("effect-associated-type witness"), location)),
+    }
+}
+
+fn applied_bound_args(bound: Bound, sub: Substitution) -> Vec[TypeDef] {
+    bound.type_args.iter().map(|name| {
+        sub.lookup_named(name.name()).unwrap_or(TypeDef.Var(TypeVar.Named(name.name())))
+    }).collect()
+}
+
+fn extract_associated_types(assoc_types: Map[I.String, TypeDef], constraints: Vec[Constraint], out: Substitution) {
+    for constraint in constraints {
+        if let Some(concrete) = assoc_types.get(constraint.lhs.name) {
+            extract_named_bindings(constraint.rhs, concrete, out);
+        }
+    }
+}
+
+}

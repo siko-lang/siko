@@ -1,0 +1,71 @@
+module Main {
+
+import Std.Macro.Debug
+
+struct Person {
+    name: String,
+    role: String = "engineer",
+
+    pub fn emit(p: Person, prefix: String = "person") {
+        println(prefix);
+        println(p.name);
+        println(p.role);
+    }
+
+    pub fn rename(p: Person, next_name: String) {
+        p.name = next_name;
+    }
+}
+
+struct Team {
+    lead: Person,
+    backup: Person,
+}
+
+enum Command {
+    Stop,
+    Rename(Person, String),
+    Replace(Team),
+}
+
+fn execute(command: Command) {
+    match command {
+        Stop => println("stop"),
+        Rename(Person(old_name, role), next_name) => {
+            println("rename");
+            println(old_name);
+            println(role);
+            println(next_name);
+        }
+        Replace(Team(Person(lead, _), Person(backup, _))) => {
+            println("replace");
+            println(lead);
+            println(backup);
+        }
+    }
+}
+
+fn exercise_data_types() {
+    let first = Person("Ada");
+    first.emit();
+    first.rename("Grace");
+    first.emit("renamed");
+
+    let alias = first;
+    alias.rename("Margaret");
+    first.emit("shared");
+
+    let second = Person("Barbara", "scientist");
+    let team = Team(first, second);
+    execute(Rename(first, "Edsger"));
+    execute(Replace(team));
+    execute(Stop);
+}
+
+@interpreter_test(exercise_data_types)
+struct DataTypesMacro {
+}
+
+fn main() {
+}
+}

@@ -1,0 +1,30 @@
+module Siko.Interpreter.Memory {
+
+import Siko.AST.Type
+import Siko.Interpreter.Value
+
+// The interpreter's "heap": it never models bytes. An allocation is an array
+// of value slots and a pointer is a slot reference into one. All of Std.Ptr
+// is special-cased onto this model, so std containers (Vec, String, Map, ...)
+// run unmodified.
+pub struct ArrayBox {
+    // None = uninitialized memory; reading it is an error.
+    pub slots: Vec[Option[Value]],
+    // Wildcard until the first write reveals the element type.
+    pub elem_ty: TypeDef,
+
+    pub fn new(count: Int, elem_ty: TypeDef) -> ArrayBox {
+        ArrayBox(Vec.with_value(count, None), elem_ty)
+    }
+}
+
+pub enum PtrValue {
+    Null,
+    // Pointer into an allocation, at slot index. May point past the end;
+    // only dereferencing bounds-checks.
+    Slot(ArrayBox, Int),
+    // &x.field — pointer to one struct field.
+    Field(StructBox, Int),
+}
+
+}

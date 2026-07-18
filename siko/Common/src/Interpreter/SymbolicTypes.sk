@@ -1,0 +1,27 @@
+module Siko.Interpreter.SymbolicTypes {
+
+import Std.Map
+import Siko.AST.Expr
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+
+// Recover the caller-visible type provenance needed for bound forwarding.
+// Runtime type remains the safe fallback for expressions that do not directly
+// name a generic variable. More expression forms can be added here without
+// coupling witness logic to the evaluator.
+pub fn expression_type(
+    program: Program,
+    var_types: Map[VariableName, TypeDef],
+    expr: Expr,
+    value: Value,
+) -> TypeDef {
+    match expr.kind {
+        ExprKind.Var(name) => var_types.get(name).unwrap_or(dispatch_type(program, value)),
+        ExprKind.Paren(inner) | ExprKind.Transmute(inner) => expression_type(program, var_types, inner, value),
+        _ => dispatch_type(program, value),
+    }
+}
+
+}

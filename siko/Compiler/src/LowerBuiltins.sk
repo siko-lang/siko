@@ -16,6 +16,7 @@ import Siko.Location
 import Siko.Interner as I
 import Siko.Utils.LabelAllocator
 import Siko.Constants.Builtins as B
+import Siko.Report
 
 // ── Rewrite trait ─────────────────────────────────────────────────────────────
 
@@ -110,6 +111,17 @@ instance Rewrite[Expr] {
         match expr.kind {
             ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, is_co)) => {
                 let args = args.rewrite(ctx);
+                if qn.base_name() == B.get_macro_debug_println_qn() {
+                    report("Std.Macro.Debug.println is only available in compile-time interpreted code", Some(loc));
+                    return Expr(ExprKind.FunctionCall(FunctionCallInfo(
+                        qname: qn,
+                        kind: FunctionKind.Builtin,
+                        args: args,
+                        witnesses: WitnessInfo.new(),
+                        named_args: Vec.new(),
+                        is_coroutine_create: is_co,
+                    )), loc, ty);
+                }
                 if let Some(kind) = ctx.lower_atomic_intrinsic(qn, args) {
                     return Expr(kind, loc, ty);
                 }

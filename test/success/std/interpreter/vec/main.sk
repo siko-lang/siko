@@ -1,0 +1,54 @@
+module Main {
+
+import Std.Macro.Debug
+
+fn exercise_vec() {
+    let values = Vec.new();
+    values.push("zero");
+    values.push("one");
+    values.push("two");
+
+    match values.len() {
+        3 => println("len-three"),
+        _ => println("bad-length"),
+    }
+
+    println(values.get(0));
+    println(values[1]);
+    values[1] = "ONE";
+    println(values[1]);
+
+    let removed = values.remove(0);
+    println(removed);
+    values.insert(1, "middle");
+    println("after-insert");
+    println(values.get(0));
+    println(values.get(1));
+    println(values.get(2));
+
+    if values.contains("middle") {
+        println("contains-middle");
+    } else {
+        println("missing-middle");
+    }
+
+    for value in values {
+        println(value);
+    }
+
+    match values.pop() {
+        Some(value) => {
+            println("popped");
+            println(value);
+        }
+        None => println("nothing-to-pop"),
+    }
+}
+
+@interpreter_test(exercise_vec)
+struct VecMacro {
+}
+
+fn main() {
+}
+}

@@ -1,0 +1,62 @@
+module Main {
+
+import Std.Macro.Debug
+
+trait Render[T] {
+    fn render(value: T)
+
+    fn render_twice(value: T) {
+        render(value);
+        value.render();
+    }
+}
+
+struct User {
+    name: String,
+}
+
+enum State {
+    Ready,
+    Busy(String),
+}
+
+instance UserRender Render[User] {
+    fn render(value: User) {
+        println("user");
+        println(value.name);
+    }
+}
+
+instance StateRender Render[State] {
+    fn render(value: State) {
+        match value {
+            Ready => println("ready"),
+            Busy(reason) => {
+                println("busy");
+                println(reason);
+            }
+        }
+    }
+}
+
+fn render_generic[T: Render[T]](value: T) {
+    value.render();
+}
+
+fn exercise_instances() {
+    let user = User("Ada");
+    render(user);
+    user.render();
+    user.render_twice();
+
+    render_generic(Ready);
+    render_generic(Busy("compiling"));
+}
+
+@interpreter_test(exercise_instances)
+struct InstancesMacro {
+}
+
+fn main() {
+}
+}

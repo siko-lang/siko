@@ -1,0 +1,74 @@
+module Main {
+
+import Std.Map
+import Std.Macro.Debug
+
+fn exercise_map() {
+    let items = Map.new();
+    println("new");
+    items.insert(2, "two");
+    println("inserted-two");
+    items.insert(1, "one");
+    println("inserted-one");
+    items.insert(4, "four");
+    items.insert(3, "three");
+
+    match items.len() {
+        4 => println("len-four"),
+        _ => println("bad-length"),
+    }
+
+    match items.get(3) {
+        Some(value) => println(value),
+        None => println("missing-three"),
+    }
+
+    match items.insert(2, "TWO") {
+        Some(old) => println(old),
+        None => println("missing-old"),
+    }
+    println(items[2]);
+    items[2] = "two-again";
+    println(items[2]);
+
+    if items.contains_key(4) {
+        println("contains-four");
+    } else {
+        println("missing-four");
+    }
+
+    for (key, value) in items {
+        match key {
+            1 => println("key-one"),
+            2 => println("key-two"),
+            3 => println("key-three"),
+            4 => println("key-four"),
+            _ => println("unexpected-key"),
+        }
+        println(value);
+    }
+
+    match items.remove(3) {
+        Some(value) => println(value),
+        None => println("missing-remove"),
+    }
+
+    for value in items.values() {
+        println(value);
+    }
+
+    items.clear();
+    if items.is_empty() {
+        println("empty");
+    } else {
+        println("not-empty");
+    }
+}
+
+@interpreter_test(exercise_map)
+struct MapMacro {
+}
+
+fn main() {
+}
+}
