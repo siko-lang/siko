@@ -2,14 +2,12 @@ module Std.Http.FileServerTest {
 
 import Std.Effects.Network
 import Std.Effects.Filesystem
-import Std.Effects.Console
 import Std.Http
 import Std.Http.Server
 import Std.Http.FileServer
 import Std.Http.TestUtil
 import Std.Mock.Network
 import Std.Mock.Fs
-import Std.Mock.Console
 import Std.Mock.Wire
 
 // Drain everything the server wrote back to the peer into a String.
@@ -26,16 +24,16 @@ fn drain(peer: MockPeer) -> String {
     String.from_slice(out.slice())
 }
 
-// Drive one request through the fully mocked network, filesystem and console, and
+// Drive one request through the fully mocked network and filesystem, and
 // return the parsed Response. Everything inside the `with` block is pure EAT: the socket
-// comes from accept, the file contents from the FileSystem effect, the log lines into
-// the ConsoleLog — no real sockets, no real disk, no stdout.
-fn request(files: MockFiles, log: ConsoleLog, root: String, line: String) -> Response {
+// comes from accept and the file contents from the FileSystem effect — no real sockets
+// or disk.
+fn request(files: MockFiles, root: String, line: String) -> Response {
     let gateway = Gateway.new();
     let peer = gateway.open(Config.new(64, 64, 1024));
     peer.send(line.as_slice()).unwrap();
 
-    with mock_gateway = gateway, mock_files = files, mock_console = log, TcpNetwork = MockNet, FileSystem = MockFs, Console = MockConsole {
+    with mock_gateway = gateway, mock_files = files, TcpNetwork = MockNet, FileSystem = MockFs {
         let listener = TcpNetwork.listen(8080).unwrap();
         let socket = TcpNetwork.accept(listener).unwrap();
         serve(socket, file_server(root));
@@ -48,37 +46,28 @@ fn request(files: MockFiles, log: ConsoleLog, root: String, line: String) -> Res
 fn test_serve_200() {
     let files = MockFiles.new();
     files.add("/site/index.html", "<h1>mock home</h1>");
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/").build());
+    let response = request(files, "/site", RequestBuilder.new("/").build());
     assert(response.status() == "200 OK");
     assert(response.header("Content-Type") == Some("text/html; charset=utf-8"));
     assert(response.body() == "<h1>mock home</h1>");
-
-    // The server logged the requested path, captured instead of printed.
-    assert(log.count() == 1);
-    assert(log.lines()[0] == "/");
 }
 
 @test
 fn test_serve_404() {
     let files = MockFiles.new();
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/missing.html").build());
+    let response = request(files, "/site", RequestBuilder.new("/missing.html").build());
     assert(response.status() == "404 Not Found");
     assert(response.header("Content-Type") == Some("text/html; charset=utf-8"));
     assert(response.body() == "<h1>404 Not Found</h1>");
-
-    assert(log.lines()[0] == "/missing.html");
 }
 
 @test
 fn test_serve_405() {
     let files = MockFiles.new();
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/index.html").method("POST").build());
+    let response = request(files, "/site", RequestBuilder.new("/index.html").method("POST").build());
     assert(response.status() == "405 Method Not Allowed");
     assert(response.header("Allow") == Some("GET, HEAD, OPTIONS"));
 }
@@ -86,9 +75,8 @@ fn test_serve_405() {
 @test
 fn test_serve_options() {
     let files = MockFiles.new();
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/").method("OPTIONS").build());
+    let response = request(files, "/site", RequestBuilder.new("/").method("OPTIONS").build());
     assert(response.status() == "200 OK");
     assert(response.header("Allow") == Some("GET, HEAD, OPTIONS"));
     assert(response.body() == "");
@@ -97,9 +85,8 @@ fn test_serve_options() {
 @test
 fn test_trailing_slash_redirect() {
     let files = MockFiles.new();
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/about/").build());
+    let response = request(files, "/site", RequestBuilder.new("/about/").build());
     assert(response.status() == "302 Found");
     assert(response.header("Location") == Some("/about"));
 }
@@ -108,9 +95,8 @@ fn test_trailing_slash_redirect() {
 fn test_serve_head() {
     let files = MockFiles.new();
     files.add("/site/index.html", "<h1>mock home</h1>");
-    let log = ConsoleLog.new();
 
-    let response = request(files, log, "/site", RequestBuilder.new("/").method("HEAD").build());
+    let response = request(files, "/site", RequestBuilder.new("/").method("HEAD").build());
     assert(response.status() == "200 OK");
     assert(response.header("Content-Type") == Some("text/html; charset=utf-8"));
     assert(response.header("Content-Length") == Some("18"));

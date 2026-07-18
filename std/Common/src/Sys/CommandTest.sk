@@ -1,0 +1,30 @@
+module Std.Sys.CommandTest {
+
+import Std.Arch.Wait
+
+@test
+fn test_clean_exit_status() {
+    let status = 0;
+    assert(w_exited(status));
+    assert(!w_signaled(status));
+    assert(w_exit_status(status) == 0);
+}
+
+@test
+fn test_nonzero_exit_status() {
+    let status: I32 = 768;
+    assert(w_exited(status));
+    assert(!w_signaled(status));
+    assert(w_exit_status(status) == 3);
+}
+
+@test
+fn test_signal_status() {
+    // waitpid reports SIGABRT as signal 6 in the low seven status bits.
+    let status = 6;
+    assert(!w_exited(status));
+    assert(w_signaled(status));
+    assert(w_status(status) == 6);
+}
+
+}
