@@ -1,0 +1,30 @@
+module Main {
+
+import Std.IO.EventLoop
+import Std.Sync.Atomic
+import Std.Sync.Atomic.AtomicBool
+import Std.Sync.Thread as Thread
+import Std.Time
+
+fn main() {
+    let eventloop = EventLoop.new();
+    let waker = eventloop.waker();
+    let worker_started = AtomicBool.new(False);
+
+    let worker = Thread.spawn(|| {
+        worker_started.store(True, Atomic.Ordering.Release);
+        Thread.sleep(50.milliseconds());
+        waker.wake();
+    });
+
+    while !worker_started.load(Atomic.Ordering.Acquire) {}
+    let start = Instant.now();
+    eventloop.run_once(5.seconds());
+    let elapsed = start.elapsed();
+    worker.join();
+
+    assert(elapsed.to_millis() < 1000);
+    println("event loop woke from another thread");
+}
+
+}

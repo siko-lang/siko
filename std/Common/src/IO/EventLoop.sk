@@ -10,6 +10,13 @@ pub struct EventLoop {
         EventLoop(AS.EventLoop.new())
     }
 
+    // Return a handle that may be used from another OS thread to interrupt
+    // run_once. The handle only notifies the loop; all event-loop state still
+    // belongs to the thread running the loop.
+    pub fn waker(s: EventLoop) -> Waker {
+        Waker(s.inner.waker())
+    }
+
     pub fn register_read(s: EventLoop, fd: I32, callback: fn() -> ()) {
         s.inner.register_read(fd, callback)
     }
@@ -28,6 +35,14 @@ pub struct EventLoop {
 
     pub fn run_once(s: EventLoop, timeout: Duration) {
         s.inner.run_once(timeout)
+    }
+}
+
+pub struct Waker {
+    inner: AS.Waker,
+
+    pub fn wake(w: Waker) {
+        w.inner.wake()
     }
 }
 

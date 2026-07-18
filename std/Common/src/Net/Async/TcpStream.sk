@@ -6,6 +6,7 @@ import Std.IO.Writer
 import Std.IO.Closer
 import Std.IO.Async.Scheduler as Async
 import Std.Net.Address
+import Std.Net.Async.Address as Async
 import Std.Net.TcpStream as Base
 import Std.Net.SocketAddress
 import Std.Slice
@@ -21,7 +22,7 @@ pub struct TcpStream {
         let (host, port) = parse_host_port(address)?;
         let host = if host.is_empty() { "localhost" } else { host };
         let last_error: Option[Error] = None;
-        for ip in resolve(host)? {
+        for ip in Async.resolve(host)? {
             let socket_address = SocketAddress.from_ip(ip, port);
             match Base.TcpStream.start_connect(socket_address, True) {
                 Ok(stream) => {

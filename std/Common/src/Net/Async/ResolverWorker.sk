@@ -1,0 +1,48 @@
+module Std.Net.Async.ResolverWorker {
+
+import Std.Net.Address as SyncAddress
+import Std.Sync.Channel
+import Std.Sync.Thread as Thread
+
+struct Request {
+    host: String,
+    complete: fn(Result[Vec[SyncAddress.IpAddress], Error]) -> (),
+}
+
+// A scheduler-owned worker that serializes blocking libc name lookups on its
+// own OS thread. The request channel is the only mutable state shared with the
+// scheduler thread.
+pub struct Resolver {
+    requests: Channel[Request],
+    worker: Thread.JoinHandle,
+
+    pub fn new() -> Resolver {
+        let requests: Channel[Request] = Channel.new();
+        let worker = Thread.spawn(|| {
+            for request in requests {
+                let result = SyncAddress.resolve(request.host);
+                let complete = request.complete;
+                complete(result);
+            }
+        });
+        Resolver(requests: requests, worker: worker)
+    }
+
+    pub fn resolve(
+        r: Resolver,
+        host: String,
+        complete: fn(Result[Vec[SyncAddress.IpAddress], Error]) -> ()
+    ) {
+        match r.requests.send(Request(host: host, complete: complete)) {
+            Ok(()) => {}
+            Err(_) => panic("name resolver is stopped"),
+        }
+    }
+
+    pub fn shutdown(r: Resolver) {
+        r.requests.close();
+        r.worker.join();
+    }
+}
+
+}

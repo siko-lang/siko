@@ -8,6 +8,8 @@ import Std.Time
 import Std.Ptr
 import Std.Array
 
+let WAKE_IDENT: U64 = 0;
+
 pub struct IoRegistration {
     fd: I32,
     read_waiter: Option[fn() -> ()],
@@ -28,7 +30,22 @@ pub struct EventLoop {
         if kq < 0 {
             panic("kqueue() failed");
         }
+        let wake_event = Kevent(
+            ident:  WAKE_IDENT,
+            filter: EVFILT_USER,
+            flags:  EV_ADD | EV_CLEAR,
+            fflags: 0,
+            data:   0,
+            udata:  get_null_voidptr(),
+        );
+        if kevent(kq, &wake_event, 1, get_null_ptr(), 0, get_null_ptr()) < 0 {
+            panic("kevent add event-loop waker failed");
+        }
         EventLoop(kq, Map.new(), Map.new(), 0)
+    }
+
+    pub fn waker(el: EventLoop) -> Waker {
+        Waker(el.kq_fd)
     }
 
     fn get_or_create(el: EventLoop, fd: I32) -> IoRegistration {
@@ -144,6 +161,9 @@ pub struct EventLoop {
         }
         for i in 0..event_num.as_int() {
             let ev = events[i];
+            if ev.filter == EVFILT_USER && ev.ident == WAKE_IDENT {
+                continue;
+            }
             if (ev.flags & EV_ERROR) != 0 {
                 continue;
             }
@@ -184,6 +204,34 @@ pub struct EventLoop {
                     }
                 }
             }
+        }
+    }
+}
+
+pub struct Waker {
+    kq_fd: I32,
+
+    // Triggering an EVFILT_USER event is independent of the scheduler-thread
+    // owned callback and timer maps.
+    @safe
+    pub fn wake(w: Waker) {
+        let event = Kevent(
+            ident:  WAKE_IDENT,
+            filter: EVFILT_USER,
+            flags:  0,
+            fflags: NOTE_TRIGGER,
+            data:   0,
+            udata:  get_null_voidptr(),
+        );
+        loop {
+            if kevent(w.kq_fd, &event, 1, get_null_ptr(), 0, get_null_ptr()) >= 0 {
+                return;
+            }
+            let errno = Std.Arch.Errno.get_errno();
+            if errno == Std.Arch.Errno.Errno.EINTR {
+                continue;
+            }
+            panic("kevent trigger event-loop waker failed: ${errno}");
         }
     }
 }

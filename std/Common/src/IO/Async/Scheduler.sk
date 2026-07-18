@@ -6,18 +6,32 @@ import Std.IO.Reader
 import Std.Time
 import Std.VecDeque
 import Std.Coroutine
+import Std.Net.Async.ResolverWorker
+import Std.Net.Address
+import Std.Sync.Atomic
+import Std.Sync.Atomic.AtomicBool
+import Std.Sync.Channel
 
 struct Scheduler {
     eventloop: EventLoop,
+    eventloop_waker: EventLoop.Waker,
     current_task: Option[Task],
     stop: Bool,
     ready_queue: VecDeque[Task],
+    remote_ready_queue: Channel[Task],
+    resolver: ResolverWorker.Resolver,
 
     pub fn new() -> Scheduler {
-        Scheduler(eventloop: EventLoop.new(),
-              current_task: None,
-              stop: False,
-              ready_queue: VecDeque.new())
+        let eventloop = EventLoop.new();
+        Scheduler(
+            eventloop: eventloop,
+            eventloop_waker: eventloop.waker(),
+            current_task: None,
+            stop: False,
+            ready_queue: VecDeque.new(),
+            remote_ready_queue: Channel.new(),
+            resolver: ResolverWorker.Resolver.new(),
+        )
     }
 
     fn run_ready_queue(s: Scheduler) {
@@ -37,6 +51,16 @@ struct Scheduler {
         s.ready_queue.push_back(task);
     }
 
+    fn drain_remote_ready_queue(s: Scheduler) {
+        loop {
+            match s.remote_ready_queue.try_recv() {
+                TryRecvResult.Value(value: task) => s.add_ready(task),
+                TryRecvResult.Empty => break,
+                TryRecvResult.Closed => break,
+            }
+        }
+    }
+
     fn spawn_task(s: Scheduler, f: fn() -> ()) {
         let task = Task(None);
         let task_co = co run(f);
@@ -46,9 +70,27 @@ struct Scheduler {
 
     pub fn run_tasks(s: Scheduler) {
         while !s.stop {
+            s.drain_remote_ready_queue();
             s.run_ready_queue();
-            s.eventloop.run_once(milliseconds(10));
+            s.drain_remote_ready_queue();
+            if s.stop {
+                break;
+            }
+            if !s.ready_queue.is_empty() {
+                continue;
+            }
+            s.eventloop.run_once(10.milliseconds());
         }
+        s.resolver.shutdown();
+        s.remote_ready_queue.close();
+    }
+
+    fn resolve_name(
+        s: Scheduler,
+        host: String,
+        complete: fn(Result[Vec[IpAddress], Error]) -> ()
+    ) {
+        s.resolver.resolve(host, complete)
     }
 }
 
@@ -60,22 +102,31 @@ struct Task {
     coroutine: Option[co(()) -> ()]
 }
 
-// A one-shot handle that makes a suspended task runnable again. Keeping the
-// scheduler in the handle ensures the task is returned to the scheduler that
-// originally suspended it, even if wake is called through escaped code.
+// A one-shot, thread-safe handle that makes a suspended task runnable again.
+// Foreign threads publish the task to the remote queue and only then interrupt
+// the event loop; the scheduler thread remains the sole owner of ready_queue.
 pub struct Waker {
-    scheduler: Scheduler,
+    remote_ready_queue: Channel[Task],
+    eventloop_waker: EventLoop.Waker,
     task: Task,
-    woken: Bool,
+    woken: AtomicBool,
 
     fn new(scheduler: Scheduler, task: Task) -> Waker {
-        Waker(scheduler: scheduler, task: task, woken: False)
+        Waker(
+            remote_ready_queue: scheduler.remote_ready_queue,
+            eventloop_waker: scheduler.eventloop_waker,
+            task: task,
+            woken: AtomicBool.new(False),
+        )
     }
 
     pub fn wake(w: Waker) {
-        if !w.woken {
-            w.woken = True;
-            w.scheduler.add_ready(w.task);
+        if !w.woken.swap(True, Atomic.Ordering.AcqRel) {
+            match w.remote_ready_queue.send(w.task) {
+                Ok(()) => w.eventloop_waker.wake(),
+                // A stopped scheduler no longer accepts wakeups.
+                Err(_) => {}
+            }
         }
     }
 }
@@ -88,6 +139,13 @@ pub fn spawn(f: fn() -> ()) {
 
 pub fn stop() {
     current.stop = True;
+}
+
+pub fn resolve_name(
+    host: String,
+    complete: fn(Result[Vec[IpAddress], Error]) -> ()
+) {
+    current.resolve_name(host, complete)
 }
 
 fn get_current_task() -> Task {

@@ -3,8 +3,9 @@ module Std.Sync.Channel {
 import Std.Sync.Thread as Sync
 import Std.VecDeque
 
-// A blocking, unbounded, thread-based FIFO channel. This primitive blocks the
-// current OS thread and should not be used inside the async scheduler.
+// An unbounded, thread-safe FIFO channel. recv blocks the current OS thread and
+// must not be used to wait inside the async scheduler; send and try_recv can be
+// used for short synchronized handoffs between scheduler and worker threads.
 pub struct Channel[T] {
     mutex: Sync.Mutex,
     available: Sync.Condvar,

@@ -19,6 +19,7 @@ pub struct IoRegistration {
 
 pub struct EventLoop {
     epoll_fd: I32,
+    wake_fd: I32,
     registrations: Map[I32, IoRegistration],
     timer_callbacks: Map[Int, fn() -> ()],
     timer_to_fd: Map[Int, I32],
@@ -31,7 +32,25 @@ pub struct EventLoop {
         if efd < 0 {
             panic("epoll_create1() failed");
         }
-        EventLoop(efd, Map.new(), Map.new(), Map.new(), Map.new(), 0)
+        let wake_fd = eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
+        if wake_fd < 0 {
+            defer Std.Libc.Unistd.close(efd);
+            panic("eventfd() failed");
+        }
+        let ev = EpollEvent(
+            events: EPOLLIN,
+            data: wake_fd.as_int().as_u64(),
+        );
+        if epoll_ctl(efd, EPOLL_CTL_ADD, wake_fd, &ev) < 0 {
+            defer Std.Libc.Unistd.close(wake_fd);
+            defer Std.Libc.Unistd.close(efd);
+            panic("epoll_ctl add event-loop waker failed");
+        }
+        EventLoop(efd, wake_fd, Map.new(), Map.new(), Map.new(), Map.new(), 0)
+    }
+
+    pub fn waker(el: EventLoop) -> Waker {
+        Waker(el.wake_fd)
     }
 
     fn get_or_create(el: EventLoop, fd: I32) -> IoRegistration {
@@ -158,6 +177,10 @@ pub struct EventLoop {
         for i in 0..event_num.as_int() {
             let ev = events[i];
             let fd = ev.data.as_int().as_i32();
+            if fd == el.wake_fd {
+                drain_waker(fd);
+                continue;
+            }
             match el.fd_to_timer.get(fd) {
                 Some(id) => {
                     // drain the timerfd (must read 8 bytes to re-arm)
@@ -208,6 +231,49 @@ pub struct EventLoop {
                 }
             }
         }
+    }
+}
+
+pub struct Waker {
+    fd: I32,
+
+    // eventfd is an OS synchronization primitive. This method deliberately
+    // touches no EventLoop maps or callbacks, so it is safe on foreign threads.
+    @safe
+    pub fn wake(w: Waker) {
+        loop {
+            if eventfd_write(w.fd, 1) == 0 {
+                return;
+            }
+            let errno = Std.Arch.Errno.get_errno();
+            if errno == Std.Arch.Errno.Errno.EINTR {
+                continue;
+            }
+            // A full nonblocking counter already represents a pending wake.
+            if errno == Std.Arch.Errno.Errno.EAGAIN {
+                return;
+            }
+            panic("eventfd_write failed: ${errno}");
+        }
+    }
+}
+
+@safe
+fn drain_waker(fd: I32) {
+    let value = 0.as_u64();
+    loop {
+        if eventfd_read(fd, &value) == 0 {
+            return;
+        }
+        let errno = Std.Arch.Errno.get_errno();
+        if errno == Std.Arch.Errno.Errno.EINTR {
+            continue;
+        }
+        // Another thread may have consumed a coalesced wake already.
+        if errno == Std.Arch.Errno.Errno.EAGAIN {
+            return;
+        }
+        panic("eventfd_read failed: ${errno}");
     }
 }
 

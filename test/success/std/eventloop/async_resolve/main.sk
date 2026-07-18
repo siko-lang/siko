@@ -1,0 +1,58 @@
+module Main {
+
+import Std.IO.Async.Scheduler as Async
+import Std.Net.Address
+import Std.Net.Async.Address as AsyncAddress
+
+struct State {
+    remaining: Int,
+}
+
+implicit state: State
+
+fn complete_one() {
+    state.remaining -= 1;
+    if state.remaining == 0 {
+        println("async name resolution completed");
+        Async.stop();
+    }
+}
+
+fn resolve_localhost() {
+    let addresses = AsyncAddress.resolve("localhost").unwrap();
+    assert(!addresses.is_empty());
+    complete_one();
+}
+
+fn resolve_ipv4_literal() {
+    let addresses = AsyncAddress.resolve("127.0.0.1").unwrap();
+    assert(addresses.len() == 1);
+    match addresses[0] {
+        IpAddress.V4(address) => {
+            assert(address[0] == 127);
+            assert(address[1] == 0);
+            assert(address[2] == 0);
+            assert(address[3] == 1);
+        }
+        _ => panic("expected an IPv4 address"),
+    }
+    complete_one();
+}
+
+fn resolve_error() {
+    assert(AsyncAddress.resolve("").is_err());
+    complete_one();
+}
+
+fn main() {
+    let scheduler = Async.Scheduler.new();
+    let shared_state = State(remaining: 3);
+    with Async.current = scheduler, state = shared_state {
+        Async.spawn(|| resolve_localhost());
+        Async.spawn(|| resolve_ipv4_literal());
+        Async.spawn(|| resolve_error());
+        scheduler.run_tasks();
+    }
+}
+
+}

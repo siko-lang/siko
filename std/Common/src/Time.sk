@@ -32,6 +32,47 @@ pub struct Duration {
     }
 }
 
+// Attach a time unit to an integer. Besides making literals read naturally,
+// this keeps unit conversion in one place for thread sleeps, async sleeps,
+// timers, and other timeout APIs.
+pub trait DurationUnits[T] {
+    fn nanoseconds(value: T) -> Duration
+    fn microseconds(value: T) -> Duration
+    fn milliseconds(value: T) -> Duration
+    fn seconds(value: T) -> Duration
+    fn minutes(value: T) -> Duration
+    fn hours(value: T) -> Duration
+}
+
+pub instance DurationUnits[Int] {
+    fn nanoseconds(value: Int) -> Duration {
+        let value = value.as_i64();
+        Duration(value / 1000000000, value % 1000000000)
+    }
+
+    fn microseconds(value: Int) -> Duration {
+        let value = value.as_i64();
+        Duration(value / 1000000, (value % 1000000) * 1000)
+    }
+
+    fn milliseconds(value: Int) -> Duration {
+        let value = value.as_i64();
+        Duration(value / 1000, (value % 1000) * 1000000)
+    }
+
+    fn seconds(value: Int) -> Duration {
+        Duration(value.as_i64(), 0)
+    }
+
+    fn minutes(value: Int) -> Duration {
+        Duration(value.as_i64() * 60, 0)
+    }
+
+    fn hours(value: Int) -> Duration {
+        Duration(value.as_i64() * 3600, 0)
+    }
+}
+
 pub struct Instant {
     pub seconds: I64,
     pub nanoseconds: I64,
@@ -56,18 +97,6 @@ pub struct Instant {
 @safe
 pub fn sleep(d: Duration) {
     Unistd.usleep(d.to_microseconds().as_int().as_u32());
-}
-
-pub fn minutes(m: Int) -> Duration {
-    Duration((m * 60).as_i64(), 0)
-}
-
-pub fn seconds(s: Int) -> Duration {
-    Duration(s.as_i64(), 0)
-}
-
-pub fn milliseconds(s: Int) -> Duration {
-    Duration(s.as_i64() / 1000, (s.as_i64() % 1000) * 1000000)
 }
 
 instance Add[Duration] {

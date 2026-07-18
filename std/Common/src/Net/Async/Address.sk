@@ -1,0 +1,26 @@
+module Std.Net.Async.Address {
+
+import Std.IO.Async.Scheduler as Async
+import Std.Net.Address as SyncAddress
+import Std.Sync.Channel
+
+// Resolve a host with the scheduler-owned resolver thread. The result channel
+// publishes the worker's value before the waker makes this task runnable.
+pub fn resolve(host: String) -> Result[Vec[SyncAddress.IpAddress], Error] {
+    let result_channel: Channel[Result[Vec[SyncAddress.IpAddress], Error]] = Channel.new();
+    Async.suspend(|waker| {
+        Async.resolve_name(host, |result| {
+            match result_channel.send(result) {
+                Ok(()) => waker.wake(),
+                Err(_) => panic("async name resolution result channel closed"),
+            }
+        });
+    });
+    match result_channel.try_recv() {
+        TryRecvResult.Value(value: result) => result,
+        TryRecvResult.Empty => panic("async name resolver woke without a result"),
+        TryRecvResult.Closed => panic("async name resolver result channel closed"),
+    }
+}
+
+}
