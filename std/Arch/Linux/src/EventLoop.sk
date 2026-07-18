@@ -7,6 +7,7 @@ import Std.Libc.Unistd
 import Std.Map
 import Std.Time
 import Std.Ptr
+import Std.Array
 
 pub struct IoRegistration {
     fd: I32,
@@ -141,11 +142,10 @@ pub struct EventLoop {
     pub fn run_once(el: EventLoop, timeout: Duration) {
         let timeout_ms = timeout.to_millis().as_int().as_i32();
         let batch_size = 64;
-        let null_ev = EpollEvent(events: 0, data: 0);
-        let events = Vec.with_value(batch_size, null_ev);
+        let events: [EpollEvent; 64] = uninitialized();
         let event_num = 0;
         loop {
-            event_num = epoll_wait(el.epoll_fd, events.as_ptr(), batch_size.as_i32(), timeout_ms);
+            event_num = epoll_wait(el.epoll_fd, Std.Array.as_ptr(&events), batch_size.as_i32(), timeout_ms);
             if event_num < 0 {
                 let errno = Std.Arch.Errno.get_errno();
                 if errno == Std.Arch.Errno.Errno.EINTR {
@@ -156,7 +156,7 @@ pub struct EventLoop {
             break;
         }
         for i in 0..event_num.as_int() {
-            let ev = events.get(i);
+            let ev = events[i];
             let fd = ev.data.as_int().as_i32();
             match el.fd_to_timer.get(fd) {
                 Some(id) => {

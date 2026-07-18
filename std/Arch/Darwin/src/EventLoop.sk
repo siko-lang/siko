@@ -6,6 +6,7 @@ import Std.Libc.Time
 import Std.Map
 import Std.Time
 import Std.Ptr
+import Std.Array
 
 pub struct IoRegistration {
     fd: I32,
@@ -127,19 +128,11 @@ pub struct EventLoop {
     pub fn run_once(el: EventLoop, timeout: Duration) {
         let ts = TimeSpec(timeout.seconds, timeout.nanoseconds);
         let batch_size = 64;
-        let null_kevent = Kevent(
-            ident:  0,
-            filter: 0,
-            flags:  0,
-            fflags: 0,
-            data:   0,
-            udata:  get_null_voidptr(),
-        );
-        let events = Vec.with_value(batch_size, null_kevent);
+        let events: [Kevent; 64] = uninitialized();
         let event_num = 0;
         loop {
             event_num = kevent(el.kq_fd, get_null_ptr(), 0,
-                               events.as_ptr(), batch_size.as_i32(), &ts);
+                               Std.Array.as_ptr(&events), batch_size.as_i32(), &ts);
             if event_num < 0 {
                 let errno = Std.Arch.Errno.get_errno();
                 if errno == Std.Arch.Errno.Errno.EINTR {
@@ -150,7 +143,7 @@ pub struct EventLoop {
             break;
         }
         for i in 0..event_num.as_int() {
-            let ev = events.get(i);
+            let ev = events[i];
             if (ev.flags & EV_ERROR) != 0 {
                 continue;
             }
