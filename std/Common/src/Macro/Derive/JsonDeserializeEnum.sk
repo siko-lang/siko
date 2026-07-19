@@ -1,0 +1,165 @@
+module Std.Macro.Derive.JsonDeserializeEnum {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.Json
+import Std.Macro.Derive.JsonDeserializeSupport
+
+fn named_payload(
+    builder: FunctionBuilder,
+    cfg: Config,
+    variant: VariantDef,
+    payload: Expr,
+) -> Expr {
+    let types = Vec.new();
+    let values = Vec.new();
+    for item in variant.items {
+        types.push(item.type_def);
+        values.push(decode_named(
+            builder, cfg, payload, item.name.unwrap(), item.optional,
+        ));
+    }
+    typed_call(builder, cfg, variant.constructor, types, values)
+}
+
+fn positional_payload(
+    builder: FunctionBuilder,
+    cfg: Config,
+    variant: VariantDef,
+    items: Expr,
+) -> Expr {
+    let types = Vec.new();
+    let values = Vec.new();
+    for (index, item) in variant.items.iter().enumerate() {
+        types.push(item.type_def);
+        values.push(decode_value(
+            builder,
+            cfg,
+            builder.call(cfg.vec_get, [items, builder.integer(index)]),
+        ));
+    }
+    let decoded = typed_call(builder, cfg, variant.constructor, types, values);
+    let wrong_len = builder.call(cfg.not_eq, [
+        builder.call(cfg.vec_len, [items]),
+        builder.integer(variant.items.len()),
+    ]);
+    builder.if_expr(
+        wrong_len,
+        error(builder, cfg, cfg.invalid_variant, [builder.string(variant.name)]),
+        decoded,
+    )
+}
+
+fn variant_payload(
+    builder: FunctionBuilder,
+    cfg: Config,
+    variant: VariantDef,
+    payload: Expr,
+) -> Expr {
+    let all_named = variant.items.iter().all(|item| item.name.is_some());
+    if all_named {
+        return named_payload(builder, cfg, variant, payload);
+    }
+    if variant.items.len() == 1 {
+        return typed_call(
+            builder,
+            cfg,
+            variant.constructor,
+            [variant.items[0].type_def],
+            [decode_value(builder, cfg, payload)],
+        );
+    }
+    let items = builder.bind();
+    builder.match_expr(payload, [
+        builder.arm(
+            builder.variant_pattern(cfg.json.array_variant, [items.pattern]),
+            positional_payload(builder, cfg, variant, items.value),
+        ),
+        builder.arm(
+            builder.wildcard_pattern(),
+            error(builder, cfg, cfg.expected_array, Vec.new()),
+        ),
+    ])
+}
+
+fn unit_name(
+    builder: FunctionBuilder,
+    cfg: Config,
+    def: EnumDef,
+    name: Expr,
+) -> Expr {
+    let arms = Vec.new();
+    for variant in def.variants {
+        if variant.items.is_empty() {
+            arms.push(builder.arm(
+                builder.string_pattern(variant.name),
+                ok(builder, cfg.result, builder.call(variant.constructor, Vec.new())),
+            ));
+        }
+    }
+    arms.push(builder.arm(
+        builder.wildcard_pattern(),
+        error(builder, cfg, cfg.unknown_variant, [name]),
+    ));
+    builder.match_expr(name, arms)
+}
+
+fn payload_name(
+    builder: FunctionBuilder,
+    cfg: Config,
+    def: EnumDef,
+    name: Expr,
+    payload: Expr,
+) -> Expr {
+    let arms = Vec.new();
+    for variant in def.variants {
+        if !variant.items.is_empty() {
+            arms.push(builder.arm(
+                builder.string_pattern(variant.name),
+                variant_payload(builder, cfg, variant, payload),
+            ));
+        }
+    }
+    arms.push(builder.arm(
+        builder.wildcard_pattern(),
+        error(builder, cfg, cfg.unknown_variant, [name]),
+    ));
+    builder.match_expr(name, arms)
+}
+
+fn object_value(
+    builder: FunctionBuilder,
+    cfg: Config,
+    def: EnumDef,
+    value: Expr,
+) -> Expr {
+    let name = builder.bind();
+    let payload = builder.bind();
+    let pair = try_value(builder, cfg.result, builder.call(cfg.single_field, [value]));
+    builder.match_expr(pair, [builder.arm(
+        builder.tuple_pattern([name.pattern, payload.pattern]),
+        payload_name(builder, cfg, def, name.value, payload.value),
+    )])
+}
+
+pub fn enum_method(
+    ctx: MacroContext,
+    def: EnumDef,
+) -> Result[FunctionDef, MacroError] {
+    let cfg = config(ctx)?;
+    let builder = FunctionBuilder.new(cfg.method);
+    let value = builder.add_argument(cfg.json.type_def);
+    let name = builder.bind();
+    let other = builder.bind();
+    let body = builder.match_expr(value, [
+        builder.arm(
+            builder.variant_pattern(cfg.json.str_variant, [name.pattern]),
+            unit_name(builder, cfg, def, name.value),
+        ),
+        builder.arm(other.pattern, object_value(builder, cfg, def, other.value)),
+    ]);
+    Ok(builder.finish(body))
+}
+
+}

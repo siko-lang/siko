@@ -1,0 +1,71 @@
+module Main {
+
+import Std.Macro.Derive.Map
+
+trait Rewrite[T] {
+    fn rewrite(value: T, delta: Int) -> T
+}
+
+instance Rewrite[Int] {
+    fn rewrite(value: Int, delta: Int) -> Int {
+        value + delta
+    }
+}
+
+@derive2(Map(Rewrite))
+struct Duo[T] {
+    first: T,
+    second: T,
+}
+
+@derive2(Map(Rewrite))
+enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+trait Transform[T] {
+    fn transform(value: T, factor: Int) -> T
+
+    fn keep(value: T) -> T {
+        value
+    }
+}
+
+instance Transform[Int] {
+    fn transform(value: Int, factor: Int) -> Int {
+        value * factor
+    }
+}
+
+@derive2(Map(Transform, transform))
+struct Selected[T] {
+    value: T,
+}
+
+fn print_choice(value: Choice[Int]) {
+    match value {
+        Choice.Empty => println("empty"),
+        Choice.One(value) => println(value),
+        Choice.Pair(first, second) => {
+            println(first);
+            println(second);
+        }
+    }
+}
+
+fn main() {
+    let pair = Duo(1, 2).rewrite(10);
+    println(pair.first);
+    println(pair.second);
+
+    print_choice(Choice.One(3).rewrite(20));
+    print_choice(Choice.Pair(4, 5).rewrite(30));
+    let empty: Choice[Int] = Choice.Empty;
+    print_choice(empty.rewrite(40));
+
+    println(Selected(6).transform(7).value);
+}
+
+}

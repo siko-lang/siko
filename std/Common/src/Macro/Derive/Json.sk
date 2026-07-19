@@ -1,0 +1,77 @@
+module Std.Macro.Derive.Json {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+pub struct JsonDef {
+    pub type_def: TypeDef,
+    pub str_variant: VariantDef,
+    pub array_variant: VariantDef,
+    pub object_variant: VariantDef,
+}
+
+pub struct ResultDef {
+    pub ok_variant: VariantDef,
+    pub err_variant: VariantDef,
+}
+
+pub fn resolve_json(ctx: MacroContext) -> Result[JsonDef, MacroError] {
+    Ok(JsonDef(
+        ctx.resolve_type("Std.Json.Json")?,
+        ctx.resolve_variant("Std.Json.Json.Str")?,
+        ctx.resolve_variant("Std.Json.Json.Array")?,
+        ctx.resolve_variant("Std.Json.Json.Object")?,
+    ))
+}
+
+pub fn resolve_result(ctx: MacroContext) -> Result[ResultDef, MacroError] {
+    Ok(ResultDef(
+        ctx.resolve_variant("Std.Result.Result.Ok")?,
+        ctx.resolve_variant("Std.Result.Result.Err")?,
+    ))
+}
+
+pub fn ok(builder: FunctionBuilder, result: ResultDef, value: Expr) -> Expr {
+    builder.call(result.ok_variant.constructor, [value])
+}
+
+pub fn err(builder: FunctionBuilder, result: ResultDef, value: Expr) -> Expr {
+    builder.call(result.err_variant.constructor, [value])
+}
+
+pub fn try_value(
+    builder: FunctionBuilder,
+    result: ResultDef,
+    value: Expr,
+) -> Expr {
+    let ok_binding = builder.bind();
+    let err_binding = builder.bind();
+    builder.match_expr(value, [
+        builder.arm(
+            builder.variant_pattern(result.ok_variant, [ok_binding.pattern]),
+            ok_binding.value,
+        ),
+        builder.arm(
+            builder.variant_pattern(result.err_variant, [err_binding.pattern]),
+            builder.return_expr(err(builder, result, err_binding.value)),
+        ),
+    ])
+}
+
+pub fn attached_instance(
+    trait_def: TraitDef,
+    target: TypeDef,
+    type_params: Vec[TypeParameter],
+    method: FunctionDef,
+) -> InstanceDef {
+    let builder = InstanceBuilder.new(trait_def, target);
+    for type_parameter in type_params {
+        builder.add_bound(type_parameter, trait_def);
+    }
+    builder.add_method(method);
+    builder.finish()
+}
+
+}

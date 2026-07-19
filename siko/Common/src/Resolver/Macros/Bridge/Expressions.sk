@@ -3,8 +3,10 @@ module Siko.Resolver.Macros.Bridge.Expressions {
 import Std.Map
 import Siko.AST.Expr as E
 import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
 import Siko.Constants.Builtins as B
 import Siko.Interpreter.Value
+import Siko.Interpreter.Strings
 import Siko.Location
 import Siko.Resolver
 import Siko.Resolver.Macros.Bridge.Handles
@@ -57,14 +59,7 @@ pub fn decode_expr(
             return Err("field expression must contain a receiver and field handle");
         }
         let receiver = decode_expr(global_ctx, state, variables, var_allocator, variant.items[0], location)?;
-        let field_id = match read_handle(variant.items[1], B.get_macro_field_def_qn()) {
-            Some(id) => id,
-            None => return Err("invalid field handle"),
-        };
-        let field = match state.field(field_id) {
-            Some(field) => field,
-            None => return Err("unknown field handle"),
-        };
+        let field = reflected_field(state, variant.items[1])?;
         E.ExprKind.FieldAccess(receiver, field.name)
     } else if variant.variant_qname == B.get_macro_function_expr_call_qn() {
         if variant.items.len() != 2 {
@@ -126,6 +121,66 @@ pub fn decode_expr(
             decoded_arms.push(E.MatchArm(pattern, body));
         }
         E.ExprKind.Match(E.MatchInfo(scrutinee, decoded_arms))
+    } else if variant.variant_qname == B.get_macro_function_expr_sequence_qn() {
+        if variant.items.len() != 1 {
+            return Err("sequence expression must contain one expression Vec");
+        }
+        let items = match read_vec(variant.items[0]) {
+            Some(items) => items,
+            None => return Err("sequence expression items are not a Vec"),
+        };
+        let decoded: Vec[E.Expr] = Result.collect(items
+            .iter()
+            .map(|item| decode_expr(global_ctx, state, variables, var_allocator, item, location))
+            .collect())?;
+        if decoded.is_empty() {
+            E.ExprKind.Tuple(Vec.new())
+        } else if decoded.len() == 1 {
+            return Ok(decoded[0]);
+        } else {
+            let last = decoded.pop().unwrap();
+            let statements = decoded.into_iter().map(|expr| S.Statement.Expr(expr)).collect();
+            statements.push(S.Statement.TrailingExpr(last));
+            E.ExprKind.Block(E.BlockInfo(statements))
+        }
+    } else if variant.variant_qname == B.get_macro_function_expr_string_literal_qn() {
+        if variant.items.len() != 1 {
+            return Err("string literal expression must contain one String");
+        }
+        let value = match render_string(variant.items[0]) {
+            Some(value) => value,
+            None => return Err("string literal expression payload is not a String"),
+        };
+        E.ExprKind.StringLiteral(value)
+    } else if variant.variant_qname == B.get_macro_function_expr_integer_literal_qn() {
+        if variant.items.len() != 1 {
+            return Err("integer literal expression must contain one Int");
+        }
+        let value = match variant.items[0].kind {
+            ValueKind.Int(value) => value,
+            _ => return Err("integer literal expression payload is not an Int"),
+        };
+        E.ExprKind.IntLiteral(value.to_string())
+    } else if variant.variant_qname == B.get_macro_function_expr_return_qn() {
+        if variant.items.len() != 1 {
+            return Err("return expression must contain one expression");
+        }
+        E.ExprKind.Return(decode_expr(
+            global_ctx, state, variables, var_allocator, variant.items[0], location,
+        )?)
+    } else if variant.variant_qname == B.get_macro_function_expr_let_qn() {
+        if variant.items.len() != 4 {
+            return Err("let expression must contain a variable, type, value, and body");
+        }
+        let id = variable_id(variant.items[0])?;
+        let variable = get_or_allocate(variables, var_allocator, id);
+        let type_def = type_handle(state, variant.items[1])?;
+        let value = decode_expr(global_ctx, state, variables, var_allocator, variant.items[2], location)?;
+        let body = decode_expr(global_ctx, state, variables, var_allocator, variant.items[3], location)?;
+        E.ExprKind.Block(E.BlockInfo([
+            S.Statement.Let(S.LetInfo(variable, Some(type_def), value)),
+            S.Statement.TrailingExpr(body),
+        ]))
     } else {
         return Err("unknown builder expression kind");
     };

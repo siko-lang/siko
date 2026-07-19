@@ -1,0 +1,132 @@
+module Main {
+
+import Std.Json
+import Std.Map
+import Std.Macro.Derive.JsonSerialize
+import Std.Macro.Derive.JsonDeserialize
+
+@derive2(JsonSerialize, JsonDeserialize)
+struct Person {
+    name: String,
+    age: Int,
+    nickname: Option[String],
+}
+
+@derive2(JsonSerialize, JsonDeserialize)
+struct Boxed[T] {
+    value: T,
+}
+
+@derive2(JsonSerialize, JsonDeserialize)
+enum Message {
+    Ping,
+    One(Int),
+    Pair(Int, String),
+    Named(id: Int, text: String),
+    NamedOptional(id: Int, note: Option[String]),
+    Mixed(Int, name: String),
+}
+
+fn object1(name: String, value: Json) -> Json {
+    let fields: Map[String, Json] = Map.new();
+    fields.insert(name, value);
+    Json.Object(fields)
+}
+
+fn object2(name1: String, value1: Json, name2: String, value2: Json) -> Json {
+    let fields: Map[String, Json] = Map.new();
+    fields.insert(name1, value1);
+    fields.insert(name2, value2);
+    Json.Object(fields)
+}
+
+fn main() {
+    let person = Person("Ada", 42, Some("ace"));
+    let person_json = person.to_json();
+    assert(person_json == with_nickname(object2(
+        "name",
+        Json.Str("Ada"),
+        "age",
+        Json.Number(42),
+    )));
+    let decoded: Person = from_json(person_json).unwrap();
+    assert(decoded.name == "Ada");
+    assert(decoded.age == 42);
+    assert(decoded.nickname == Some("ace"));
+
+    let missing: Person = from_json(object2(
+        "name", Json.Str("Grace"), "age", Json.Number(37),
+    )).unwrap();
+    assert(missing.nickname == None);
+
+    let boxed: Boxed[Int] = from_json(Boxed(9).to_json()).unwrap();
+    assert(boxed.value == 9);
+
+    assert(Message.Ping.to_json() == Json.Str("Ping"));
+    assert(Message.One(7).to_json() == object1("One", Json.Number(7)));
+    assert(Message.Pair(1, "a").to_json() == object1(
+        "Pair", Json.Array([Json.Number(1), Json.Str("a")]),
+    ));
+    assert(Message.Named(3, "hello").to_json() == object1(
+        "Named", object2("id", Json.Number(3), "text", Json.Str("hello")),
+    ));
+    assert(Message.NamedOptional(8, None).to_json() == object1(
+        "NamedOptional", object2("id", Json.Number(8), "note", Json.Null),
+    ));
+    assert(Message.Mixed(1, "a").to_json() == object1(
+        "Mixed", Json.Array([Json.Number(1), Json.Str("a")]),
+    ));
+
+    let ping: Message = from_json(Json.Str("Ping")).unwrap();
+    let one: Message = from_json(object1("One", Json.Number(7))).unwrap();
+    let pair: Message = from_json(object1(
+        "Pair", Json.Array([Json.Number(1), Json.Str("a")]),
+    )).unwrap();
+    let named: Message = from_json(object1(
+        "Named", object2("id", Json.Number(3), "text", Json.Str("hello")),
+    )).unwrap();
+    let named_optional: Message = from_json(object1(
+        "NamedOptional", object1("id", Json.Number(8)),
+    )).unwrap();
+    match ping { Message.Ping => {}, _ => panic("wrong Ping") }
+    match one { Message.One(7) => {}, _ => panic("wrong One") }
+    match pair { Message.Pair(1, "a") => {}, _ => panic("wrong Pair") }
+    match named { Message.Named(3, "hello") => {}, _ => panic("wrong Named") }
+    match named_optional {
+        Message.NamedOptional(8, None) => {},
+        _ => panic("wrong NamedOptional"),
+    }
+
+    let unknown: Result[Message, JsonError] = from_json(Json.Str("Missing"));
+    match unknown {
+        Err(JsonError.UnknownVariant("Missing")) => {},
+        _ => panic("wrong unknown-variant error"),
+    }
+    let invalid: Result[Message, JsonError] = from_json(object1(
+        "Pair", Json.Array([Json.Number(1)]),
+    ));
+    match invalid {
+        Err(JsonError.InvalidVariant("Pair")) => {},
+        _ => panic("wrong invalid-variant error"),
+    }
+    let missing_field: Result[Person, JsonError] = from_json(object1(
+        "name", Json.Str("Ada"),
+    ));
+    match missing_field {
+        Err(JsonError.MissingField("age")) => {},
+        _ => panic("wrong missing-field error"),
+    }
+    println("ok");
+}
+
+fn with_nickname(j: Json) -> Json {
+    match j {
+        Json.Object(fields) => {
+            fields.insert("nickname", Json.Str("ace"));
+            Json.Object(fields)
+        }
+        _ => panic("expected object"),
+    }
+}
+
+}

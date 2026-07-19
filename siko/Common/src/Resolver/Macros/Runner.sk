@@ -43,16 +43,22 @@ fn invoke_request(
             request.location,
         )),
     };
-    let (external, expected) = match request.invocation {
-        MacroInvocation.Attached => (False, Bridge.MacroOutput.InstanceDef),
+    let (external_trait, expected) = match request.invocation {
+        MacroInvocation.Attached => (None, Bridge.MacroOutput.InstanceDef),
         MacroInvocation.External(instance_def) => (
-            True,
+            Some(instance_def.subject.try_trait_name()?.resolved()),
             Bridge.MacroOutput.InstanceBody(instance_def),
         ),
     };
     let state = BridgeState.new();
-    let context = MacroInput.macro_context(global_ctx, state, request.target, external, request.args);
-    let extensions = MacroExtensions.build(global_ctx, state, request.module_name, request.location);
+    let context = MacroInput.macro_context(global_ctx, state, request.target, external_trait, request.args);
+    let extensions = MacroExtensions.build(
+        global_ctx,
+        state,
+        request.module_name,
+        request.location,
+        request.target,
+    );
     let value = match Interp.invoke_with_extensions(
         program,
         entry_qname,

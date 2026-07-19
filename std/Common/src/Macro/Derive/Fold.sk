@@ -1,0 +1,135 @@
+@prelude
+module Std.Macro.Derive.Fold {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+import Std.Macro.Derive.Traversal
+
+fn arguments(
+    builder: FunctionBuilder,
+    target: TypeDef,
+    method: TraitMethodDef,
+) -> (Expr, Vec[Expr]) {
+    let value = builder.add_argument(target);
+    let extra: Vec[Expr] = method.extra_argument_types
+        .iter()
+        .map(|ty| builder.add_argument(ty))
+        .collect();
+    (value, extra)
+}
+
+fn call_method(
+    builder: FunctionBuilder,
+    method: TraitMethodDef,
+    value: Expr,
+    extra: Vec[Expr],
+) -> Expr {
+    let args = [value];
+    args.extend(extra);
+    builder.call(method.function, args)
+}
+
+fn generated_body(
+    builder: FunctionBuilder,
+    method: TraitMethodDef,
+    values: Vec[Expr],
+    extra: Vec[Expr],
+) -> Expr {
+    builder.sequence(values
+        .iter()
+        .map(|value| call_method(builder, method, value, extra))
+        .collect())
+}
+
+fn struct_method(
+    ctx: MacroContext,
+    def: StructDef,
+    config: TraversalConfig,
+) -> Result[FunctionDef, MacroError] {
+    let builder = FunctionBuilder.new(config.method.function);
+    let (value, extra) = arguments(builder, def.type_def, config.method);
+    let body = match config.body {
+        TraversalBody.Generate => generated_body(
+            builder,
+            config.method,
+            def.fields.iter().map(|field| builder.field(value, field)).collect(),
+            extra,
+        ),
+        TraversalBody.Identity => builder.tuple(Vec.new()),
+        TraversalBody.Unreachable =>
+            builder.call(ctx.resolve_function("Std.Util.unreachable")?, Vec.new()),
+    };
+    Ok(builder.finish(body))
+}
+
+fn enum_method(
+    ctx: MacroContext,
+    def: EnumDef,
+    config: TraversalConfig,
+) -> Result[FunctionDef, MacroError] {
+    let builder = FunctionBuilder.new(config.method.function);
+    let (value, extra) = arguments(builder, def.type_def, config.method);
+    let body = match config.body {
+        TraversalBody.Generate => {
+            let arms = Vec.new();
+            for variant in def.variants {
+                let binding = builder.destructure(variant);
+                arms.push(builder.arm(
+                    binding.pattern,
+                    generated_body(builder, config.method, binding.values, extra),
+                ));
+            }
+            builder.match_expr(value, arms)
+        }
+        TraversalBody.Identity => builder.tuple(Vec.new()),
+        TraversalBody.Unreachable =>
+            builder.call(ctx.resolve_function("Std.Util.unreachable")?, Vec.new()),
+    };
+    Ok(builder.finish(body))
+}
+
+fn attached_instance(
+    config: TraversalConfig,
+    target: TypeDef,
+    type_params: Vec[TypeParameter],
+    method: FunctionDef,
+) -> InstanceDef {
+    let builder = InstanceBuilder.new(config.trait_def, target);
+    for type_parameter in type_params {
+        builder.add_bound(type_parameter, config.trait_def);
+    }
+    builder.add_method(method);
+    builder.finish()
+}
+
+pub macro Fold {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let config = attached_config(ctx)?;
+        let def = ctx.struct_target()?;
+        let method = struct_method(ctx, def, config)?;
+        Ok(attached_instance(config, def.type_def, def.type_params, method))
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let config = attached_config(ctx)?;
+        let def = ctx.enum_target()?;
+        let method = enum_method(ctx, def, config)?;
+        Ok(attached_instance(config, def.type_def, def.type_params, method))
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        let config = external_config(ctx)?;
+        let def = ctx.struct_target()?;
+        Ok(struct_method(ctx, def, config)?.instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        let config = external_config(ctx)?;
+        let def = ctx.enum_target()?;
+        Ok(enum_method(ctx, def, config)?.instance_body())
+    }
+}
+
+}

@@ -1,0 +1,94 @@
+module Std.Macro.Derive.JsonDeserializeSupport {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.Json
+
+pub struct Config {
+    pub trait_def: TraitDef,
+    pub method: QualifiedName,
+    pub json: JsonDef,
+    pub result: ResultDef,
+    pub get_field: QualifiedName,
+    pub get_optional_field: QualifiedName,
+    pub single_field: QualifiedName,
+    pub vec_len: QualifiedName,
+    pub vec_get: QualifiedName,
+    pub not_eq: QualifiedName,
+    pub expected_array: VariantDef,
+    pub unknown_variant: VariantDef,
+    pub invalid_variant: VariantDef,
+}
+
+pub fn config(ctx: MacroContext) -> Result[Config, MacroError] {
+    Ok(Config(
+        ctx.resolve_trait("Std.Json.JsonDeserialize")?,
+        ctx.resolve_function("Std.Json.JsonDeserialize.from_json")?,
+        resolve_json(ctx)?,
+        resolve_result(ctx)?,
+        ctx.resolve_function("Std.Json.Json.get_field")?,
+        ctx.resolve_function("Std.Json.get_optional_field")?,
+        ctx.resolve_function("Std.Json.single_field")?,
+        ctx.resolve_function("Std.Vec.Vec.len")?,
+        ctx.resolve_function("Std.Vec.Vec.get")?,
+        ctx.resolve_function("Std.Ops.PartialEq.not_eq")?,
+        ctx.resolve_variant("Std.Json.JsonError.ExpectedArray")?,
+        ctx.resolve_variant("Std.Json.JsonError.UnknownVariant")?,
+        ctx.resolve_variant("Std.Json.JsonError.InvalidVariant")?,
+    ))
+}
+
+pub fn decode_value(builder: FunctionBuilder, cfg: Config, value: Expr) -> Expr {
+    try_value(builder, cfg.result, builder.call(cfg.method, [value]))
+}
+
+pub fn decode_named(
+    builder: FunctionBuilder,
+    cfg: Config,
+    container: Expr,
+    name: String,
+    optional: Bool,
+) -> Expr {
+    if optional {
+        try_value(builder, cfg.result, builder.call(cfg.get_optional_field, [
+            container,
+            builder.string(name),
+        ]))
+    } else {
+        let field = try_value(builder, cfg.result, builder.call(cfg.get_field, [
+            container,
+            builder.string(name),
+        ]));
+        decode_value(builder, cfg, field)
+    }
+}
+
+pub fn typed_call(
+    builder: FunctionBuilder,
+    cfg: Config,
+    constructor: QualifiedName,
+    types: Vec[TypeDef],
+    values: Vec[Expr],
+) -> Expr {
+    let bindings: Vec[LetBinding] = types.iter().map(|_| builder.local()).collect();
+    let arguments: Vec[Expr] = bindings.iter().map(|binding| binding.value).collect();
+    let body = ok(builder, cfg.result, builder.call(constructor, arguments));
+    let index = types.len();
+    while index > 0 {
+        index -= 1;
+        body = builder.let_expr(bindings[index], types[index], values[index], body);
+    }
+    body
+}
+
+pub fn error(
+    builder: FunctionBuilder,
+    cfg: Config,
+    variant: VariantDef,
+    values: Vec[Expr],
+) -> Expr {
+    err(builder, cfg.result, builder.call(variant.constructor, values))
+}
+
+}

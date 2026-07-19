@@ -1,21 +1,76 @@
 module Siko.Resolver.Macros.Bridge.Traits {
 
 import Siko.AST.QualifiedName
+import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Strings
 import Siko.Interpreter.Types
 import Siko.Interpreter.Value
+import Siko.Resolver
 import Siko.Resolver.Macros.Bridge.Value
 import Siko.Resolver.Macros.Bridge.State
+import Siko.Unification.Sub
 
-fn trait_def(state: BridgeState, name: QualifiedName) -> Value {
+fn type_def(state: BridgeState, ty: TypeDef) -> Value {
+    handle_value(B.get_macro_type_def_qn(), state.add_type(ty))
+}
+
+fn trait_method_def(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    trait_name: QualifiedName,
+    short_name: I.String,
+    function_name: QualifiedName,
+    target: TypeDef,
+) -> Value {
+    let trait_def = global_ctx.get_trait(trait_name).unwrap();
+    let function = global_ctx.get_function(function_name).unwrap();
+    let substitution = Substitution.new();
+    if trait_def.type_args.len() == 1 {
+        substitution.bind_named(trait_def.type_args[0].name, target);
+    }
+    let extra_argument_types = function.args
+        .iter()
+        .skip(1)
+        .map(|arg| type_def(state, substitution.apply(arg.type_def)))
+        .collect();
+    let qname = B.get_macro_trait_method_def_qn();
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [
+            make_string(I.resolve(short_name)),
+            handle_value(B.get_macro_qualified_name_qn(), state.add_name(function_name)),
+            vec_value(extra_argument_types, named_type(B.get_macro_type_def_qn())),
+        ])),
+    )
+}
+
+pub fn trait_def(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    name: QualifiedName,
+    target: TypeDef,
+) -> Value {
+    let reflected = global_ctx.get_trait(name).unwrap();
+    let methods = reflected.method_map.names
+        .iter()
+        .map(|(short_name, function_name)| trait_method_def(
+            global_ctx,
+            state,
+            name,
+            short_name,
+            function_name,
+            target,
+        ))
+        .collect();
     let qname = B.get_macro_trait_def_qn();
     Value(
         named_type(qname),
         ValueKind.Struct(StructBox(qname, [
             make_string(I.resolve(name.name())),
             handle_value(B.get_macro_qualified_name_qn(), state.add_name(name)),
+            vec_value(methods, named_type(B.get_macro_trait_method_def_qn())),
         ])),
     )
 }
@@ -29,10 +84,15 @@ fn macro_error(message: String) -> Value {
     )
 }
 
-pub fn resolution_ok(state: BridgeState, name: QualifiedName) -> Value {
+pub fn resolution_ok(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    name: QualifiedName,
+    target: TypeDef,
+) -> Value {
     let trait_type = named_type(B.get_macro_trait_def_qn());
     let error_type = named_type(B.get_macro_error_qn());
-    result_value(trait_type, error_type, True, trait_def(state, name))
+    result_value(trait_type, error_type, True, trait_def(global_ctx, state, name, target))
 }
 
 pub fn resolution_error(message: String) -> Value {

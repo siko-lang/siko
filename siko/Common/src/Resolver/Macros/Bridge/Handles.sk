@@ -31,7 +31,7 @@ pub fn type_handle(state: BridgeState, value: Value) -> Result[TypeDef, String] 
 }
 
 pub fn reflected_variant(state: BridgeState, value: Value) -> Result[D.VariantDef, String] {
-    let fields = match read_struct(value, B.get_macro_variant_def_qn(), 3) {
+    let fields = match read_struct(value, B.get_macro_variant_def_qn(), 4) {
         Some(fields) => fields,
         None => return Err("invalid variant handle"),
     };
@@ -42,6 +42,21 @@ pub fn reflected_variant(state: BridgeState, value: Value) -> Result[D.VariantDe
     match state.variant(id) {
         Some(variant) => Ok(variant),
         None => Err("unknown variant handle"),
+    }
+}
+
+pub fn reflected_field(state: BridgeState, value: Value) -> Result[D.FieldDef, String] {
+    let fields = match read_struct(value, B.get_macro_field_def_qn(), 4) {
+        Some(fields) => fields,
+        None => return Err("invalid field handle"),
+    };
+    let id = match fields[0].kind {
+        ValueKind.Int(id) => id,
+        _ => return Err("invalid field identity"),
+    };
+    match state.field(id) {
+        Some(field) => Ok(field),
+        None => Err("unknown field handle"),
     }
 }
 

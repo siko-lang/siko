@@ -50,6 +50,26 @@ pub fn get_optional_field[T: JsonDeserialize[T]](j: Json, name: String) -> Resul
     }
 }
 
+pub fn add_object_field(j: Json, name: String, value: Json) -> Json {
+    match j {
+        Json.Object(fields) => {
+            fields.insert(name, value);
+            Json.Object(fields)
+        }
+        _ => panic("add_object_field requires a JSON object"),
+    }
+}
+
+pub fn add_array_item(j: Json, value: Json) -> Json {
+    match j {
+        Json.Array(items) => {
+            items.push(value);
+            Json.Array(items)
+        }
+        _ => panic("add_array_item requires a JSON array"),
+    }
+}
+
 pub fn single_field(j: Json) -> Result[(String, Json), JsonError] {
     let fields = j.as_object()?;
     if fields.len() != 1 {

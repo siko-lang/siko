@@ -14,6 +14,11 @@ enum ExprKind {
     Tuple(Vec[Expr]),
     If(Expr, Expr, Expr),
     Match(Expr, Vec[MatchArm]),
+    Sequence(Vec[Expr]),
+    StringLiteral(String),
+    IntegerLiteral(Int),
+    Return(Expr),
+    Let(VariableRef, TypeDef, Expr, Expr),
 }
 
 pub struct Expr {
@@ -31,6 +36,7 @@ enum PatternKind {
     Variant(VariantDef, Vec[Pattern]),
     Integer(Int),
     Wildcard,
+    StringLiteral(String),
 }
 
 pub struct Pattern {
@@ -39,6 +45,11 @@ pub struct Pattern {
 
 pub struct PatternBinding {
     pub pattern: Pattern,
+    pub value: Expr,
+}
+
+pub struct LetBinding {
+    variable: VariableRef,
     pub value: Expr,
 }
 
@@ -98,6 +109,38 @@ pub struct FunctionBuilder {
         Expr(ExprKind.Match(value, arms))
     }
 
+    pub fn sequence(builder: FunctionBuilder, expressions: Vec[Expr]) -> Expr {
+        Expr(ExprKind.Sequence(expressions))
+    }
+
+    pub fn string(builder: FunctionBuilder, value: String) -> Expr {
+        Expr(ExprKind.StringLiteral(value))
+    }
+
+    pub fn integer(builder: FunctionBuilder, value: Int) -> Expr {
+        Expr(ExprKind.IntegerLiteral(value))
+    }
+
+    pub fn return_expr(builder: FunctionBuilder, value: Expr) -> Expr {
+        Expr(ExprKind.Return(value))
+    }
+
+    pub fn local(builder: FunctionBuilder) -> LetBinding {
+        let variable = VariableRef(builder.next_variable);
+        builder.next_variable += 1;
+        LetBinding(variable, Expr(ExprKind.Variable(variable)))
+    }
+
+    pub fn let_expr(
+        builder: FunctionBuilder,
+        binding: LetBinding,
+        type_def: TypeDef,
+        value: Expr,
+        body: Expr,
+    ) -> Expr {
+        Expr(ExprKind.Let(binding.variable, type_def, value, body))
+    }
+
     pub fn bind(builder: FunctionBuilder) -> PatternBinding {
         let variable = VariableRef(builder.next_variable);
         builder.next_variable += 1;
@@ -132,6 +175,10 @@ pub struct FunctionBuilder {
 
     pub fn wildcard_pattern(builder: FunctionBuilder) -> Pattern {
         Pattern(PatternKind.Wildcard)
+    }
+
+    pub fn string_pattern(builder: FunctionBuilder, value: String) -> Pattern {
+        Pattern(PatternKind.StringLiteral(value))
     }
 
     pub fn arm(builder: FunctionBuilder, pattern: Pattern, body: Expr) -> MatchArm {

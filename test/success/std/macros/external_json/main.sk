@@ -1,0 +1,49 @@
+module ExternalJsonTypes {
+
+pub struct Record[T] {
+    pub id: Int,
+    pub value: T,
+    pub note: Option[String],
+}
+
+pub enum Event[T] {
+    Empty,
+    Value(T),
+    Pair(T, T),
+    Named(left: T, right: T),
+}
+
+}
+
+module Main {
+
+import Std.Json
+import ExternalJsonTypes
+import Std.Macro.Derive.JsonSerialize
+import Std.Macro.Derive.JsonDeserialize
+
+instance[T: JsonSerialize[T]] JsonSerialize[Record[T]] = auto2(JsonSerialize)
+instance[T: JsonDeserialize[T]] JsonDeserialize[Record[T]] = auto2(JsonDeserialize)
+instance[T: JsonSerialize[T]] JsonSerialize[Event[T]] = auto2(JsonSerialize)
+instance[T: JsonDeserialize[T]] JsonDeserialize[Event[T]] = auto2(JsonDeserialize)
+
+fn main() {
+    let record = Record(5, "external", None);
+    let decoded: Record[String] = from_json(record.to_json()).unwrap();
+    assert(decoded.id == 5);
+    assert(decoded.value == "external");
+    assert(decoded.note == None);
+
+    let empty_value: Event[Int] = Event.Empty;
+    let empty: Event[Int] = from_json(empty_value.to_json()).unwrap();
+    let value: Event[String] = from_json(Event.Value("x").to_json()).unwrap();
+    let pair: Event[Int] = from_json(Event.Pair(1, 2).to_json()).unwrap();
+    let named: Event[Int] = from_json(Event.Named(3, 4).to_json()).unwrap();
+    match empty { Event.Empty => {}, _ => panic("wrong Empty") }
+    match value { Event.Value("x") => {}, _ => panic("wrong Value") }
+    match pair { Event.Pair(1, 2) => {}, _ => panic("wrong Pair") }
+    match named { Event.Named(3, 4) => {}, _ => panic("wrong Named") }
+    println("ok");
+}
+
+}

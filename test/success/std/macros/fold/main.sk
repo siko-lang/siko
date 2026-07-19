@@ -1,0 +1,54 @@
+module Main {
+
+import Std.Macro.Derive.Fold
+
+trait Visit[T] {
+    fn visit(value: T, offset: Int)
+}
+
+instance Visit[Int] {
+    fn visit(value: Int, offset: Int) {
+        println(value + offset);
+    }
+}
+
+@derive2(Fold(Visit))
+struct Duo[T] {
+    first: T,
+    second: T,
+}
+
+@derive2(Fold(Visit))
+enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+trait Inspect[T] {
+    fn inspect(value: T, factor: Int)
+
+    fn skip(value: T) {}
+}
+
+instance Inspect[Int] {
+    fn inspect(value: Int, factor: Int) {
+        println(value * factor);
+    }
+}
+
+@derive2(Fold(Inspect, inspect))
+struct Selected[T] {
+    value: T,
+}
+
+fn main() {
+    Duo(1, 2).visit(10);
+    Choice.One(3).visit(20);
+    Choice.Pair(4, 5).visit(30);
+    let empty: Choice[Int] = Choice.Empty;
+    empty.visit(40);
+    Selected(6).inspect(7);
+}
+
+}

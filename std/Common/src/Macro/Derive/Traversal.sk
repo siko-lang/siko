@@ -1,0 +1,102 @@
+module Std.Macro.Derive.Traversal {
+
+import Std.Macro
+import Std.Macro.Reflection
+
+pub enum TraversalBody {
+    Generate,
+    Identity,
+    Unreachable,
+}
+
+pub struct TraversalConfig {
+    pub trait_def: TraitDef,
+    pub method: TraitMethodDef,
+    pub body: TraversalBody,
+}
+
+fn select_method(
+    trait_def: TraitDef,
+    method_name: Option[String],
+) -> Result[TraitMethodDef, MacroError] {
+    match method_name {
+        Some(name) => {
+            for method in trait_def.methods {
+                if method.name == name {
+                    return Ok(method);
+                }
+            }
+            Err(MacroError.NotSupported(
+                "trait `${trait_def.name}` has no method `${name}`",
+            ))
+        }
+        None => {
+            if trait_def.methods.len() == 1 {
+                Ok(trait_def.methods[0])
+            } else {
+                Err(MacroError.NotSupported(
+                    "trait `${trait_def.name}` requires an explicit method name",
+                ))
+            }
+        }
+    }
+}
+
+fn finish_config(
+    trait_def: TraitDef,
+    args: Vec[MacroArg],
+) -> Result[TraversalConfig, MacroError] {
+    let method_name = None;
+    let body = TraversalBody.Generate;
+    match args.len() {
+        0 => {}
+        1 => match args[0] {
+            MacroArg.Name(name) => { method_name = Some(name); }
+            MacroArg.Symbol(MacroSymbol.Equals) => { body = TraversalBody.Identity; }
+            MacroArg.Symbol(MacroSymbol.Bang) => { body = TraversalBody.Unreachable; }
+            _ => return Err(MacroError.NotSupported(
+                "expected a method name, `=`, or `!`",
+            )),
+        }
+        2 => {
+            method_name = match args[0] {
+                MacroArg.Name(name) => Some(name),
+                _ => return Err(MacroError.NotSupported(
+                    "expected a method name before the body strategy",
+                )),
+            };
+            body = match args[1] {
+                MacroArg.Symbol(MacroSymbol.Equals) => TraversalBody.Identity,
+                MacroArg.Symbol(MacroSymbol.Bang) => TraversalBody.Unreachable,
+                _ => return Err(MacroError.NotSupported(
+                    "expected `=` or `!` after the method name",
+                )),
+            };
+        }
+        _ => return Err(MacroError.NotSupported("too many traversal macro arguments")),
+    }
+    let method = select_method(trait_def, method_name)?;
+    Ok(TraversalConfig(trait_def, method, body))
+}
+
+pub fn attached_config(ctx: MacroContext) -> Result[TraversalConfig, MacroError] {
+    if ctx.args.is_empty() {
+        return Err(MacroError.NotSupported(
+            "attached traversal derives require a trait name",
+        ));
+    }
+    let trait_name = match ctx.args[0] {
+        MacroArg.Name(name) => name,
+        _ => return Err(MacroError.NotSupported(
+            "the first attached traversal argument must be a trait name",
+        )),
+    };
+    let trait_def = ctx.resolve_trait(trait_name)?;
+    finish_config(trait_def, ctx.args.iter().skip(1).collect())
+}
+
+pub fn external_config(ctx: MacroContext) -> Result[TraversalConfig, MacroError] {
+    finish_config(ctx.instance_trait()?, ctx.args)
+}
+
+}

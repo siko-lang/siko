@@ -7,6 +7,7 @@ import Siko.AST.Pattern as P
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Value
+import Siko.Interpreter.Strings
 import Siko.Location
 import Siko.Resolver.Macros.Bridge.Handles
 import Siko.Resolver.Macros.Bridge.State
@@ -78,12 +79,21 @@ pub fn decode_pattern(
             ValueKind.Int(value) => value,
             _ => return Err("integer pattern payload is not an Int"),
         };
-        P.PatternKind.IntLiteral(I.intern(value.to_string()))
+        P.PatternKind.IntLiteral(I.intern("${value}"))
     } else if variant.variant_qname == B.get_macro_function_pattern_wildcard_qn() {
         if !variant.items.is_empty() {
             return Err("wildcard pattern must not contain values");
         }
         P.PatternKind.Wildcard
+    } else if variant.variant_qname == B.get_macro_function_pattern_string_literal_qn() {
+        if variant.items.len() != 1 {
+            return Err("string pattern must contain one String");
+        }
+        let value = match render_string(variant.items[0]) {
+            Some(value) => value,
+            None => return Err("string pattern payload is not a String"),
+        };
+        P.PatternKind.StringLiteral(I.intern(value))
     } else {
         return Err("unknown builder pattern kind");
     };

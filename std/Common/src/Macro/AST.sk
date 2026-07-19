@@ -3,7 +3,9 @@ module Std.Macro {
 import Std.Macro.Reflection
 import Std.Macro.FunctionBuilder
 
-pub struct InstanceHeader {}
+pub struct InstanceHeader {
+    pub trait_def: TraitDef,
+}
 pub struct InstanceBody {
     methods: Vec[FunctionDef],
 
@@ -96,6 +98,13 @@ pub struct MacroContext {
             Ok(())
         } else {
             Err(MacroError.NotSupported("this macro does not accept arguments"))
+        }
+    }
+
+    pub fn instance_trait(ctx: MacroContext) -> Result[TraitDef, MacroError] {
+        match ctx.instance_header {
+            Some(header) => Ok(header.trait_def),
+            None => Err(MacroError.NotSupported("expected an external derive")),
         }
     }
 }

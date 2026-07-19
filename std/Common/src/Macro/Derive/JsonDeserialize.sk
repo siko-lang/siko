@@ -1,0 +1,58 @@
+module Std.Macro.Derive.JsonDeserialize {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.Json
+import Std.Macro.Derive.JsonDeserializeSupport
+import Std.Macro.Derive.JsonDeserializeEnum
+
+fn struct_method(
+    ctx: MacroContext,
+    def: StructDef,
+) -> Result[FunctionDef, MacroError] {
+    let cfg = config(ctx)?;
+    let builder = FunctionBuilder.new(cfg.method);
+    let value = builder.add_argument(cfg.json.type_def);
+    let types = Vec.new();
+    let values = Vec.new();
+    for field in def.fields {
+        types.push(field.type_def);
+        values.push(decode_named(builder, cfg, value, field.name, field.optional));
+    }
+    Ok(builder.finish(typed_call(
+        builder, cfg, def.constructor, types, values,
+    )))
+}
+
+pub macro JsonDeserialize {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let def = ctx.struct_target()?;
+        let cfg = config(ctx)?;
+        Ok(attached_instance(
+            cfg.trait_def, def.type_def, def.type_params, struct_method(ctx, def)?,
+        ))
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let def = ctx.enum_target()?;
+        let cfg = config(ctx)?;
+        Ok(attached_instance(
+            cfg.trait_def, def.type_def, def.type_params, enum_method(ctx, def)?,
+        ))
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(struct_method(ctx, ctx.struct_target()?)?.instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(enum_method(ctx, ctx.enum_target()?)?.instance_body())
+    }
+}
+
+}

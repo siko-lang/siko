@@ -1,0 +1,141 @@
+module Std.Macro.Derive.JsonSerialize {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.Json
+
+struct ObjectEntry {
+    name: String,
+    value: Expr,
+}
+
+struct Config {
+    trait_def: TraitDef,
+    method: QualifiedName,
+    json: JsonDef,
+    empty_object: QualifiedName,
+    add_object_field: QualifiedName,
+    empty_array: QualifiedName,
+    add_array_item: QualifiedName,
+}
+
+fn config(ctx: MacroContext) -> Result[Config, MacroError] {
+    Ok(Config(
+        ctx.resolve_trait("Std.Json.JsonSerialize")?,
+        ctx.resolve_function("Std.Json.JsonSerialize.to_json")?,
+        resolve_json(ctx)?,
+        ctx.resolve_function("Std.Json.Json.empty_object")?,
+        ctx.resolve_function("Std.Json.add_object_field")?,
+        ctx.resolve_function("Std.Json.Json.empty_array")?,
+        ctx.resolve_function("Std.Json.add_array_item")?,
+    ))
+}
+
+fn object(builder: FunctionBuilder, cfg: Config, entries: Vec[ObjectEntry]) -> Expr {
+    let result = builder.call(cfg.empty_object, Vec.new());
+    for entry in entries {
+        result = builder.call(cfg.add_object_field, [
+            result,
+            builder.string(entry.name),
+            entry.value,
+        ]);
+    }
+    result
+}
+
+fn array(builder: FunctionBuilder, cfg: Config, values: Vec[Expr]) -> Expr {
+    let result = builder.call(cfg.empty_array, Vec.new());
+    for value in values {
+        result = builder.call(cfg.add_array_item, [result, value]);
+    }
+    result
+}
+
+fn struct_method(ctx: MacroContext, def: StructDef) -> Result[FunctionDef, MacroError] {
+    let cfg = config(ctx)?;
+    let builder = FunctionBuilder.new(cfg.method);
+    let value = builder.add_argument(def.type_def);
+    let entries = Vec.new();
+    for field in def.fields {
+        entries.push(ObjectEntry(
+            field.name,
+            builder.call(cfg.method, [builder.field(value, field)]),
+        ));
+    }
+    Ok(builder.finish(object(builder, cfg, entries)))
+}
+
+fn variant_body(
+    builder: FunctionBuilder,
+    cfg: Config,
+    variant: VariantDef,
+    values: Vec[Expr],
+) -> Expr {
+    if values.is_empty() {
+        return builder.call(cfg.json.str_variant.constructor, [builder.string(variant.name)]);
+    }
+    let all_named = variant.items.iter().all(|item| item.name.is_some());
+    let payload = if all_named {
+        let entries = Vec.new();
+        for (index, item) in variant.items.iter().enumerate() {
+            entries.push(ObjectEntry(
+                item.name.unwrap(),
+                builder.call(cfg.method, [values[index]]),
+            ));
+        }
+        object(builder, cfg, entries)
+    } else if values.len() == 1 {
+        builder.call(cfg.method, [values[0]])
+    } else {
+        array(builder, cfg, values.iter().map(|value| builder.call(cfg.method, [value])).collect())
+    };
+    object(builder, cfg, [ObjectEntry(variant.name, payload)])
+}
+
+fn enum_method(ctx: MacroContext, def: EnumDef) -> Result[FunctionDef, MacroError] {
+    let cfg = config(ctx)?;
+    let builder = FunctionBuilder.new(cfg.method);
+    let value = builder.add_argument(def.type_def);
+    let arms = Vec.new();
+    for variant in def.variants {
+        let binding = builder.destructure(variant);
+        arms.push(builder.arm(
+            binding.pattern,
+            variant_body(builder, cfg, variant, binding.values),
+        ));
+    }
+    Ok(builder.finish(builder.match_expr(value, arms)))
+}
+
+pub macro JsonSerialize {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let def = ctx.struct_target()?;
+        let cfg = config(ctx)?;
+        Ok(attached_instance(
+            cfg.trait_def, def.type_def, def.type_params, struct_method(ctx, def)?,
+        ))
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let def = ctx.enum_target()?;
+        let cfg = config(ctx)?;
+        Ok(attached_instance(
+            cfg.trait_def, def.type_def, def.type_params, enum_method(ctx, def)?,
+        ))
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(struct_method(ctx, ctx.struct_target()?)?.instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(enum_method(ctx, ctx.enum_target()?)?.instance_body())
+    }
+}
+
+}

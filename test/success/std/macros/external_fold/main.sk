@@ -1,0 +1,67 @@
+module ExternalFoldTypes {
+
+pub struct Duo[T] {
+    pub first: T,
+    pub second: T,
+}
+
+pub enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+pub struct Selected[T] {
+    pub value: T,
+}
+
+pub struct Leaf {
+    pub value: Int,
+}
+
+pub struct Forbidden {}
+
+}
+
+module Main {
+
+import ExternalFoldTypes
+import Std.Macro.Derive.Fold
+
+trait Visit[T] {
+    fn visit(value: T, offset: Int)
+}
+
+instance Visit[Int] {
+    fn visit(value: Int, offset: Int) {
+        println(value + offset);
+    }
+}
+
+instance[T: Visit[T]] Visit[Duo[T]] = auto2(Fold)
+instance[T: Visit[T]] Visit[Choice[T]] = auto2(Fold)
+instance Visit[Leaf] = auto2(Fold, =)
+instance Visit[Forbidden] = auto2(Fold, !)
+
+trait Inspect[T] {
+    fn inspect(value: T, factor: Int)
+
+    fn skip(value: T) {}
+}
+
+instance Inspect[Int] {
+    fn inspect(value: Int, factor: Int) {
+        println(value * factor);
+    }
+}
+
+instance[T: Inspect[T]] Inspect[Selected[T]] = auto2(Fold, inspect)
+
+fn main() {
+    Duo(1, 2).visit(10);
+    Choice.Pair(3, 4).visit(20);
+    Leaf(5).visit(100);
+    Selected(6).inspect(7);
+}
+
+}

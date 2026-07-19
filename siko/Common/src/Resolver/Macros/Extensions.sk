@@ -17,12 +17,14 @@ import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Traits as MacroTraits
 import Siko.Resolver.Macros.Bridge.Types as MacroTypes
 import Siko.Resolver.Macros.Bridge.Variants as MacroVariants
+import Siko.Resolver.Macros.Request
 
 fn resolve_trait(
     global_ctx: GlobalResolverContext,
     state: BridgeState,
     module_name: I.String,
     application_location: Location,
+    target: MacroTarget,
     args: Vec[Value],
     call_location: Location,
 ) -> Result[Value, InterpreterError] {
@@ -53,7 +55,11 @@ fn resolve_trait(
     if !item.kind.is_trait() {
         return Ok(MacroTraits.resolution_error("`${name}` does not name a trait"));
     }
-    Ok(MacroTraits.resolution_ok(state, item.qualified_name))
+    let target_type = match MacroInput.target_type(global_ctx, target) {
+        Some(ty) => ty,
+        None => return Ok(MacroTraits.resolution_error("macro target type is unavailable")),
+    };
+    Ok(MacroTraits.resolution_ok(global_ctx, state, item.qualified_name, target_type))
 }
 
 fn resolve_function(
@@ -181,10 +187,11 @@ pub fn build(
     state: BridgeState,
     module_name: I.String,
     application_location: Location,
+    target: MacroTarget,
 ) -> InterpreterExtensions {
     let extensions = InterpreterExtensions.new();
     extensions.insert(B.get_macro_resolve_trait_builtin_qn(), |args, call_location| {
-        resolve_trait(global_ctx, state, module_name, application_location, args, call_location)
+        resolve_trait(global_ctx, state, module_name, application_location, target, args, call_location)
     });
     extensions.insert(B.get_macro_resolve_function_builtin_qn(), |args, call_location| {
         resolve_function(global_ctx, state, module_name, application_location, args, call_location)

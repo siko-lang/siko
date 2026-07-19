@@ -1,0 +1,82 @@
+module ExternalMapTypes {
+
+pub struct Duo[T] {
+    pub first: T,
+    pub second: T,
+}
+
+pub enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+pub struct Selected[T] {
+    pub value: T,
+}
+
+pub struct Leaf {
+    pub value: Int,
+}
+
+pub struct Forbidden {}
+
+}
+
+module Main {
+
+import ExternalMapTypes
+import Std.Macro.Derive.Map
+
+trait Rewrite[T] {
+    fn rewrite(value: T, delta: Int) -> T
+}
+
+instance Rewrite[Int] {
+    fn rewrite(value: Int, delta: Int) -> Int {
+        value + delta
+    }
+}
+
+instance[T: Rewrite[T]] Rewrite[Duo[T]] = auto2(Map)
+instance[T: Rewrite[T]] Rewrite[Choice[T]] = auto2(Map)
+instance Rewrite[Leaf] = auto2(Map, =)
+instance Rewrite[Forbidden] = auto2(Map, !)
+
+trait Transform[T] {
+    fn transform(value: T, factor: Int) -> T
+
+    fn keep(value: T) -> T {
+        value
+    }
+}
+
+instance Transform[Int] {
+    fn transform(value: Int, factor: Int) -> Int {
+        value * factor
+    }
+}
+
+instance[T: Transform[T]] Transform[Selected[T]] = auto2(Map, transform)
+
+fn print_choice(value: Choice[Int]) {
+    match value {
+        Choice.Empty => println("empty"),
+        Choice.One(value) => println(value),
+        Choice.Pair(first, second) => {
+            println(first);
+            println(second);
+        }
+    }
+}
+
+fn main() {
+    let pair = Duo(1, 2).rewrite(10);
+    println(pair.first);
+    println(pair.second);
+    print_choice(Choice.Pair(3, 4).rewrite(20));
+    println(Leaf(5).rewrite(100).value);
+    println(Selected(6).transform(7).value);
+}
+
+}
