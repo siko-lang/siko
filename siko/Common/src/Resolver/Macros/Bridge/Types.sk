@@ -1,0 +1,38 @@
+module Siko.Resolver.Macros.Bridge.Types {
+
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Strings
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+
+fn macro_error(message: String) -> Value {
+    variant_value(
+        B.get_macro_error_qn(),
+        B.get_macro_error_not_supported_qn(),
+        0,
+        [make_string(message)],
+    )
+}
+
+pub fn resolution_ok(state: BridgeState, ty: TypeDef) -> Value {
+    result_value(
+        named_type(B.get_macro_type_def_qn()),
+        named_type(B.get_macro_error_qn()),
+        True,
+        handle_value(B.get_macro_type_def_qn(), state.add_type(ty)),
+    )
+}
+
+pub fn resolution_error(message: String) -> Value {
+    result_value(
+        named_type(B.get_macro_type_def_qn()),
+        named_type(B.get_macro_error_qn()),
+        False,
+        macro_error(message),
+    )
+}
+
+}

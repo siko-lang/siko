@@ -1,0 +1,66 @@
+module Std.Macro.Derive.FromInt {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn validate(enum_def: EnumDef) -> Result[(), MacroError] {
+    if !enum_def.type_params.is_empty() {
+        return Err(MacroError.NotSupported("FromInt does not support generic enums"));
+    }
+    for variant in enum_def.variants {
+        if !variant.items.is_empty() {
+            return Err(MacroError.NotSupported(
+                "FromInt only supports enums whose variants have no payload",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn from_int_method(
+    ctx: MacroContext,
+    enum_def: EnumDef,
+) -> Result[FunctionDef, MacroError] {
+    let from_int_fn = ctx.resolve_function("Std.Ops.FromInt.from_int")?;
+    let int_type = ctx.resolve_type("Std.Int.Int")?;
+    let some_variant = ctx.resolve_variant("Std.Option.Option.Some")?;
+    let none_variant = ctx.resolve_variant("Std.Option.Option.None")?;
+
+    let builder = FunctionBuilder.new(from_int_fn);
+    let value = builder.add_argument(int_type);
+    let arms = Vec.new();
+    for (index, variant) in enum_def.variants.iter().enumerate() {
+        let item = builder.call(variant.constructor, Vec.new());
+        let some = builder.call(some_variant.constructor, [item]);
+        arms.push(builder.arm(builder.integer_pattern(index), some));
+    }
+    arms.push(builder.arm(
+        builder.wildcard_pattern(),
+        builder.call(none_variant.constructor, Vec.new()),
+    ));
+    Ok(builder.finish(builder.match_expr(value, arms)))
+}
+
+pub macro FromInt {
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        validate(enum_def)?;
+        let trait_def = ctx.resolve_trait("Std.Ops.FromInt")?;
+        let method = from_int_method(ctx, enum_def)?;
+        let builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        builder.add_method(method);
+        Ok(builder.finish())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        validate(enum_def)?;
+        Ok(from_int_method(ctx, enum_def)?.instance_body())
+    }
+}
+
+}

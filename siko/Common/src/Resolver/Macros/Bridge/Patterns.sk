@@ -5,6 +5,7 @@ import Siko.AST.Expr as E
 import Siko.AST.Name
 import Siko.AST.Pattern as P
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
 import Siko.Interpreter.Value
 import Siko.Location
 import Siko.Resolver.Macros.Bridge.Handles
@@ -69,6 +70,15 @@ pub fn decode_pattern(
             named_args: Vec.new(),
             has_rest: False,
         ))
+    } else if variant.variant_qname == B.get_macro_function_pattern_integer_qn() {
+        if variant.items.len() != 1 {
+            return Err("integer pattern must contain one Int");
+        }
+        let value = match variant.items[0].kind {
+            ValueKind.Int(value) => value,
+            _ => return Err("integer pattern payload is not an Int"),
+        };
+        P.PatternKind.IntLiteral(I.intern(value.to_string()))
     } else if variant.variant_qname == B.get_macro_function_pattern_wildcard_qn() {
         if !variant.items.is_empty() {
             return Err("wildcard pattern must not contain values");

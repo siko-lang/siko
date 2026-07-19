@@ -18,6 +18,7 @@ import Siko.Interpreter.Extensions
 import Siko.Interpreter.Memory
 import Siko.Interpreter.Strings
 import Siko.Interpreter.SymbolicTypes
+import Siko.Interpreter.TypeHints
 import Siko.Interpreter.Types
 import Siko.Interpreter.Value
 import Siko.Interpreter.Witnesses
@@ -84,6 +85,7 @@ struct Frame {
     var_types: Map[VariableName, TypeDef],
     module_name: I.String,
     context: CallContext,
+    return_type: Option[TypeDef],
 }
 
 // The result of evaluating an expression: either a value, or control flow
@@ -103,7 +105,18 @@ fn display(qname: QualifiedName) -> String {
 // ── Calls ─────────────────────────────────────────────────────────────────────
 
 fn call_function(interp: Interpreter, caller: CallContext, qname: QualifiedName, args: Vec[CallArg], location: Location) -> Result[Value, InterpreterError] {
-    call_function_with_bounds(interp, caller, qname, args, Vec.new(), location)
+    call_function_expected(interp, caller, qname, args, None, location)
+}
+
+fn call_function_expected(
+    interp: Interpreter,
+    caller: CallContext,
+    qname: QualifiedName,
+    args: Vec[CallArg],
+    expected: Option[TypeDef],
+    location: Location,
+) -> Result[Value, InterpreterError] {
+    call_function_with_bounds(interp, caller, qname, args, Vec.new(), expected, location)
 }
 
 // `provided` is aligned with the callee's declared bounds. Trait dispatch uses
@@ -114,6 +127,7 @@ fn call_function_with_bounds(
     qname: QualifiedName,
     args: Vec[CallArg],
     provided: Vec[Option[ResolvedWitness]],
+    expected: Option[TypeDef],
     location: Location,
 ) -> Result[Value, InterpreterError] {
     if interp.call_stack.len() >= interp.depth_limit {
@@ -137,9 +151,9 @@ fn call_function_with_bounds(
         return Err(error(ErrorKind.ExternCall(display(qname)), location));
     }
     match fdef.kind {
-        FunctionDefKind.Regular => execute_body(interp, caller, fdef, qname, args, provided, location),
+        FunctionDefKind.Regular => execute_body(interp, caller, fdef, qname, args, provided, expected, location),
         FunctionDefKind.TraitMethod => {
-            let dispatched = dispatch_trait_call(interp.program, qname, fdef, args, caller, location)?;
+            let dispatched = dispatch_trait_call(interp.program, qname, fdef, args, expected, caller, location)?;
             match dispatched.target {
                 CallTarget.Concrete(target) => {
                     let target_def = match interp.program.functions.get(target) {
@@ -147,11 +161,11 @@ fn call_function_with_bounds(
                         None => return Err(error(ErrorKind.MissingFunction(display(target)), location)),
                     };
                     let target_bounds = instance_method_bounds(target_def, dispatched.self_witness, location)?;
-                    call_function_with_bounds(interp, caller, target, args, target_bounds, location)
+                    call_function_with_bounds(interp, caller, target, args, target_bounds, expected, location)
                 }
                 CallTarget.DefaultBody(_) => {
                     let default_bounds = default_method_bounds(fdef, dispatched.self_witness);
-                    execute_body(interp, caller, fdef, qname, args, default_bounds, location)
+                    execute_body(interp, caller, fdef, qname, args, default_bounds, expected, location)
                 }
             }
         }
@@ -169,6 +183,7 @@ fn execute_body(
     qname: QualifiedName,
     args: Vec[CallArg],
     provided: Vec[Option[ResolvedWitness]],
+    expected: Option[TypeDef],
     location: Location,
 ) -> Result[Value, InterpreterError] {
     let args = fill_defaults(interp, caller, fdef, qname, args, location)?;
@@ -179,8 +194,15 @@ fn execute_body(
         Some(b) => b,
         None => return Err(error(ErrorKind.MissingBody(display(qname)), location)),
     };
-    let context = build_call_context(interp.program, caller, fdef, args, provided, location)?;
-    let frame = Frame(vars: Map.new(), var_types: Map.new(), module_name: fdef.module_name, context: context);
+    let result_hint = function_result_hint(interp.program, fdef, args, expected);
+    let context = build_call_context(interp.program, caller, fdef, args, result_hint, provided, location)?;
+    let frame = Frame(
+        vars: Map.new(),
+        var_types: Map.new(),
+        module_name: fdef.module_name,
+        context: context,
+        return_type: result_hint,
+    );
     for (i, arg_def) in fdef.args.iter().enumerate() {
         if is_concrete_type(arg_def.type_def) {
             args[i].value.ty = arg_def.type_def;
@@ -190,7 +212,7 @@ fn execute_body(
     }
     interp.call_stack.push(FrameInfo(name: display(qname), location: location));
     // An Err propagates without popping: the stack must describe the failure.
-    let flow = eval_expr(interp, frame, body)?;
+    let flow = eval_expr_expected(interp, frame, body, result_hint)?;
     interp.call_stack.pop();
     let result = match flow {
         Flow.Val(v) => v,
@@ -201,10 +223,8 @@ fn execute_body(
     // A concrete declared result type overrides the value's tracked type:
     // this is what gives transmute-based casts (as_int, as_u8, ...) and
     // returned literals their real type.
-    if let Some(declared) = fdef.result_type {
-        if is_concrete_type(declared) {
-            return Ok(Value(declared, result.kind));
-        }
+    if let Some(declared) = result_hint {
+        return Ok(Value(declared, result.kind));
     }
     Ok(result)
 }
@@ -223,7 +243,14 @@ fn fill_defaults(interp: Interpreter, caller: CallContext, fdef: FunctionDef, qn
     Ok(args)
 }
 
-fn call_closure(interp: Interpreter, caller: CallContext, cbox: ClosureBox, args: Vec[CallArg], location: Location) -> Result[Value, InterpreterError] {
+fn call_closure(
+    interp: Interpreter,
+    caller: CallContext,
+    cbox: ClosureBox,
+    args: Vec[CallArg],
+    expected: Option[TypeDef],
+    location: Location,
+) -> Result[Value, InterpreterError] {
     if interp.call_stack.len() >= interp.depth_limit {
         return Err(error(ErrorKind.StackOverflow, location));
     }
@@ -232,7 +259,13 @@ fn call_closure(interp: Interpreter, caller: CallContext, cbox: ClosureBox, args
         return Err(error(ErrorKind.WrongArgCount("<closure>", user_count, args.len()), location));
     }
     let context = CallContext(module_name: cbox.module_name, bounds: caller.bounds);
-    let frame = Frame(vars: Map.new(), var_types: Map.new(), module_name: cbox.module_name, context: context);
+    let frame = Frame(
+        vars: Map.new(),
+        var_types: Map.new(),
+        module_name: cbox.module_name,
+        context: context,
+        return_type: concrete_hint(expected),
+    );
     for (i, arg_def) in cbox.args.iter().enumerate() {
         let value = if i < cbox.capture_count {
             cbox.captured[i]
@@ -251,7 +284,7 @@ fn call_closure(interp: Interpreter, caller: CallContext, cbox: ClosureBox, args
         frame.var_types.insert(arg_def.name, symbolic_ty);
     }
     interp.call_stack.push(FrameInfo(name: "<closure>", location: location));
-    let flow = eval_expr(interp, frame, cbox.body)?;
+    let flow = eval_expr_expected(interp, frame, cbox.body, frame.return_type)?;
     interp.call_stack.pop();
     match flow {
         Flow.Val(v) => Ok(v),
@@ -330,6 +363,33 @@ fn construct_variant(interp: Interpreter, qname: QualifiedName, args: Vec[Value]
 // ── Expressions ───────────────────────────────────────────────────────────────
 
 fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, InterpreterError] {
+    eval_expr_expected(interp, frame, expr, None)
+}
+
+fn eval_expr_expected(
+    interp: Interpreter,
+    frame: Frame,
+    expr: Expr,
+    expected: Option[TypeDef],
+) -> Result[Flow, InterpreterError] {
+    let flow = eval_expr_inner(interp, frame, expr, concrete_hint(expected))?;
+    match flow {
+        Flow.Val(value) => {
+            if let Some(ty) = concrete_hint(expected) {
+                return Ok(Flow.Val(Value(ty, value.kind)));
+            }
+            Ok(Flow.Val(value))
+        }
+        other => Ok(other),
+    }
+}
+
+fn eval_expr_inner(
+    interp: Interpreter,
+    frame: Frame,
+    expr: Expr,
+    expected: Option[TypeDef],
+) -> Result[Flow, InterpreterError] {
     let location = expr.location;
     match expr.kind {
         ExprKind.IntLiteral(s) => {
@@ -359,12 +419,12 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 None => Err(error(ErrorKind.Internal("unbound variable ${name.format()}"), location)),
             }
         }
-        ExprKind.Paren(inner) => eval_expr(interp, frame, inner),
-        ExprKind.Block(BlockInfo(stmts)) => eval_block(interp, frame, stmts),
+        ExprKind.Paren(inner) => eval_expr_expected(interp, frame, inner, expected),
+        ExprKind.Block(BlockInfo(stmts)) => eval_block_expected(interp, frame, stmts, expected),
         ExprKind.Tuple(items) => {
             let values = Vec.new();
-            for item in items {
-                match eval_expr(interp, frame, item)? {
+            for (index, item) in items.iter().enumerate() {
+                match eval_expr_expected(interp, frame, item, tuple_item_hint(expected, index))? {
                     Flow.Val(v) => values.push(v),
                     other => return Ok(other),
                 }
@@ -373,7 +433,7 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
             Ok(Flow.Val(Value(TypeDef.Tuple(types), ValueKind.Tuple(values))))
         }
         ExprKind.Return(inner) => {
-            match eval_expr(interp, frame, inner)? {
+            match eval_expr_expected(interp, frame, inner, frame.return_type)? {
                 Flow.Val(v) => Ok(Flow.Return(v)),
                 other => Ok(other),
             }
@@ -386,9 +446,9 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 other => return Ok(other),
             };
             match read_bool(cond_value) {
-                Some(True) => eval_expr(interp, frame, then_body),
+                Some(True) => eval_expr_expected(interp, frame, then_body, expected),
                 Some(False) => match else_body {
-                    Some(e) => eval_expr(interp, frame, e),
+                    Some(e) => eval_expr_expected(interp, frame, e, expected),
                     None => Ok(Flow.Val(Value.unit())),
                 }
                 None => Err(error(ErrorKind.TypeMismatch("Bool", describe(cond_value)), cond.location)),
@@ -401,7 +461,7 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
             };
             for arm in arms {
                 if match_pattern(interp, frame, arm.pattern, value)? {
-                    return eval_expr(interp, frame, arm.body);
+                    return eval_expr_expected(interp, frame, arm.body, expected);
                 }
             }
             Err(error(ErrorKind.NoMatch, location))
@@ -438,17 +498,26 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
             if is_co {
                 return Err(error(ErrorKind.UnsupportedExpr("coroutine creation"), location));
             }
+            let hints = match kind {
+                FunctionKind.StructCtor => struct_call_hints(interp.program, qname, expected),
+                FunctionKind.VariantCtor => variant_call_hints(interp.program, qname, expected),
+                _ => function_call_hints(interp.program, qname, expected),
+            };
             let call_args: Vec[CallArg] = Vec.new();
-            for arg in args {
-                match eval_expr(interp, frame, arg)? {
-                    Flow.Val(v) => call_args.push(make_call_arg(interp, frame, arg, v)),
+            for (index, arg) in args.iter().enumerate() {
+                match eval_expr_expected(interp, frame, arg, hints.arg(index))? {
+                    Flow.Val(v) => {
+                        let call_arg = make_call_arg(interp, frame, arg, v);
+                        hints.observe_arg(index, dispatch_type(interp.program, v));
+                        call_args.push(call_arg);
+                    }
                     other => return Ok(other),
                 }
             }
             let result = match kind {
                 FunctionKind.StructCtor => construct_struct(interp, frame.context, qname, call_arg_values(call_args), location)?,
                 FunctionKind.VariantCtor => construct_variant(interp, qname, call_arg_values(call_args), location)?,
-                _ => call_function(interp, frame.context, qname, call_args, location)?,
+                _ => call_function_expected(interp, frame.context, qname, call_args, expected, location)?,
             };
             Ok(Flow.Val(result))
         }
@@ -458,15 +527,21 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 other => return Ok(other),
             };
             let call_args: Vec[CallArg] = [make_call_arg(interp, frame, receiver, recv)];
-            for arg in args {
-                match eval_expr(interp, frame, arg)? {
-                    Flow.Val(v) => call_args.push(make_call_arg(interp, frame, arg, v)),
+            let receiver_ty = dispatch_type(interp.program, recv);
+            let target = resolve_method_call(interp.program, receiver_ty, method.name(), frame.module_name, location)?;
+            let hints = function_call_hints(interp.program, target, expected);
+            hints.observe_arg(0, receiver_ty);
+            for (index, arg) in args.iter().enumerate() {
+                match eval_expr_expected(interp, frame, arg, hints.arg(index + 1))? {
+                    Flow.Val(v) => {
+                        let call_arg = make_call_arg(interp, frame, arg, v);
+                        hints.observe_arg(index + 1, dispatch_type(interp.program, v));
+                        call_args.push(call_arg);
+                    }
                     other => return Ok(other),
                 }
             }
-            let receiver_ty = dispatch_type(interp.program, recv);
-            let target = resolve_method_call(interp.program, receiver_ty, method.name(), frame.module_name, location)?;
-            let result = call_function(interp, frame.context, target, call_args, location)?;
+            let result = call_function_expected(interp, frame.context, target, call_args, expected, location)?;
             Ok(Flow.Val(result))
         }
         ExprKind.DynamicCall(callee, args) => {
@@ -482,8 +557,8 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 }
             }
             let result = match callee_value.kind {
-                ValueKind.Closure(cbox) => call_closure(interp, frame.context, cbox, call_args, location)?,
-                ValueKind.FnRef(qname) => call_function(interp, frame.context, qname, call_args, location)?,
+                ValueKind.Closure(cbox) => call_closure(interp, frame.context, cbox, call_args, expected, location)?,
+                ValueKind.FnRef(qname) => call_function_expected(interp, frame.context, qname, call_args, expected, location)?,
                 _ => return Err(error(ErrorKind.NotCallable(describe(callee_value)), location)),
             };
             Ok(Flow.Val(result))
@@ -518,7 +593,7 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 make_call_arg(interp, frame, container, container_value),
                 make_call_arg(interp, frame, idx, idx_value),
             ];
-            let result = call_function(interp, frame.context, B.get_index_index_qn(), call_args, location)?;
+            let result = call_function_expected(interp, frame.context, B.get_index_index_qn(), call_args, expected, location)?;
             Ok(Flow.Val(result))
         }
         ExprKind.Deref(inner) => {
@@ -547,16 +622,23 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
                 _ => Err(error(ErrorKind.NotAPlace(expr_kind_name(inner.kind)), location)),
             }
         }
+        // A transmute changes the result type; its target is not evidence for
+        // the source expression's type.
         ExprKind.Transmute(inner) => eval_expr(interp, frame, inner),
         ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, args, _, _)) => {
+            let hints = function_call_hints(interp.program, fn_name, expected);
             let call_args: Vec[CallArg] = Vec.new();
-            for arg in args {
-                match eval_expr(interp, frame, arg)? {
-                    Flow.Val(v) => call_args.push(make_call_arg(interp, frame, arg, v)),
+            for (index, arg) in args.iter().enumerate() {
+                match eval_expr_expected(interp, frame, arg, hints.arg(index))? {
+                    Flow.Val(v) => {
+                        let call_arg = make_call_arg(interp, frame, arg, v);
+                        hints.observe_arg(index, dispatch_type(interp.program, v));
+                        call_args.push(call_arg);
+                    }
                     other => return Ok(other),
                 }
             }
-            let result = call_type_associated(interp, frame, type_def, fn_name, call_args, location)?;
+            let result = call_type_associated(interp, frame, type_def, fn_name, call_args, expected, location)?;
             Ok(Flow.Val(result))
         }
         kind => Err(error(ErrorKind.UnsupportedExpr(expr_kind_name(kind)), location)),
@@ -565,14 +647,22 @@ fn eval_expr(interp: Interpreter, frame: Frame, expr: Expr) -> Result[Flow, Inte
 
 // `SomeType.method(args)`: a trait method with an explicitly named self type.
 // Pre-bind the trait's primary type param to that type, then dispatch.
-fn call_type_associated(interp: Interpreter, frame: Frame, type_def: TypeDef, fn_name: QualifiedName, args: Vec[CallArg], location: Location) -> Result[Value, InterpreterError] {
+fn call_type_associated(
+    interp: Interpreter,
+    frame: Frame,
+    type_def: TypeDef,
+    fn_name: QualifiedName,
+    args: Vec[CallArg],
+    expected: Option[TypeDef],
+    location: Location,
+) -> Result[Value, InterpreterError] {
     let fdef = match interp.program.functions.get(fn_name) {
         Some(f) => f,
         None => return Err(error(ErrorKind.MissingFunction(display(fn_name)), location)),
     };
     match fdef.kind {
         FunctionDefKind.TraitMethod => {
-            let dispatched = dispatch_type_associated_call(interp.program, fn_name, fdef, type_def, args, frame.context, location)?;
+            let dispatched = dispatch_type_associated_call(interp.program, fn_name, fdef, type_def, args, expected, frame.context, location)?;
             match dispatched.target {
                 CallTarget.Concrete(target) => {
                     let target_def = match interp.program.functions.get(target) {
@@ -580,29 +670,44 @@ fn call_type_associated(interp: Interpreter, frame: Frame, type_def: TypeDef, fn
                         None => return Err(error(ErrorKind.MissingFunction(display(target)), location)),
                     };
                     let target_bounds = instance_method_bounds(target_def, dispatched.self_witness, location)?;
-                    call_function_with_bounds(interp, frame.context, target, args, target_bounds, location)
+                    call_function_with_bounds(interp, frame.context, target, args, target_bounds, expected, location)
                 }
                 CallTarget.DefaultBody(_) => {
                     let default_bounds = default_method_bounds(fdef, dispatched.self_witness);
-                    execute_body(interp, frame.context, fdef, fn_name, args, default_bounds, location)
+                    execute_body(interp, frame.context, fdef, fn_name, args, default_bounds, expected, location)
                 }
             }
         }
-        _ => call_function(interp, frame.context, fn_name, args, location),
+        _ => call_function_expected(interp, frame.context, fn_name, args, expected, location),
     }
 }
 
 // ── Statements & defer ────────────────────────────────────────────────────────
 
 fn eval_block(interp: Interpreter, frame: Frame, stmts: Vec[S.Statement]) -> Result[Flow, InterpreterError] {
+    eval_block_expected(interp, frame, stmts, None)
+}
+
+fn eval_block_expected(
+    interp: Interpreter,
+    frame: Frame,
+    stmts: Vec[S.Statement],
+    expected: Option[TypeDef],
+) -> Result[Flow, InterpreterError] {
     let defers: Vec[Expr] = Vec.new();
     // An Err skips the defers (an interpreter-test error aborts the run).
-    let flow = eval_stmts(interp, frame, stmts, defers)?;
+    let flow = eval_stmts(interp, frame, stmts, defers, expected)?;
     run_defers(interp, frame, defers)?;
     Ok(flow)
 }
 
-fn eval_stmts(interp: Interpreter, frame: Frame, stmts: Vec[S.Statement], defers: Vec[Expr]) -> Result[Flow, InterpreterError] {
+fn eval_stmts(
+    interp: Interpreter,
+    frame: Frame,
+    stmts: Vec[S.Statement],
+    defers: Vec[Expr],
+    expected: Option[TypeDef],
+) -> Result[Flow, InterpreterError] {
     for stmt in stmts {
         match stmt {
             S.Statement.Let(S.LetInfo(name, declared_ty, rhs)) => {
@@ -644,7 +749,7 @@ fn eval_stmts(interp: Interpreter, frame: Frame, stmts: Vec[S.Statement], defers
                 }
             }
             S.Statement.TrailingExpr(e) => {
-                return eval_expr(interp, frame, e);
+                return eval_expr_expected(interp, frame, e, expected);
             }
             S.Statement.Loop(BlockInfo(body)) => {
                 loop {

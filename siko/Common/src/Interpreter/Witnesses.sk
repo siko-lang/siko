@@ -113,6 +113,7 @@ pub fn build_call_context(
     caller: CallContext,
     fdef: FunctionDef,
     args: Vec[CallArg],
+    expected: Option[TypeDef],
     provided: Vec[Option[ResolvedWitness]],
     location: Location,
 ) -> Result[CallContext, InterpreterError] {
@@ -123,6 +124,12 @@ pub fn build_call_context(
     };
     let symbolic_sub = Substitution.new();
     let concrete_sub = Substitution.new();
+    if let (Some(result_type), Some(expected_type)) = (fdef.result_type, expected) {
+        if is_concrete_type(expected_type) {
+            extract_named_bindings(result_type, expected_type, symbolic_sub);
+            extract_named_bindings(result_type, expected_type, concrete_sub);
+        }
+    }
     for (i, arg_def) in fdef.args.iter().enumerate() {
         if i < args.len() {
             extract_named_bindings(arg_def.type_def, args[i].symbolic_ty, symbolic_sub);

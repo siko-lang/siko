@@ -36,10 +36,11 @@ pub fn dispatch_trait_call(
     callee: QualifiedName,
     fdef: FunctionDef,
     args: Vec[CallArg],
+    expected: Option[TypeDef],
     context: CallContext,
     location: Location,
 ) -> Result[DispatchedCall, InterpreterError] {
-    dispatch_with_self(program, callee, fdef, args, None, context, location)
+    dispatch_with_self(program, callee, fdef, args, None, expected, context, location)
 }
 
 // `SomeType.method(args)`: dispatch with the trait's primary type param
@@ -50,10 +51,11 @@ pub fn dispatch_type_associated_call(
     fdef: FunctionDef,
     self_type: TypeDef,
     args: Vec[CallArg],
+    expected: Option[TypeDef],
     context: CallContext,
     location: Location,
 ) -> Result[DispatchedCall, InterpreterError] {
-    dispatch_with_self(program, callee, fdef, args, Some(self_type), context, location)
+    dispatch_with_self(program, callee, fdef, args, Some(self_type), expected, context, location)
 }
 
 fn dispatch_with_self(
@@ -62,6 +64,7 @@ fn dispatch_with_self(
     fdef: FunctionDef,
     args: Vec[CallArg],
     self_type: Option[TypeDef],
+    expected: Option[TypeDef],
     context: CallContext,
     location: Location,
 ) -> Result[DispatchedCall, InterpreterError] {
@@ -75,6 +78,12 @@ fn dispatch_with_self(
     let self_bound = tad.bounds[0];
     let symbolic_inst = Substitution.new();
     let concrete_inst = Substitution.new();
+    if let (Some(result_type), Some(expected_type)) = (fdef.result_type, expected) {
+        if is_concrete_type(expected_type) {
+            extract_named_bindings(result_type, expected_type, symbolic_inst);
+            extract_named_bindings(result_type, expected_type, concrete_inst);
+        }
+    }
     for (i, arg_def) in fdef.args.iter().enumerate() {
         if i < args.len() {
             extract_named_bindings(arg_def.type_def, args[i].symbolic_ty, symbolic_inst);
