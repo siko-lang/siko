@@ -10,7 +10,7 @@ import Siko.AST.Identifier
 import Siko.AST.Statement as S
 import Siko.AST.QualifiedName
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct WitnessInfo {
     pub witnesses: Vec[BoundWitness],
 
@@ -19,7 +19,7 @@ pub struct WitnessInfo {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct Expr {
     pub kind: ExprKind,
     pub location: Location,
@@ -56,7 +56,7 @@ pub struct Expr {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum FunctionKind {
     UserDefined,
     StructCtor,
@@ -77,13 +77,13 @@ instance ToString[FunctionKind] {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct MatchArm {
     pub pattern: Pattern,
     pub body: Expr,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum HandlerSelection {
     Unresolved(method: Identifier, handler: Identifier),
     UnresolvedType(method: Identifier, handler: TypeDef),
@@ -92,19 +92,19 @@ pub enum HandlerSelection {
     TypeAssociation(associated_type: QualifiedName, handler: TypeDef, location: Location, witnesses: WitnessInfo),
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct MatchInfo {
     pub scrutinee: Expr,
     pub arms: Vec[MatchArm],
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct NamedArgument {
     pub index: Int,
     pub name: I.String,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct FunctionCallInfo {
     pub qname: QualifiedName,
     pub kind: FunctionKind,
@@ -114,7 +114,7 @@ pub struct FunctionCallInfo {
     pub is_coroutine_create: Bool = False,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct MethodCallInfo {
     pub receiver: Expr,
     pub name: Identifier,
@@ -122,7 +122,7 @@ pub struct MethodCallInfo {
     pub named_args: Vec[NamedArgument],
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct CallInfo {
     pub callee: Expr,
     pub args: Vec[Expr],
@@ -130,37 +130,37 @@ pub struct CallInfo {
     pub is_coroutine_create: Bool,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct WithInfo {
     pub selections: Vec[HandlerSelection],
     pub body: Expr,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct ImplicitRefInfo {
     pub name: QualifiedName,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct LambdaArg {
     pub name: VariableName,
     pub ty: Option[TypeDef],
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct CreateClosureInfo {
     pub name: QualifiedName,
     pub params: Vec[VariableName],
     pub witnesses: WitnessInfo,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct FunctionPtrInfo {
     pub name: QualifiedName,
     pub witnesses: WitnessInfo,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct TypeAssociatedCallInfo {
     pub type_def: TypeDef,
     pub fn_name: QualifiedName,
@@ -169,17 +169,17 @@ pub struct TypeAssociatedCallInfo {
     pub named_args: Vec[NamedArgument],
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct BlockInfo {
     pub stmts: Vec[S.Statement],
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub struct YieldInfo {
     pub arg: Expr,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum AtomicOrdering {
     Relaxed,
     Release,
@@ -200,7 +200,7 @@ instance ToString[AtomicOrdering] {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum AtomicRmwOp {
     Xchg,
     Add,
@@ -223,7 +223,7 @@ instance ToString[AtomicRmwOp] {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum ExprKind {
     IntLiteral(String),
     FloatLiteral(String),
@@ -304,7 +304,7 @@ pub enum ExprKind {
     AtomicFence(order: AtomicOrdering),
 }
 
-@derive(PartialEq, Std.Ops.Eq, PartialOrd, Ord, Clone)
+@derive2(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub enum VariableName {
     Unresolved(Identifier),
     UserDefined(I.String, Int),
@@ -334,7 +334,7 @@ pub enum VariableName {
     }
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum BinaryOp {
     Add,
     Sub,
@@ -356,7 +356,7 @@ pub enum BinaryOp {
     Shr,
 }
 
-@derive(Clone, PartialEq, Std.Ops.Eq)
+@derive2(Clone, PartialEq, Eq)
 pub enum UnaryOp {
     Neg,
     Not,
