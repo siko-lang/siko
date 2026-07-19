@@ -43,23 +43,68 @@ instance MacroParser[Parser] {
     fn parse_attached_macro(parser: Parser) -> Result[AttachedMacroApplication, ParseError] {
         parser.expect(TokenKind.LParen)?;
         let provider = Name.Unresolved(parser.parse_dotted_name()?);
-        let trait_name = if parser.peek() == TokenKind.LParen {
+        let args = if parser.peek() == TokenKind.LParen {
             parser.advance();
-            let name = Name.Unresolved(parser.parse_dotted_name()?);
-            parser.expect(TokenKind.RParen)?;
-            Some(name)
+            parse_macro_args(parser)?
         } else {
-            None
+            Vec.new()
         };
         parser.expect(TokenKind.RParen)?;
-        Ok(AttachedMacroApplication(provider, trait_name))
+        Ok(AttachedMacroApplication(provider, args))
     }
 
     fn parse_external_macro(parser: Parser) -> Result[ExternalMacroApplication, ParseError] {
         parser.expect(TokenKind.LParen)?;
         let provider = Name.Unresolved(parser.parse_dotted_name()?);
+        let args = Vec.new();
+        while parser.peek() == TokenKind.Comma {
+            parser.advance();
+            args.push(parse_macro_arg(parser)?);
+        }
         parser.expect(TokenKind.RParen)?;
-        Ok(ExternalMacroApplication(provider))
+        Ok(ExternalMacroApplication(provider, args))
+    }
+}
+
+fn parse_macro_args(parser: Parser) -> Result[Vec[MacroArg], ParseError] {
+    let args = Vec.new();
+    while parser.peek() != TokenKind.RParen && parser.peek() != TokenKind.Eof {
+        args.push(parse_macro_arg(parser)?);
+        if parser.peek() == TokenKind.Comma {
+            parser.advance();
+        } else {
+            break;
+        }
+    }
+    parser.expect(TokenKind.RParen)?;
+    Ok(args)
+}
+
+fn parse_macro_arg(parser: Parser) -> Result[MacroArg, ParseError] {
+    match parser.peek() {
+        TokenKind.TypeIdentifier(_) | TokenKind.VarIdentifier(_) =>
+            Ok(MacroArg.Name(Name.Unresolved(parser.parse_expr_dotted_name()?))),
+        TokenKind.StringLiteral(value) => {
+            parser.advance();
+            Ok(MacroArg.Text(I.resolve(value)))
+        }
+        TokenKind.IntLiteral(value) => {
+            let location = parser.cur_pos();
+            parser.advance();
+            match String.parse_int(I.resolve(value), 10) {
+                Ok(value) => Ok(MacroArg.Integer(value)),
+                Err(_) => Err(ParseError.new("invalid macro integer argument", location)),
+            }
+        }
+        TokenKind.Assign => {
+            parser.advance();
+            Ok(MacroArg.Symbol(MacroSymbol.Equals))
+        }
+        TokenKind.Bang => {
+            parser.advance();
+            Ok(MacroArg.Symbol(MacroSymbol.Bang))
+        }
+        _ => Err(ParseError.new("expected macro argument", parser.cur_pos())),
     }
 }
 

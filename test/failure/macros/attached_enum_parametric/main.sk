@@ -1,16 +1,54 @@
-module Main {
+module Traits {
+
+pub trait Rewrite[T] {}
+
+}
+
+module Derives {
 
 import Std.Macro
-
-trait Rewrite[T] {}
+import Std.Macro.Debug
 
 pub macro RejectEnum {
-    fn derive_enum(def: EnumDef, trait_def: TraitDef) -> Result[InstanceDef, MacroError] {
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let name = match ctx.args[0] {
+            MacroArg.Name(name) => name,
+            _ => return Err(MacroError.NotSupported("expected trait name")),
+        };
+        let trait_def = resolve_trait(ctx, name)?;
+        println(trait_def.name);
+        match ctx.args[1] {
+            MacroArg.Name(name) => println(name),
+            _ => return Err(MacroError.NotSupported("expected method name")),
+        }
+        match ctx.args[2] {
+            MacroArg.Text(text) => println(text),
+            _ => return Err(MacroError.NotSupported("expected text")),
+        }
+        match ctx.args[3] {
+            MacroArg.Integer(42) => println("42"),
+            _ => return Err(MacroError.NotSupported("expected integer")),
+        }
+        match ctx.args[4] {
+            MacroArg.Symbol(MacroSymbol.Equals) => println("equals"),
+            _ => return Err(MacroError.NotSupported("expected equals")),
+        }
+        match ctx.args[5] {
+            MacroArg.Symbol(MacroSymbol.Bang) => println("bang"),
+            _ => return Err(MacroError.NotSupported("expected bang")),
+        }
         Err(MacroError.NotSupported("attached enum rejected"))
     }
 }
 
-@derive2(RejectEnum(Rewrite))
+}
+
+module Main {
+
+import Derives
+import Traits as T
+// Exercise every initial macro argument form and application-site alias lookup.
+@derive2(RejectEnum(T.Rewrite, rewrite, "stuff", 42, =, !))
 enum Target {
     A,
 }

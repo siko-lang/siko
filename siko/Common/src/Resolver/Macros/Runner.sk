@@ -3,12 +3,14 @@ module Siko.Resolver.Macros.Runner {
 import Siko.AST.Module as M
 import Siko.HIR.Program
 import Siko.Instances.InstanceResolver
+import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Interpreter as Interp
-import Siko.Interpreter.Value
 import Siko.Resolver
 import Siko.Resolver.Error
 import Siko.Resolver.Macros.Bridge as Bridge
+import Siko.Resolver.Macros.Bridge.Input as MacroInput
+import Siko.Resolver.Macros.Extensions as MacroExtensions
 import Siko.Resolver.Macros.Request
 
 fn invoke_request(
@@ -16,51 +18,47 @@ fn invoke_request(
     program: Program,
     request: MacroRequest,
 ) -> Result[(), ResolveError] {
-    let (entry, data_value) = match request.target {
+    let entry = match request.target {
         MacroTarget.Struct(_) => match request.invocation {
-            MacroInvocation.Attached(_) => ("derive_struct", Bridge.struct_def()),
-            MacroInvocation.External(_) => ("external_derive_struct", Bridge.struct_def()),
+            MacroInvocation.Attached => B.get_macro_derive_struct_name(),
+            MacroInvocation.External(_) => B.get_macro_external_derive_struct_name(),
         },
         MacroTarget.Enum(_) => match request.invocation {
-            MacroInvocation.Attached(_) => ("derive_enum", Bridge.enum_def()),
-            MacroInvocation.External(_) => ("external_derive_enum", Bridge.enum_def()),
+            MacroInvocation.Attached => B.get_macro_derive_enum_name(),
+            MacroInvocation.External(_) => B.get_macro_external_derive_enum_name(),
         },
         MacroTarget.Invalid => return Err(ResolveError.InvalidMacroTarget(request.location)),
     };
     // Provider resolution only succeeds for a macro item, and every macro in
     // the SCC is registered during process_methods before requests are run.
     let macro_def = global_ctx.get_macro(request.provider).unwrap();
-    let entry_function = macro_def.functions.iter().find(|function| function.name.name() == I.intern(entry));
+    let entry_function = macro_def.functions.iter().find(|function| function.name.name() == entry);
     let entry_qname = match entry_function {
         Some(function) => function.qualified_name.unwrap(),
         None => return Err(ResolveError.MacroEntryPointNotFound(
             request.provider,
-            I.intern(entry),
+            entry,
             request.location,
         )),
     };
-    let args: Vec[Value] = [data_value];
-    let expected = match request.invocation {
-        MacroInvocation.Attached(trait_name) => {
-            if trait_name.is_some() {
-                args.push(Bridge.trait_def());
-            }
-            Bridge.MacroOutput.InstanceDef
-        }
-        MacroInvocation.External(_) => {
-            // A three-argument entry point is the trait-parameterized form.
-            // Other arities are invoked as the fixed form so the interpreter
-            // reports an ordinary argument-count failure at the call site.
-            if let Some(function) = program.functions.get(entry_qname) {
-                if function.args.len() == 3 {
-                    args.push(Bridge.trait_def());
-                }
-            }
-            args.push(Bridge.instance_header());
-            Bridge.MacroOutput.InstanceBody
-        }
+    let external = match request.invocation {
+        MacroInvocation.Attached => False,
+        MacroInvocation.External(_) => True,
     };
-    let value = match Interp.invoke(program, entry_qname, args, request.location) {
+    let expected = if external {
+        Bridge.MacroOutput.InstanceBody
+    } else {
+        Bridge.MacroOutput.InstanceDef
+    };
+    let context = MacroInput.macro_context(request.target, external, request.args);
+    let extensions = MacroExtensions.build(global_ctx, request.module_name, request.location);
+    let value = match Interp.invoke_with_extensions(
+        program,
+        entry_qname,
+        [context],
+        request.location,
+        extensions,
+    ) {
         Ok(value) => value,
         Err(error) => return Err(ResolveError.MacroExecutionFailed(error)),
     };

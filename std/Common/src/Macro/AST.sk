@@ -1,16 +1,46 @@
 module Std.Macro {
 
-// The first macro MVP intentionally exposes only opaque markers. The compiler
-// bridge will grow these types without ever exposing the compiler's real AST.
+// The first macro MVP exposes only the data needed to exercise invocation and
+// name resolution. These are macro-facing values, never the compiler's AST.
 pub struct StructDef {}
 pub struct EnumDef {}
-pub struct TraitDef {}
+pub struct TraitDef {
+    pub name: String,
+}
 pub struct InstanceHeader {}
 pub struct InstanceBody {}
 pub struct InstanceDef {}
 
+pub enum MacroTarget {
+    Struct(StructDef),
+    Enum(EnumDef),
+}
+
+pub enum MacroSymbol {
+    Equals,
+    Bang,
+}
+
+pub enum MacroArg {
+    Name(String),
+    Text(String),
+    Integer(Int),
+    Symbol(MacroSymbol),
+}
+
+pub struct MacroContext {
+    pub target: MacroTarget,
+    pub instance_header: Option[InstanceHeader],
+    pub args: Vec[MacroArg],
+}
+
 pub enum MacroError {
     NotSupported(String),
 }
+
+// Supplied by the compiler as an interpreter extension closure. It resolves
+// in the application module, not in the module defining the macro.
+@builtin
+pub fn resolve_trait(ctx: MacroContext, name: String) -> Result[TraitDef, MacroError]
 
 }

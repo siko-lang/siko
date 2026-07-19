@@ -1,0 +1,40 @@
+module Siko.Resolver.Macros.Bridge.Traits {
+
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Interpreter.Strings
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+import Siko.Resolver.Macros.Bridge.Value
+
+fn trait_def(name: QualifiedName) -> Value {
+    let qname = B.get_macro_trait_def_qn();
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [make_string(I.resolve(name.name()))])),
+    )
+}
+
+fn macro_error(message: String) -> Value {
+    variant_value(
+        B.get_macro_error_qn(),
+        B.get_macro_error_not_supported_qn(),
+        0,
+        [make_string(message)],
+    )
+}
+
+pub fn resolution_ok(name: QualifiedName) -> Value {
+    let trait_type = named_type(B.get_macro_trait_def_qn());
+    let error_type = named_type(B.get_macro_error_qn());
+    result_value(trait_type, error_type, True, trait_def(name))
+}
+
+pub fn resolution_error(message: String) -> Value {
+    let trait_type = named_type(B.get_macro_trait_def_qn());
+    let error_type = named_type(B.get_macro_error_qn());
+    result_value(trait_type, error_type, False, macro_error(message))
+}
+
+}

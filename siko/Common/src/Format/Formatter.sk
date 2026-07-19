@@ -2,6 +2,7 @@ module Siko.Format.Formatter {
 
 import Siko.AST.Annotations
 import Siko.Interner as I
+import Siko.Format.MacroArgs
 import Std.StringBuilder
 
 pub struct Formatter {
@@ -42,9 +43,14 @@ pub struct Formatter {
                 f.push_indent();
                 f.push("@derive2(");
                 f.push(I.resolve(app.provider.name()));
-                if let Some(trait_name) = app.trait_name {
+                if !app.args.is_empty() {
                     f.push("(");
-                    f.push(I.resolve(trait_name.name()));
+                    let i = 0;
+                    for arg in app.args {
+                        if i > 0 { f.push(", "); }
+                        f.push(format_macro_arg(arg));
+                        i = i + 1;
+                    }
                     f.push(")");
                 }
                 f.push(")\n");

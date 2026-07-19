@@ -14,6 +14,7 @@ import Siko.Interner as I
 import Siko.Interpreter.Builtins
 import Siko.Interpreter.Dispatch
 import Siko.Interpreter.Error
+import Siko.Interpreter.Extensions
 import Siko.Interpreter.Memory
 import Siko.Interpreter.Strings
 import Siko.Interpreter.SymbolicTypes
@@ -35,7 +36,24 @@ pub fn run(program: Program, entry: QualifiedName, location: Location) -> Result
 // Invoke a resolved function with compiler-provided values. This is the call
 // boundary used by the macro bridge as well as future compile-time clients.
 pub fn invoke(program: Program, entry: QualifiedName, args: Vec[Value], location: Location) -> Result[Value, InterpreterError] {
-    let interp = Interpreter(program: program, call_stack: Vec.new(), depth_limit: 500);
+    invoke_with_extensions(program, entry, args, location, InterpreterExtensions.new())
+}
+
+// Invoke with caller-supplied extension closures. A closure registered for a
+// function qualified name is called instead of interpreting that function.
+pub fn invoke_with_extensions(
+    program: Program,
+    entry: QualifiedName,
+    args: Vec[Value],
+    location: Location,
+    extensions: InterpreterExtensions,
+) -> Result[Value, InterpreterError] {
+    let interp = Interpreter(
+        program: program,
+        call_stack: Vec.new(),
+        depth_limit: 500,
+        extensions: extensions,
+    );
     let fdef = match program.functions.get(entry) {
         Some(f) => f,
         None => return Err(error(ErrorKind.MissingFunction(I.resolve(entry.name())), location)),
@@ -56,6 +74,7 @@ struct Interpreter {
     program: Program,
     call_stack: Vec[FrameInfo],
     depth_limit: Int,
+    extensions: InterpreterExtensions,
 }
 
 // One function invocation. The resolver alpha-renames every variable to be
@@ -101,6 +120,9 @@ fn call_function_with_bounds(
         return Err(error(ErrorKind.StackOverflow, location));
     }
     let arg_values = call_arg_values(args);
+    if let Some(closure) = interp.extensions.get(qname) {
+        return closure(arg_values, location);
+    }
     if let Some(result) = try_special(interp.program, qname, arg_values, location) {
         return result;
     }

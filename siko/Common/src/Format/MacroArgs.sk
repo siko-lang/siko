@@ -1,0 +1,24 @@
+module Siko.Format.MacroArgs {
+
+import Siko.AST.Macros
+import Siko.Interner as I
+
+pub fn format_macro_arg(arg: MacroArg) -> String {
+    match arg {
+        MacroArg.Name(name) => I.resolve(name.name()),
+        MacroArg.Text(text) => "\"" + escape(text) + "\"",
+        MacroArg.Integer(value) => value.to_string(),
+        MacroArg.Symbol(MacroSymbol.Equals) => "=",
+        MacroArg.Symbol(MacroSymbol.Bang) => "!",
+    }
+}
+
+fn escape(text: String) -> String {
+    text
+        .replace("\\", "\\\\")
+        .replace("\"", "\\\"")
+        .replace("\n", "\\n")
+        .replace("\t", "\\t")
+}
+
+}

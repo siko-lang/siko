@@ -1,0 +1,99 @@
+module Siko.Resolver.Macros.Bridge.Value {
+
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Memory
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+
+fn generic_type(name: QualifiedName, args: Vec[TypeDef]) -> TypeDef {
+    TypeDef.Named(NamedInfo(Name.inner(name), args))
+}
+
+pub fn empty_struct(qname: QualifiedName) -> Value {
+    Value(named_type(qname), ValueKind.Struct(StructBox(qname, Vec.new())))
+}
+
+pub fn variant_value(
+    enum_qname: QualifiedName,
+    variant_qname: QualifiedName,
+    tag: Int,
+    items: Vec[Value],
+) -> Value {
+    Value(
+        named_type(enum_qname),
+        ValueKind.Variant(VariantBox(
+            enum_qname: enum_qname,
+            variant_qname: variant_qname,
+            tag: tag,
+            items: items,
+        )),
+    )
+}
+
+pub fn vec_value(items: Vec[Value], item_type: TypeDef) -> Value {
+    let qname = B.get_vec_type_qn();
+    let len = items.len();
+    let data = if len == 0 {
+        Value(TypeDef.Ptr(item_type), ValueKind.Ptr(PtrValue.Null))
+    } else {
+        let array = ArrayBox.new(len, item_type);
+        for (i, item) in items.iter().enumerate() {
+            array.slots[i] = Some(item);
+        }
+        Value(TypeDef.Ptr(item_type), ValueKind.Ptr(PtrValue.Slot(array, 0)))
+    };
+    Value(
+        generic_type(qname, [item_type]),
+        ValueKind.Struct(StructBox(
+            qname,
+            [
+                data,
+                Value(int_type(), ValueKind.Int(len)),
+                Value(int_type(), ValueKind.Int(len)),
+            ],
+        )),
+    )
+}
+
+pub fn option_value(item_type: TypeDef, value: Option[Value]) -> Value {
+    let option_qname = B.get_option_type_qn();
+    let option_type = generic_type(option_qname, [item_type]);
+    match value {
+        Some(value) => Value(
+            option_type,
+            ValueKind.Variant(VariantBox(
+                enum_qname: option_qname,
+                variant_qname: B.get_option_some_qn(),
+                tag: 0,
+                items: [value],
+            )),
+        ),
+        None => Value(
+            option_type,
+            ValueKind.Variant(VariantBox(
+                enum_qname: option_qname,
+                variant_qname: B.get_option_none_qn(),
+                tag: 1,
+                items: Vec.new(),
+            )),
+        ),
+    }
+}
+
+pub fn result_value(ok_type: TypeDef, error_type: TypeDef, ok: Bool, item: Value) -> Value {
+    let result_qname = B.get_result_type_qn();
+    Value(
+        generic_type(result_qname, [ok_type, error_type]),
+        ValueKind.Variant(VariantBox(
+            enum_qname: result_qname,
+            variant_qname: if ok { B.get_result_ok_qn() } else { B.get_result_err_qn() },
+            tag: if ok { 0 } else { 1 },
+            items: [item],
+        )),
+    )
+}
+
+}

@@ -4,7 +4,6 @@ import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
 import Siko.Interpreter.Value
 
 pub enum MacroOutput {
@@ -18,24 +17,10 @@ pub enum MacroCallResult {
     InvalidResult(String),
 }
 
-fn macro_struct(name: String) -> QualifiedName {
-    QualifiedName.new_struct(I.intern("Std.Macro"), I.intern(name))
-}
-
-fn empty_struct(name: String) -> Value {
-    let qname = macro_struct(name);
-    Value(named_type(qname), ValueKind.Struct(StructBox(qname, Vec.new())))
-}
-
-pub fn struct_def() -> Value { empty_struct("StructDef") }
-pub fn enum_def() -> Value { empty_struct("EnumDef") }
-pub fn trait_def() -> Value { empty_struct("TraitDef") }
-pub fn instance_header() -> Value { empty_struct("InstanceHeader") }
-
 fn expected_output(output: MacroOutput) -> QualifiedName {
     match output {
-        MacroOutput.InstanceDef => macro_struct("InstanceDef"),
-        MacroOutput.InstanceBody => macro_struct("InstanceBody"),
+        MacroOutput.InstanceDef => B.get_macro_instance_def_qn(),
+        MacroOutput.InstanceBody => B.get_macro_instance_body_qn(),
     }
 }
 
@@ -47,22 +32,18 @@ fn is_empty_struct(value: Value, expected: QualifiedName) -> Bool {
 }
 
 fn decode_error(value: Value) -> MacroCallResult {
-    let error_enum = QualifiedName.new_enum(I.intern("Std.Macro"), I.intern("MacroError"));
-    let not_supported = QualifiedName.new_variant(
-        I.intern("Std.Macro"),
-        I.intern("MacroError"),
-        I.intern("NotSupported"),
-    );
+    let error_enum = B.get_macro_error_qn();
+    let not_supported = B.get_macro_error_not_supported_qn();
     let error = match value.kind {
         ValueKind.Variant(vbox) if vbox.enum_qname == error_enum && vbox.variant_qname == not_supported => vbox,
-        _ => return MacroCallResult.InvalidResult("expected Std.Macro.MacroError"),
+        _ => return MacroCallResult.InvalidResult("expected ${I.resolve(error_enum.name())}"),
     };
     if error.items.len() != 1 {
-        return MacroCallResult.InvalidResult("MacroError.NotSupported must contain one String");
+        return MacroCallResult.InvalidResult("${I.resolve(not_supported.name())} must contain one String");
     }
     match render_string(error.items[0]) {
         Some(message) => MacroCallResult.NotSupported(message),
-        None => MacroCallResult.InvalidResult("MacroError.NotSupported payload is not a String"),
+        None => MacroCallResult.InvalidResult("${I.resolve(not_supported.name())} payload is not a String"),
     }
 }
 

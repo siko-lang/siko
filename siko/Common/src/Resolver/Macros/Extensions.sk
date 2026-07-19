@@ -1,0 +1,64 @@
+module Siko.Resolver.Macros.Extensions {
+
+import Siko.AST.Identifier
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Interpreter.Error
+import Siko.Interpreter.Extensions
+import Siko.Interpreter.Strings
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Macros.Bridge.Input as MacroInput
+import Siko.Resolver.Macros.Bridge.Traits as MacroTraits
+
+fn resolve_trait(
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    application_location: Location,
+    args: Vec[Value],
+    call_location: Location,
+) -> Result[Value, InterpreterError] {
+    if args.len() != 2 {
+        return Err(error(
+            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_trait_qn().name()), 2, args.len()),
+            call_location,
+        ));
+    }
+    if !MacroInput.is_macro_context(args[0]) {
+        return Err(error(
+            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
+            call_location,
+        ));
+    }
+    let name = match render_string(args[1]) {
+        Some(name) => name,
+        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
+    };
+    // This name is produced dynamically by interpreted macro code, so unlike
+    // the fixed macro vocabulary it cannot come from the builtin name cache.
+    let ident = Identifier.new(I.intern(name), application_location);
+    let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
+    let item = match module_resolver.resolve(ident) {
+        Ok(item) => item,
+        Err(_) => return Ok(MacroTraits.resolution_error("cannot resolve `${name}` as a trait")),
+    };
+    if !item.kind.is_trait() {
+        return Ok(MacroTraits.resolution_error("`${name}` does not name a trait"));
+    }
+    Ok(MacroTraits.resolution_ok(item.qualified_name))
+}
+
+pub fn build(
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    application_location: Location,
+) -> InterpreterExtensions {
+    let extensions = InterpreterExtensions.new();
+    extensions.insert(B.get_macro_resolve_trait_qn(), |args, call_location| {
+        resolve_trait(global_ctx, module_name, application_location, args, call_location)
+    });
+    extensions
+}
+
+}
