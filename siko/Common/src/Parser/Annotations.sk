@@ -42,7 +42,9 @@ instance AnnotationParser[Parser] {
                                 return Err(ParseError.new("derives are not allowed here", parser.cur_pos()));
                             }
                             parser.advance();
-                            annotations.push(Annotation.Derive2(parser.parse_attached_macro()?));
+                            for application in parser.parse_attached_macros()? {
+                                annotations.push(Annotation.Derive2(application));
+                            }
                         }
                         "prelude" => {
                             parser.advance();

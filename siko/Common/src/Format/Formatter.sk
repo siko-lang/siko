@@ -38,10 +38,16 @@ pub struct Formatter {
     }
 
     pub fn format_annotations(f: Formatter, annotations: Vec[Annotation]) {
+        let first = True;
         for ann in annotations {
             if let Annotation.Derive2(app) = ann {
-                f.push_indent();
-                f.push("@derive2(");
+                if first {
+                    f.push_indent();
+                    f.push("@derive2(");
+                    first = False;
+                } else {
+                    f.push(", ");
+                }
                 f.push(I.resolve(app.provider.name()));
                 if !app.args.is_empty() {
                     f.push("(");
@@ -53,8 +59,10 @@ pub struct Formatter {
                     }
                     f.push(")");
                 }
-                f.push(")\n");
             }
+        }
+        if !first {
+            f.push(")\n");
         }
     }
 

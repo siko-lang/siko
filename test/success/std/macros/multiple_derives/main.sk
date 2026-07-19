@@ -1,0 +1,60 @@
+module Main {
+
+import Std.Macro.Derive.PartialEq
+import Std.Macro.Derive.Eq
+import Std.Macro.Derive.PartialOrd
+import Std.Macro.Derive.Ord
+
+@derive2(PartialEq, Eq, PartialOrd, Ord)
+struct Duo[T] {
+    first: T,
+    second: T,
+}
+
+@derive2(PartialEq, Eq, PartialOrd, Ord)
+enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+fn require_eq[T: Eq[T]](value: T) -> T {
+    value
+}
+
+fn require_ord[T: Ord[T]](value: T) -> T {
+    value
+}
+
+fn print_ordering(value: Ordering) {
+    match value {
+        Ordering.Less => println("less"),
+        Ordering.Equal => println("equal"),
+        Ordering.Greater => println("greater"),
+    }
+}
+
+fn print_partial_ordering(value: Option[Ordering]) {
+    match value {
+        Some(value) => print_ordering(value),
+        None => println("none"),
+    }
+}
+
+fn main() {
+    println(Duo(1, 2) == Duo(1, 2));
+    println(require_eq(Duo(1, 3)).second);
+    print_partial_ordering(Duo(1, 2).partial_cmp(Duo(1, 3)));
+    print_ordering(require_ord(Duo(2, 0)).cmp(Duo(1, 9)));
+
+    let empty: Choice[Int] = Choice.Empty;
+    println(empty == empty);
+    match require_eq(Choice.One(4)) {
+        Choice.One(value) => println(value),
+        _ => println("wrong variant"),
+    }
+    print_partial_ordering(empty.partial_cmp(Choice.One(0)));
+    print_ordering(require_ord(Choice.Pair(1, 3)).cmp(Choice.Pair(1, 2)));
+}
+
+}

@@ -10,7 +10,7 @@ import Siko.Interner as I
 
 pub trait MacroParser[T] {
     fn parse_macro_def(p: T, public: Bool) -> Result[MacroDef, ParseError]
-    fn parse_attached_macro(p: T) -> Result[AttachedMacroApplication, ParseError]
+    fn parse_attached_macros(p: T) -> Result[Vec[AttachedMacroApplication], ParseError]
     fn parse_external_macro(p: T) -> Result[ExternalMacroApplication, ParseError]
 }
 
@@ -40,17 +40,26 @@ instance MacroParser[Parser] {
         ))
     }
 
-    fn parse_attached_macro(parser: Parser) -> Result[AttachedMacroApplication, ParseError] {
+    fn parse_attached_macros(parser: Parser) -> Result[Vec[AttachedMacroApplication], ParseError] {
         parser.expect(TokenKind.LParen)?;
-        let provider = Name.Unresolved(parser.parse_dotted_name()?);
-        let args = if parser.peek() == TokenKind.LParen {
-            parser.advance();
-            parse_macro_args(parser)?
-        } else {
-            Vec.new()
-        };
+        let applications = Vec.new();
+        loop {
+            let provider = Name.Unresolved(parser.parse_dotted_name()?);
+            let args = if parser.peek() == TokenKind.LParen {
+                parser.advance();
+                parse_macro_args(parser)?
+            } else {
+                Vec.new()
+            };
+            applications.push(AttachedMacroApplication(provider, args));
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            } else {
+                break;
+            }
+        }
         parser.expect(TokenKind.RParen)?;
-        Ok(AttachedMacroApplication(provider, args))
+        Ok(applications)
     }
 
     fn parse_external_macro(parser: Parser) -> Result[ExternalMacroApplication, ParseError] {
