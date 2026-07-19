@@ -1,0 +1,99 @@
+module Siko.Resolver.Macros.Runner {
+
+import Siko.AST.Module as M
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Interner as I
+import Siko.Interpreter.Interpreter as Interp
+import Siko.Interpreter.Value
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.Macros.Bridge as Bridge
+import Siko.Resolver.Macros.Request
+
+fn invoke_request(
+    global_ctx: GlobalResolverContext,
+    program: Program,
+    request: MacroRequest,
+) -> Result[(), ResolveError] {
+    let (entry, data_value) = match request.target {
+        MacroTarget.Struct(_) => match request.invocation {
+            MacroInvocation.Attached(_) => ("derive_struct", Bridge.struct_def()),
+            MacroInvocation.External(_) => ("external_derive_struct", Bridge.struct_def()),
+        },
+        MacroTarget.Enum(_) => match request.invocation {
+            MacroInvocation.Attached(_) => ("derive_enum", Bridge.enum_def()),
+            MacroInvocation.External(_) => ("external_derive_enum", Bridge.enum_def()),
+        },
+        MacroTarget.Invalid => return Err(ResolveError.InvalidMacroTarget(request.location)),
+    };
+    // Provider resolution only succeeds for a macro item, and every macro in
+    // the SCC is registered during process_methods before requests are run.
+    let macro_def = global_ctx.get_macro(request.provider).unwrap();
+    let entry_function = macro_def.functions.iter().find(|function| function.name.name() == I.intern(entry));
+    let entry_qname = match entry_function {
+        Some(function) => function.qualified_name.unwrap(),
+        None => return Err(ResolveError.MacroEntryPointNotFound(
+            request.provider,
+            I.intern(entry),
+            request.location,
+        )),
+    };
+    let args: Vec[Value] = [data_value];
+    let expected = match request.invocation {
+        MacroInvocation.Attached(trait_name) => {
+            if trait_name.is_some() {
+                args.push(Bridge.trait_def());
+            }
+            Bridge.MacroOutput.InstanceDef
+        }
+        MacroInvocation.External(_) => {
+            // A three-argument entry point is the trait-parameterized form.
+            // Other arities are invoked as the fixed form so the interpreter
+            // reports an ordinary argument-count failure at the call site.
+            if let Some(function) = program.functions.get(entry_qname) {
+                if function.args.len() == 3 {
+                    args.push(Bridge.trait_def());
+                }
+            }
+            args.push(Bridge.instance_header());
+            Bridge.MacroOutput.InstanceBody
+        }
+    };
+    let value = match Interp.invoke(program, entry_qname, args, request.location) {
+        Ok(value) => value,
+        Err(error) => return Err(ResolveError.MacroExecutionFailed(error)),
+    };
+    match Bridge.decode_result(value, expected) {
+        Bridge.MacroCallResult.Success => Ok(()),
+        Bridge.MacroCallResult.NotSupported(message) => Err(ResolveError.MacroNotSupported(
+            request.provider,
+            message,
+            request.location,
+        )),
+        Bridge.MacroCallResult.InvalidResult(message) => Err(ResolveError.InvalidMacroResult(
+            entry_qname,
+            message,
+            request.location,
+        )),
+    }
+}
+
+pub fn run_macro_group(
+    global_ctx: GlobalResolverContext,
+    modules: Vec[M.Module],
+    group: Vec[I.String],
+    program: Program,
+) -> Result[(), ResolveError] {
+    let requests = collect_requests(global_ctx, modules, group)?;
+    if requests.is_empty() {
+        return Ok(());
+    }
+    program.instance_resolver = InstanceResolver.build(program);
+    for request in requests {
+        invoke_request(global_ctx, program, request)?;
+    }
+    Ok(())
+}
+
+}

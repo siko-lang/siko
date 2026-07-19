@@ -12,6 +12,7 @@ import Siko.Parser.Parser
 import Siko.Parser.Token
 import Siko.Parser.Traits
 import Siko.Parser.Instances
+import Siko.Parser.Macros
 
 pub trait ModuleParser[T] {
     fn parse_program(p: T) -> Result[Program, ParseError]
@@ -61,6 +62,7 @@ instance ModuleParser[Parser] {
             TokenKind.KwEnum => Ok(ModuleItem.Enum(parser.parse_enum_def(annotations, is_pub)?))
             TokenKind.KwTrait => Ok(ModuleItem.Trait(parser.parse_trait_def(annotations, is_pub)?))
             TokenKind.KwInstance => Ok(ModuleItem.Instance(parser.parse_instance_def(annotations, is_pub)?))
+            TokenKind.KwMacro => Ok(ModuleItem.Macro(parser.parse_macro_def(is_pub)?))
             TokenKind.KwFn => Ok(ModuleItem.Function(parser.parse_fn_def(annotations, is_pub)?))
             TokenKind.KwEffect => Ok(ModuleItem.Effect(parser.parse_effect_def(annotations, is_pub)?))
             TokenKind.KwImplicit => Ok(ModuleItem.Implicit(parser.parse_implicit_def(is_pub)?))

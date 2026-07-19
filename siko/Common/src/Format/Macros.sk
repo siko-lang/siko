@@ -1,0 +1,25 @@
+module Siko.Format.Macros {
+
+import Siko.AST.Macros
+import Siko.Format.Formatter
+import Siko.Format.Function
+import Siko.Interner as I
+
+pub fn format_macro_def(f: Formatter, def: MacroDef) {
+    f.push_indent();
+    if def.public {
+        f.push("pub ");
+    }
+    f.push("macro ");
+    f.push(I.resolve(def.name.name));
+    f.push(" {\n");
+    f.indent_up();
+    for function in def.functions {
+        format_fn_def(f, function);
+    }
+    f.indent_down();
+    f.push_indent();
+    f.push("}\n");
+}
+
+}

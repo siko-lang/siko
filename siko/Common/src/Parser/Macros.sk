@@ -1,0 +1,66 @@
+module Siko.Parser.Macros {
+
+import Siko.AST.Macros
+import Siko.AST.Name
+import Siko.Parser.Annotations
+import Siko.Parser.Function
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Interner as I
+
+pub trait MacroParser[T] {
+    fn parse_macro_def(p: T, public: Bool) -> Result[MacroDef, ParseError]
+    fn parse_attached_macro(p: T) -> Result[AttachedMacroApplication, ParseError]
+    fn parse_external_macro(p: T) -> Result[ExternalMacroApplication, ParseError]
+}
+
+instance MacroParser[Parser] {
+    fn parse_macro_def(parser: Parser, public: Bool) -> Result[MacroDef, ParseError] {
+        parser.expect(TokenKind.KwMacro)?;
+        let name = parser.expect_type_ident()?;
+        parser.expect(TokenKind.LBrace)?;
+        let functions = Vec.new();
+        while parser.peek() != TokenKind.RBrace && parser.peek() != TokenKind.Eof {
+            let annotations = parser.parse_annotations(False)?;
+            let function_public = if parser.peek() == TokenKind.KwPub {
+                parser.advance();
+                True
+            } else {
+                False
+            };
+            functions.push(parser.parse_fn_def(annotations, function_public)?);
+        }
+        parser.expect(TokenKind.RBrace)?;
+        Ok(MacroDef(
+            public: public,
+            name: name,
+            qualified_name: None,
+            functions: functions,
+            module_name: I.intern(""),
+        ))
+    }
+
+    fn parse_attached_macro(parser: Parser) -> Result[AttachedMacroApplication, ParseError] {
+        parser.expect(TokenKind.LParen)?;
+        let provider = Name.Unresolved(parser.parse_dotted_name()?);
+        let trait_name = if parser.peek() == TokenKind.LParen {
+            parser.advance();
+            let name = Name.Unresolved(parser.parse_dotted_name()?);
+            parser.expect(TokenKind.RParen)?;
+            Some(name)
+        } else {
+            None
+        };
+        parser.expect(TokenKind.RParen)?;
+        Ok(AttachedMacroApplication(provider, trait_name))
+    }
+
+    fn parse_external_macro(parser: Parser) -> Result[ExternalMacroApplication, ParseError] {
+        parser.expect(TokenKind.LParen)?;
+        let provider = Name.Unresolved(parser.parse_dotted_name()?);
+        parser.expect(TokenKind.RParen)?;
+        Ok(ExternalMacroApplication(provider))
+    }
+}
+
+}

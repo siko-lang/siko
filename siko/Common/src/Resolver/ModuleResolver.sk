@@ -51,29 +51,40 @@ pub struct ModuleResolver {
 
     pub fn resolve(m: ModuleResolver, name: Identifier) -> Result[ModuleItem, ResolveError] {
         if let Some(items) = m.local_items.get(name.name()) {
-            if items.len() > 1 {
-                let candidates = items.iter().map(|i| i.qualified_name).collect();
-                return Err(ResolveError.AmbiguousName(name, candidates));
-            }
-            return Ok(items[0]);
+            let values: Vec[_] = items.iter().filter(|i| !i.kind.is_macro()).collect();
+            if !values.is_empty() { return m.try_type_names(name, values); }
         }
         if let Some(items) = m.imported_items.get(name.name()) {
-            if items.len() > 1 {
-                let candidates = items.iter().map(|i| i.qualified_name).collect();
-                return Err(ResolveError.AmbiguousName(name, candidates));
+            let values: Vec[_] = items.iter().filter(|i| !i.kind.is_macro()).collect();
+            if !values.is_empty() {
+                if let Some(def) = values[0].import_def { def.used = True; }
+                return m.try_type_names(name, values);
             }
-            let item = items[0];
-            if let Some(def) = item.import_def { def.used = True; }
-            return Ok(item);
         }
         if let Some(items) = m.implicit_items.get(name.name()) {
-            if items.len() > 1 {
-                let candidates = items.iter().map(|i| i.qualified_name).collect();
-                return Err(ResolveError.AmbiguousName(name, candidates));
-            }
-            return Ok(items[0]);
+            let values: Vec[_] = items.iter().filter(|i| !i.kind.is_macro()).collect();
+            if !values.is_empty() { return m.try_type_names(name, values); }
         }
         return Err(ResolveError.NameNotFound(name));
+    }
+
+    pub fn resolve_macro_name(m: ModuleResolver, name: Identifier) -> Result[ModuleItem, ResolveError] {
+        if let Some(items) = m.local_items.get(name.name()) {
+            let macros: Vec[_] = items.iter().filter(|i| i.kind.is_macro()).collect();
+            if !macros.is_empty() { return m.try_type_names(name, macros); }
+        }
+        if let Some(items) = m.imported_items.get(name.name()) {
+            let macros: Vec[_] = items.iter().filter(|i| i.kind.is_macro()).collect();
+            if !macros.is_empty() {
+                if let Some(def) = macros[0].import_def { def.used = True; }
+                return m.try_type_names(name, macros);
+            }
+        }
+        if let Some(items) = m.implicit_items.get(name.name()) {
+            let macros: Vec[_] = items.iter().filter(|i| i.kind.is_macro()).collect();
+            if !macros.is_empty() { return m.try_type_names(name, macros); }
+        }
+        Err(ResolveError.NameNotFound(name))
     }
 
     pub fn try_type_names(
@@ -90,20 +101,20 @@ pub struct ModuleResolver {
 
     pub fn resolve_type_name(m: ModuleResolver, name: Identifier) -> Result[ModuleItem, ResolveError] {
         if let Some(items) = m.local_items.get(name.name()) {
-            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant() && !i.kind.is_macro()).collect();
             if !non_variant.is_empty() {
                 return m.try_type_names(name, non_variant);
             }
         }
         if let Some(items) = m.imported_items.get(name.name()) {
-            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant() && !i.kind.is_macro()).collect();
             if !non_variant.is_empty() {
                 if let Some(def) = non_variant[0].import_def { def.used = True; }
                 return m.try_type_names(name, non_variant);
             }
         }
         if let Some(items) = m.implicit_items.get(name.name()) {
-            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant()).collect();
+            let non_variant: Vec[_] = items.iter().filter(|i| !i.kind.is_variant() && !i.kind.is_macro()).collect();
             if !non_variant.is_empty() {
                 return m.try_type_names(name, non_variant);
             }

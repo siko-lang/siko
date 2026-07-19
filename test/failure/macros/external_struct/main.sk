@@ -1,0 +1,19 @@
+module Main {
+
+import Std.Macro
+
+trait CopyLike[T] {}
+
+struct Target {}
+
+pub macro RejectStruct {
+    fn external_derive_struct(def: StructDef, header: InstanceHeader) -> Result[InstanceBody, MacroError] {
+        Err(MacroError.NotSupported("external struct rejected"))
+    }
+}
+
+instance CopyLike[Target] = auto2(RejectStruct)
+
+fn main() {}
+
+}

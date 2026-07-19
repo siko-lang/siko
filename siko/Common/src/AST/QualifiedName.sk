@@ -22,6 +22,7 @@ pub enum BaseName {
     Global(module_name: I.String, global_name: I.String),
     Implicit(module_name: I.String, implicit_name: I.String),
     Function(module_name: I.String, fn_name: I.String),
+    Macro(module_name: I.String, macro_name: I.String),
     Lambda(parent_name: I.String, index: Int),
     ClosureEnum(index: Int),
     ClosureVariant(enum_index: Int, variant_index: Int),
@@ -60,6 +61,7 @@ pub enum BaseName {
             | Global(m, n)
             | Implicit(m, n)
             | Function(m, n)
+            | Macro(m, n)
             | NamedInstance(m, n) => I.intern(I.resolve(m) + "." + I.resolve(n)),
             Variant(m, e, v) => I.intern(I.resolve(m) + "." + I.resolve(e) + "." + I.resolve(v)),
             TraitObject(parent) => I.intern("#trait_object[" + I.resolve(parent) + "]"),
@@ -289,6 +291,10 @@ pub enum QualifiedName {
         Base(BaseNameInfo.new(BaseName.Function(module_name, fn_name)))
     }
 
+    pub fn new_macro(module_name: I.String, macro_name: I.String) -> QualifiedName {
+        Base(BaseNameInfo.new(BaseName.Macro(module_name, macro_name)))
+    }
+
     pub fn new_lambda(parent_name: I.String, index: Int) -> QualifiedName {
         Base(BaseNameInfo.new(BaseName.Lambda(parent_name, index)))
     }
@@ -385,6 +391,7 @@ pub enum QualifiedName {
             | BaseName.Global(_, n)
             | BaseName.Implicit(_, n)
             | BaseName.Function(_, n)
+            | BaseName.Macro(_, n)
             | BaseName.NamedInstance(_, n) => n,
             BaseName.Variant(_, _, v) => v,
             BaseName.VariantPayload(_, v) => v,

@@ -1,0 +1,90 @@
+module Siko.Resolver.Macros.Bridge {
+
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Interpreter.Strings
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+
+pub enum MacroOutput {
+    InstanceDef,
+    InstanceBody,
+}
+
+pub enum MacroCallResult {
+    Success,
+    NotSupported(String),
+    InvalidResult(String),
+}
+
+fn macro_struct(name: String) -> QualifiedName {
+    QualifiedName.new_struct(I.intern("Std.Macro"), I.intern(name))
+}
+
+fn empty_struct(name: String) -> Value {
+    let qname = macro_struct(name);
+    Value(named_type(qname), ValueKind.Struct(StructBox(qname, Vec.new())))
+}
+
+pub fn struct_def() -> Value { empty_struct("StructDef") }
+pub fn enum_def() -> Value { empty_struct("EnumDef") }
+pub fn trait_def() -> Value { empty_struct("TraitDef") }
+pub fn instance_header() -> Value { empty_struct("InstanceHeader") }
+
+fn expected_output(output: MacroOutput) -> QualifiedName {
+    match output {
+        MacroOutput.InstanceDef => macro_struct("InstanceDef"),
+        MacroOutput.InstanceBody => macro_struct("InstanceBody"),
+    }
+}
+
+fn is_empty_struct(value: Value, expected: QualifiedName) -> Bool {
+    match value.kind {
+        ValueKind.Struct(sbox) => sbox.qname == expected && sbox.fields.is_empty(),
+        _ => False,
+    }
+}
+
+fn decode_error(value: Value) -> MacroCallResult {
+    let error_enum = QualifiedName.new_enum(I.intern("Std.Macro"), I.intern("MacroError"));
+    let not_supported = QualifiedName.new_variant(
+        I.intern("Std.Macro"),
+        I.intern("MacroError"),
+        I.intern("NotSupported"),
+    );
+    let error = match value.kind {
+        ValueKind.Variant(vbox) if vbox.enum_qname == error_enum && vbox.variant_qname == not_supported => vbox,
+        _ => return MacroCallResult.InvalidResult("expected Std.Macro.MacroError"),
+    };
+    if error.items.len() != 1 {
+        return MacroCallResult.InvalidResult("MacroError.NotSupported must contain one String");
+    }
+    match render_string(error.items[0]) {
+        Some(message) => MacroCallResult.NotSupported(message),
+        None => MacroCallResult.InvalidResult("MacroError.NotSupported payload is not a String"),
+    }
+}
+
+pub fn decode_result(value: Value, output: MacroOutput) -> MacroCallResult {
+    let result = match value.kind {
+        ValueKind.Variant(vbox) => vbox,
+        _ => return MacroCallResult.InvalidResult("macro entry point did not return Result"),
+    };
+    if result.items.len() != 1 {
+        return MacroCallResult.InvalidResult("macro Result variant must contain one value");
+    }
+    if result.variant_qname == B.get_result_ok_qn() {
+        if is_empty_struct(result.items[0], expected_output(output)) {
+            MacroCallResult.Success
+        } else {
+            MacroCallResult.InvalidResult("macro returned the wrong success value")
+        }
+    } else if result.variant_qname == B.get_result_err_qn() {
+        decode_error(result.items[0])
+    } else {
+        MacroCallResult.InvalidResult("macro entry point returned an unknown Result variant")
+    }
+}
+
+}

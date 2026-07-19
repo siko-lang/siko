@@ -1,0 +1,30 @@
+module Siko.Resolver.Macros {
+
+import Siko.AST.Macros
+import Siko.AST.QualifiedName
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.TypeResolver
+
+instance Resolvable[MacroDef] {
+    fn resolve(def: MacroDef, ctx: ResolverContext) -> Result[MacroDef, ResolveError] {
+        let provider_qname = QualifiedName.new_macro(ctx.module_name(), def.name.name());
+        let functions = Vec.new();
+        for function in def.functions {
+            let function_ctx = ResolverContext.new(TypeResolver.new(ctx.module_resolver()), ctx.global_ctx);
+            let resolved = function.resolve(function_ctx)?;
+            let qname = QualifiedName.new_method(provider_qname.name(), function.name.name());
+            resolved.qualified_name = Some(qname);
+            functions.push(resolved);
+        }
+        Ok(MacroDef(
+            public: def.public,
+            name: def.name,
+            qualified_name: Some(provider_qname),
+            functions: functions,
+            module_name: ctx.module_name(),
+        ))
+    }
+}
+
+}

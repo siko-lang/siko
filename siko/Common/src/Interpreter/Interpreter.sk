@@ -22,20 +22,27 @@ import Siko.Interpreter.Value
 import Siko.Interpreter.Witnesses
 import Siko.Location
 
-// Tree-walking interpreter over post-resolve (untyped) HIR. See
-// interpreter.md at the repo root for the full design. The input program may
-// be arbitrarily wrong (it has not been typechecked), so every failure mode
-// is a Result error; the interpreter itself never panics.
+// Tree-walking interpreter over post-resolve (untyped) HIR. The input program
+// may be arbitrarily wrong (it has not been typechecked), so every failure
+// mode is a Result error; the interpreter itself never panics.
 
 // Run a zero-argument function and throw away its result.
 pub fn run(program: Program, entry: QualifiedName, location: Location) -> Result[(), InterpreterError] {
+    invoke(program, entry, Vec.new(), location)?;
+    Ok(())
+}
+
+// Invoke a resolved function with compiler-provided values. This is the call
+// boundary used by the macro bridge as well as future compile-time clients.
+pub fn invoke(program: Program, entry: QualifiedName, args: Vec[Value], location: Location) -> Result[Value, InterpreterError] {
     let interp = Interpreter(program: program, call_stack: Vec.new(), depth_limit: 500);
     let fdef = match program.functions.get(entry) {
         Some(f) => f,
         None => return Err(error(ErrorKind.MissingFunction(I.resolve(entry.name())), location)),
     };
-    match call_function(interp, CallContext.empty(fdef.module_name), entry, Vec.new(), location) {
-        Ok(_) => Ok(()),
+    let call_args = args.iter().map(|value| CallArg.concrete(program, value)).collect();
+    match call_function(interp, CallContext.empty(fdef.module_name), entry, call_args, location) {
+        Ok(value) => Ok(value),
         Err(e) => {
             // The stack is not unwound on the error path, so it still
             // describes the failure point.

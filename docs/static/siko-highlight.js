@@ -2,10 +2,11 @@
     'use strict';
 
     const KEYWORDS = new Set([
-        'fn', 'let', 'match', 'if', 'else', 'return', 'for', 'while',
-        'loop', 'break', 'continue', 'in', 'pub', 'struct', 'enum',
-        'trait', 'instance', 'import', 'module', 'effect', 'implicit',
-        'with', 'declare', 'as', 'type', 'auto',
+        'module', 'import', 'as', 'is', 'pub', 'struct', 'enum', 'effect',
+        'trait', 'instance', 'fn', 'let', 'if', 'else', 'return', 'type',
+        'match', 'for', 'in', 'loop', 'break', 'continue', 'with',
+        'implicit', 'while', 'void', 'sizeof', 'yield', 'co', 'defer',
+        'macro',
     ]);
 
     function esc(s) {

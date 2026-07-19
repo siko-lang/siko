@@ -38,11 +38,17 @@ pub struct Formatter {
 
     pub fn format_annotations(f: Formatter, annotations: Vec[Annotation]) {
         for ann in annotations {
-            // TODO: write this properly!
-            // f.push_indent();
-            // f.push("@");
-            // f.push(ann);
-            // f.push("\n");
+            if let Annotation.Derive2(app) = ann {
+                f.push_indent();
+                f.push("@derive2(");
+                f.push(I.resolve(app.provider.name()));
+                if let Some(trait_name) = app.trait_name {
+                    f.push("(");
+                    f.push(I.resolve(trait_name.name()));
+                    f.push(")");
+                }
+                f.push(")\n");
+            }
         }
     }
 

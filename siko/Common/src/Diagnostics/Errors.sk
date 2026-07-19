@@ -3,6 +3,7 @@ module Siko.Errors {
 import Siko.Format.Utils
 import Siko.Instances.InstanceChecker
 import Siko.Interner as I
+import Siko.Interpreter.Error
 import Siko.LowerDefer
 import Siko.MatchValidation
 import Siko.Parser.Parser
@@ -102,6 +103,16 @@ pub fn report_resolve_error(e: ResolveError) {
             report("`${I.resolve(ident.name())}` is not an effect instance", Some(ident.location)),
         ResolveError.InvalidEffectInstanceMethod(method, effect_name) =>
             report("`${I.resolve(method.name())}` is not a method of effect `${I.resolve(effect_name.name())}`", Some(method.location)),
+        ResolveError.InvalidMacroTarget(location) =>
+            report("macro derive target must be a struct or enum", Some(location)),
+        ResolveError.MacroEntryPointNotFound(provider, entry, location) =>
+            report("macro `${I.resolve(provider.name())}` has no `${I.resolve(entry)}` entry point", Some(location)),
+        ResolveError.MacroExecutionFailed(error) =>
+            report(format_error(error), Some(error.location)),
+        ResolveError.MacroNotSupported(provider, message, location) =>
+            report("macro `${I.resolve(provider.name())}` does not support this derive: ${message}", Some(location)),
+        ResolveError.InvalidMacroResult(entry, message, location) =>
+            report("macro `${I.resolve(entry.name())}` returned an invalid value: ${message}", Some(location)),
     }
 }
 

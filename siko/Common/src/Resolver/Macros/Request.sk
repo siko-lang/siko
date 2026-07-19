@@ -1,0 +1,148 @@
+module Siko.Resolver.Macros.Request {
+
+import Siko.AST.Annotations
+import Siko.AST.Instances
+import Siko.AST.Macros
+import Siko.AST.Module as M
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.TypeResolver
+
+pub enum MacroTarget {
+    Struct(QualifiedName),
+    Enum(QualifiedName),
+    Invalid,
+}
+
+pub enum MacroInvocation {
+    Attached(trait_name: Option[QualifiedName]),
+    External(trait_name: QualifiedName),
+}
+
+pub struct MacroRequest {
+    pub provider: QualifiedName,
+    pub target: MacroTarget,
+    pub invocation: MacroInvocation,
+    pub module_name: I.String,
+    pub location: Location,
+}
+
+fn resolve_provider(
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    app: Name,
+) -> Result[QualifiedName, ResolveError] {
+    let resolver = global_ctx.get_module_resolver(module_name).unwrap();
+    Ok(resolver.resolve_macro_name(app.unresolved())?.qualified_name)
+}
+
+fn resolve_trait(
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    trait_name: Name,
+) -> Result[QualifiedName, ResolveError] {
+    let ident = trait_name.unresolved();
+    let item = global_ctx.get_module_resolver(module_name).unwrap().resolve(ident)?;
+    if !item.kind.is_trait() {
+        return Err(ResolveError.NotATrait(ident));
+    }
+    Ok(item.qualified_name)
+}
+
+fn collect_attached(
+    out: Vec[MacroRequest],
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    target: MacroTarget,
+    annotations: Vec[Annotation],
+    location: Location,
+) -> Result[(), ResolveError] {
+    for annotation in annotations {
+        if let Annotation.Derive2(app) = annotation {
+            let provider = resolve_provider(global_ctx, module_name, app.provider)?;
+            let trait_name = match app.trait_name {
+                Some(name) => Some(resolve_trait(global_ctx, module_name, name)?),
+                None => None,
+            };
+            out.push(MacroRequest(provider, target, MacroInvocation.Attached(trait_name), module_name, location));
+        }
+    }
+    Ok(())
+}
+
+fn external_target(global_ctx: GlobalResolverContext, instance_def: InstanceDef) -> MacroTarget {
+    let ty = match instance_def.args.first() {
+        Some(ty) => ty,
+        None => return MacroTarget.Invalid,
+    };
+    let qname = match ty.name_opt() {
+        Some(qname) => qname,
+        None => return MacroTarget.Invalid,
+    };
+    if global_ctx.get_struct(qname).is_some() {
+        MacroTarget.Struct(qname)
+    } else if global_ctx.get_enum(qname).is_some() {
+        MacroTarget.Enum(qname)
+    } else {
+        MacroTarget.Invalid
+    }
+}
+
+fn collect_external(
+    out: Vec[MacroRequest],
+    global_ctx: GlobalResolverContext,
+    module_name: I.String,
+    instance_def: InstanceDef,
+    app: ExternalMacroApplication,
+) -> Result[(), ResolveError] {
+    let provider = resolve_provider(global_ctx, module_name, app.provider)?;
+    let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
+    let ctx = ResolverContext.new(TypeResolver.new(module_resolver), global_ctx);
+    let resolved = instance_def.resolve(ctx)?;
+    let trait_name = resolved.subject.try_trait_name()?.resolved();
+    let target = external_target(global_ctx, resolved);
+    out.push(MacroRequest(provider, target, MacroInvocation.External(trait_name), module_name, instance_def.location));
+    Ok(())
+}
+
+pub fn collect_requests(
+    global_ctx: GlobalResolverContext,
+    modules: Vec[M.Module],
+    group: Vec[I.String],
+) -> Result[Vec[MacroRequest], ResolveError] {
+    let out = Vec.new();
+    for module_name in group {
+        let module_def = modules.iter().find(|m| m.name.name() == module_name).unwrap();
+        for item in module_def.items {
+            match item {
+                M.ModuleItem.Struct(def) => collect_attached(
+                    out,
+                    global_ctx,
+                    module_name,
+                    MacroTarget.Struct(QualifiedName.new_struct(module_name, def.name.name())),
+                    def.annotations,
+                    def.name.location,
+                )?,
+                M.ModuleItem.Enum(def) => collect_attached(
+                    out,
+                    global_ctx,
+                    module_name,
+                    MacroTarget.Enum(QualifiedName.new_enum(module_name, def.name.name())),
+                    def.annotations,
+                    def.name.location,
+                )?,
+                M.ModuleItem.Instance(def) => if let Some(app) = def.macro_derive_info {
+                    collect_external(out, global_ctx, module_name, def, app)?;
+                },
+                _ => {}
+            }
+        }
+    }
+    Ok(out)
+}
+
+}

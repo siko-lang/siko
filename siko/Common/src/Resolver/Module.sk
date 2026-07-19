@@ -241,6 +241,16 @@ pub fn get_items(item: M.ModuleItem, module_name: Identifier) -> Vec[ModuleItem]
             }
             None => Vec.new(),
         }
+        M.ModuleItem.Macro(def) => {
+            let macro_name = module_name.merge(def.name);
+            name_items(
+                public: def.public,
+                full_name: macro_name,
+                module_name: module_name,
+                qn: QualifiedName.new_macro(module_name.name(), def.name.name()),
+                kind: ModuleItemKind.Macro(def.name),
+            )
+        }
         _ => Vec.new(),
     }
 }
@@ -268,7 +278,6 @@ fn get_type_arg_count(d: Option[TypeArgDefs]) -> Int {
 }
 
 }
-
 
 
 

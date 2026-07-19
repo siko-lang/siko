@@ -4,6 +4,7 @@ import Siko.AST.Identifier
 import Siko.AST.QualifiedName
 import Siko.Location
 import Siko.Interner as I
+import Siko.Interpreter.Error
 
 pub enum ResolveError {
     ModuleNotFound(name: Identifier),
@@ -37,6 +38,11 @@ pub enum ResolveError {
     NotATraitInstance(name: I.String, location: Location),
     NotAnEffectInstance(name: Identifier),
     InvalidEffectInstanceMethod(method: Identifier, effect_name: QualifiedName),
+    InvalidMacroTarget(location: Location),
+    MacroEntryPointNotFound(provider: QualifiedName, entry: I.String, location: Location),
+    MacroExecutionFailed(error: InterpreterError),
+    MacroNotSupported(provider: QualifiedName, message: String, location: Location),
+    InvalidMacroResult(entry: QualifiedName, message: String, location: Location),
 }
 
 }

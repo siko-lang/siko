@@ -6,6 +6,7 @@ import Siko.AST.Name
 import Siko.Interner as I
 import Siko.Parser.Parser
 import Siko.Parser.Token
+import Siko.Parser.Macros
 
 pub trait AnnotationParser[T] {
     fn parse_annotations(p: T, allow_derives: Bool) -> Result[Vec[Annotation], ParseError]
@@ -35,6 +36,13 @@ instance AnnotationParser[Parser] {
                                 }
                             }
                             parser.expect(TokenKind.RParen)?;
+                        }
+                        "derive2" => {
+                            if allow_derives == False {
+                                return Err(ParseError.new("derives are not allowed here", parser.cur_pos()));
+                            }
+                            parser.advance();
+                            annotations.push(Annotation.Derive2(parser.parse_attached_macro()?));
                         }
                         "prelude" => {
                             parser.advance();

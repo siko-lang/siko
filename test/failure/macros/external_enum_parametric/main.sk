@@ -1,0 +1,21 @@
+module Main {
+
+import Std.Macro
+
+trait Rewrite[T] {}
+
+enum Target {
+    A,
+}
+
+pub macro RejectEnum {
+    fn external_derive_enum(def: EnumDef, trait_def: TraitDef, header: InstanceHeader) -> Result[InstanceBody, MacroError] {
+        Err(MacroError.NotSupported("external enum rejected"))
+    }
+}
+
+instance Rewrite[Target] = auto2(RejectEnum)
+
+fn main() {}
+
+}

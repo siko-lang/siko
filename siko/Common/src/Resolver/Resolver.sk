@@ -16,6 +16,7 @@ import Siko.Resolver.Autoderive.Map
 import Siko.Resolver.Autoderive.Fold
 import Siko.Resolver.Autoderive.FromInt
 import Siko.Resolver.Autoderive.Json
+import Siko.Resolver.Macros.Runner
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
@@ -27,6 +28,7 @@ import Siko.AST.Function
 import Siko.AST.Effects as Eff
 import Siko.AST.Globals
 import Siko.AST.Implicits
+import Siko.AST.Macros
 import Siko.AST.Type
 import Siko.AST.Module as M
 import Siko.HIR.Program
@@ -62,6 +64,7 @@ pub struct GlobalResolverContext {
     module_names: Vec[I.String],
     module_instance_imports: Map[I.String, Vec[QualifiedName]],
     effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
+    macros: Map[QualifiedName, MacroDef],
 
     pub fn new() -> GlobalResolverContext {
         GlobalResolverContext(
@@ -81,6 +84,7 @@ pub struct GlobalResolverContext {
             module_names: Vec.new(),
             module_instance_imports: Map.new(),
             effect_instance_infos: Map.new(),
+            macros: Map.new(),
         )
     }
 
@@ -102,6 +106,14 @@ pub struct GlobalResolverContext {
 
     pub fn get_enum_for_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[EnumDef] {
         ctx.variant_enum_map.get(variant_qname).and_then(|enum_qname| ctx.enums.get(enum_qname))
+    }
+
+    pub fn get_module_resolver(ctx: GlobalResolverContext, module_name: I.String) -> Option[ModuleResolver] {
+        ctx.module_resolvers.get(module_name)
+    }
+
+    pub fn get_macro(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[MacroDef] {
+        ctx.macros.get(qname)
     }
 }
 
@@ -188,14 +200,18 @@ pub struct Resolver {
                 resolver.process_external_derives(modules, module_name)?;
             }
 
+            run_macro_group(resolver.ctx, modules, group, resolver.build_program())?;
+
             for module_name in group {
                 resolver.warn_unused_imports(modules, module_name);
             }
         }
 
-        let module_trait_method_map = resolver.build_module_trait_method_map();
+        Ok(resolver.build_program())
+    }
 
-        Ok(Program(
+    fn build_program(resolver: Resolver) -> Program {
+        Program(
             structs: resolver.ctx.structs,
             enums: resolver.ctx.enums,
             variant_enum_map: resolver.ctx.variant_enum_map,
@@ -209,9 +225,9 @@ pub struct Resolver {
             implicits: resolver.ctx.implicits,
             module_names: resolver.ctx.module_names,
             module_instance_imports: resolver.ctx.module_instance_imports,
-            module_trait_method_map: module_trait_method_map,
+            module_trait_method_map: resolver.build_module_trait_method_map(),
             instance_resolver: InstanceResolver.empty(),
-        ))
+        )
     }
 
     fn build_module_trait_method_map(
@@ -362,7 +378,7 @@ pub struct Resolver {
                     resolver.process_trait(module_name, module_def, trait_def)?;
                 }
                 M.ModuleItem.Instance(instance_def) => {
-                    if instance_def.external_derived_instance_info.is_none() {
+                    if instance_def.external_derived_instance_info.is_none() && instance_def.macro_derive_info.is_none() {
                         resolver.process_instance(module_name, module_def, instance_def)?;
                     }
                 }
@@ -401,11 +417,14 @@ pub struct Resolver {
                 M.ModuleItem.Function(function_def) => {
                     resolver.process_function(module_name, module_def, function_def)?;
                 }
+                M.ModuleItem.Macro(macro_def) => {
+                    resolver.process_macro(module_name, macro_def)?;
+                }
                 M.ModuleItem.Global(global_def) => {
                     resolver.process_global(module_name, module_def, global_def)?;
                 }
                 M.ModuleItem.Instance(instance_def) => {
-                    if instance_def.external_derived_instance_info.is_none() {
+                    if instance_def.external_derived_instance_info.is_none() && instance_def.macro_derive_info.is_none() {
                         resolver.process_instance_methods(module_name, instance_def)?;
                     }
                 }
@@ -451,6 +470,21 @@ pub struct Resolver {
         let default_value_names = resolver.process_function_args(module_name, qualified_name, function_def, True)?;
         resolved_function_def.default_value_names = default_value_names;
         resolver.ctx.functions.insert(qualified_name, resolved_function_def);
+        Ok(())
+    }
+
+    fn process_macro(
+        resolver: Resolver,
+        module_name: I.String,
+        macro_def: MacroDef,
+    ) -> Result[(), ResolveError] {
+        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let ctx = ResolverContext.new(TypeResolver.new(module_resolver), resolver.ctx);
+        let resolved = macro_def.resolve(ctx)?;
+        for function in resolved.functions {
+            resolver.ctx.functions.insert(function.qualified_name.unwrap(), function);
+        }
+        resolver.ctx.macros.insert(resolved.qualified_name.unwrap(), resolved);
         Ok(())
     }
 
@@ -1381,11 +1415,6 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
-
-
-
-
 
 
 
