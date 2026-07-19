@@ -72,6 +72,28 @@ pub struct MacroContext {
     pub fn resolve_variant(ctx: MacroContext, name: String) -> Result[VariantDef, MacroError] {
         resolve_variant_builtin(ctx, name)
     }
+
+    pub fn struct_target(ctx: MacroContext) -> Result[StructDef, MacroError] {
+        match ctx.target {
+            MacroTarget.Struct(def) => Ok(def),
+            MacroTarget.Enum(_) => Err(MacroError.NotSupported("expected a struct")),
+        }
+    }
+
+    pub fn enum_target(ctx: MacroContext) -> Result[EnumDef, MacroError] {
+        match ctx.target {
+            MacroTarget.Enum(def) => Ok(def),
+            MacroTarget.Struct(_) => Err(MacroError.NotSupported("expected an enum")),
+        }
+    }
+
+    pub fn require_no_args(ctx: MacroContext) -> Result[(), MacroError] {
+        if ctx.args.is_empty() {
+            Ok(())
+        } else {
+            Err(MacroError.NotSupported("this macro does not accept arguments"))
+        }
+    }
 }
 
 pub enum MacroError {

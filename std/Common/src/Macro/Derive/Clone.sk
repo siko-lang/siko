@@ -1,0 +1,84 @@
+module Std.Macro.Derive.Clone {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn clone_struct_method(
+    ctx: MacroContext,
+    struct_def: StructDef,
+) -> Result[FunctionDef, MacroError] {
+    let clone_fn = ctx.resolve_function("Std.Ops.Clone.clone")?;
+    let builder = FunctionBuilder.new(clone_fn);
+    let value = builder.add_argument(struct_def.type_def);
+    let cloned_fields = Vec.new();
+    for field in struct_def.fields {
+        let field_value = builder.field(value, field);
+        cloned_fields.push(builder.call(clone_fn, [field_value]));
+    }
+    let body = builder.call(struct_def.constructor, cloned_fields);
+    Ok(builder.finish(body))
+}
+
+fn clone_enum_method(
+    ctx: MacroContext,
+    enum_def: EnumDef,
+) -> Result[FunctionDef, MacroError] {
+    let clone_fn = ctx.resolve_function("Std.Ops.Clone.clone")?;
+    let builder = FunctionBuilder.new(clone_fn);
+    let value = builder.add_argument(enum_def.type_def);
+    let arms = Vec.new();
+    for variant in enum_def.variants {
+        let binding = builder.destructure(variant);
+        let cloned_items = Vec.new();
+        for item in binding.values {
+            cloned_items.push(builder.call(clone_fn, [item]));
+        }
+        let body = builder.call(variant.constructor, cloned_items);
+        arms.push(builder.arm(binding.pattern, body));
+    }
+    Ok(builder.finish(builder.match_expr(value, arms)))
+}
+
+pub macro Clone {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let struct_def = ctx.struct_target()?;
+        let clone_trait = ctx.resolve_trait("Std.Ops.Clone")?;
+        let method = clone_struct_method(ctx, struct_def)?;
+        let builder = InstanceBuilder.new(clone_trait, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            builder.add_bound(type_parameter, clone_trait);
+        }
+        builder.add_method(method);
+        Ok(builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        let clone_trait = ctx.resolve_trait("Std.Ops.Clone")?;
+        let method = clone_enum_method(ctx, enum_def)?;
+        let builder = InstanceBuilder.new(clone_trait, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            builder.add_bound(type_parameter, clone_trait);
+        }
+        builder.add_method(method);
+        Ok(builder.finish())
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        let struct_def = ctx.struct_target()?;
+        Ok(clone_struct_method(ctx, struct_def)?.instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        Ok(clone_enum_method(ctx, enum_def)?.instance_body())
+    }
+}
+
+}

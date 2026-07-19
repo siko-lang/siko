@@ -1,69 +1,3 @@
-module ExternalCloneDerive {
-
-import Std.Macro
-import Std.Macro.FunctionBuilder
-import Std.Macro.InstanceBuilder
-
-pub macro ExternalCloneMacro {
-    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
-        if !ctx.args.is_empty() {
-            return Err(MacroError.NotSupported("Clone does not accept arguments"));
-        }
-
-        let struct_def = match ctx.target {
-            MacroTarget.Struct(def) => def,
-            MacroTarget.Enum(_) => return Err(MacroError.NotSupported("expected a struct")),
-        };
-        let clone_fn = ctx.resolve_function("Std.Ops.Clone.clone")?;
-
-        let function_builder = FunctionBuilder.new(clone_fn);
-        let value = function_builder.add_argument(struct_def.type_def);
-        let cloned_fields = Vec.new();
-        for field in struct_def.fields {
-            let field_value = function_builder.field(value, field);
-            cloned_fields.push(function_builder.call(clone_fn, [field_value]));
-        }
-        let body = function_builder.call(struct_def.constructor, cloned_fields);
-        let clone_method = function_builder.finish(body);
-
-        let body_builder = InstanceBodyBuilder.new();
-        body_builder.add_method(clone_method);
-        Ok(body_builder.finish())
-    }
-
-    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
-        if !ctx.args.is_empty() {
-            return Err(MacroError.NotSupported("Clone does not accept arguments"));
-        }
-
-        let enum_def = match ctx.target {
-            MacroTarget.Enum(def) => def,
-            MacroTarget.Struct(_) => return Err(MacroError.NotSupported("expected an enum")),
-        };
-        let clone_fn = ctx.resolve_function("Std.Ops.Clone.clone")?;
-
-        let function_builder = FunctionBuilder.new(clone_fn);
-        let value = function_builder.add_argument(enum_def.type_def);
-        let arms = Vec.new();
-        for variant in enum_def.variants {
-            let binding = function_builder.destructure(variant);
-            let cloned_items = Vec.new();
-            for item in binding.values {
-                cloned_items.push(function_builder.call(clone_fn, [item]));
-            }
-            let body = function_builder.call(variant.constructor, cloned_items);
-            arms.push(function_builder.arm(binding.pattern, body));
-        }
-        let clone_method = function_builder.finish(function_builder.match_expr(value, arms));
-
-        let body_builder = InstanceBodyBuilder.new();
-        body_builder.add_method(clone_method);
-        Ok(body_builder.finish())
-    }
-}
-
-}
-
 module ExternalCloneTypes {
 
 pub struct Example {
@@ -85,12 +19,12 @@ pub enum Choice[T] {
 
 module Main {
 
-import ExternalCloneDerive
+import Std.Macro.Derive.Clone
 import ExternalCloneTypes
 
-instance Clone[Example] = auto2(ExternalCloneMacro)
-instance[T: Clone[T]] Clone[Wrapper[T]] = auto2(ExternalCloneMacro)
-instance[T: Clone[T]] Clone[Choice[T]] = auto2(ExternalCloneMacro)
+instance Clone[Example] = auto2(Clone)
+instance[T: Clone[T]] Clone[Wrapper[T]] = auto2(Clone)
+instance[T: Clone[T]] Clone[Choice[T]] = auto2(Clone)
 
 fn main() {
     let original = Example(42, "hello");

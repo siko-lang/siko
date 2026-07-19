@@ -1,0 +1,124 @@
+module Std.Macro.Derive.PartialEq {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn all_equal(
+    builder: FunctionBuilder,
+    eq_fn: QualifiedName,
+    true_variant: VariantDef,
+    false_variant: VariantDef,
+    lhs: Vec[Expr],
+    rhs: Vec[Expr],
+    index: Int,
+) -> Expr {
+    if index == lhs.len() {
+        return builder.call(true_variant.constructor, Vec.new());
+    }
+    let condition = builder.call(eq_fn, [lhs[index], rhs[index]]);
+    builder.if_expr(
+        condition,
+        all_equal(builder, eq_fn, true_variant, false_variant, lhs, rhs, index + 1),
+        builder.call(false_variant.constructor, Vec.new()),
+    )
+}
+
+fn partial_eq_struct_method(
+    ctx: MacroContext,
+    struct_def: StructDef,
+) -> Result[FunctionDef, MacroError] {
+    let eq_fn = ctx.resolve_function("Std.Ops.PartialEq.eq")?;
+    let true_variant = ctx.resolve_variant("Std.Bool.Bool.True")?;
+    let false_variant = ctx.resolve_variant("Std.Bool.Bool.False")?;
+    let builder = FunctionBuilder.new(eq_fn);
+    let lhs_value = builder.add_argument(struct_def.type_def);
+    let rhs_value = builder.add_argument(struct_def.type_def);
+    let lhs = Vec.new();
+    let rhs = Vec.new();
+    for field in struct_def.fields {
+        lhs.push(builder.field(lhs_value, field));
+        rhs.push(builder.field(rhs_value, field));
+    }
+    Ok(builder.finish(all_equal(
+        builder, eq_fn, true_variant, false_variant, lhs, rhs, 0,
+    )))
+}
+
+fn partial_eq_enum_method(
+    ctx: MacroContext,
+    enum_def: EnumDef,
+) -> Result[FunctionDef, MacroError] {
+    let eq_fn = ctx.resolve_function("Std.Ops.PartialEq.eq")?;
+    let discriminator = ctx.resolve_function("Std.Util.discriminator")?;
+    let true_variant = ctx.resolve_variant("Std.Bool.Bool.True")?;
+    let false_variant = ctx.resolve_variant("Std.Bool.Bool.False")?;
+    let builder = FunctionBuilder.new(eq_fn);
+    let lhs_value = builder.add_argument(enum_def.type_def);
+    let rhs_value = builder.add_argument(enum_def.type_def);
+    let arms = Vec.new();
+    for variant in enum_def.variants {
+        let lhs = builder.destructure(variant);
+        let rhs = builder.destructure(variant);
+        let pattern = builder.tuple_pattern([lhs.pattern, rhs.pattern]);
+        let body = all_equal(
+            builder, eq_fn, true_variant, false_variant, lhs.values, rhs.values, 0,
+        );
+        arms.push(builder.arm(pattern, body));
+    }
+    if enum_def.variants.len() > 1 {
+        let lhs_tag = builder.call(discriminator, [lhs_value]);
+        let rhs_tag = builder.call(discriminator, [rhs_value]);
+        arms.push(builder.arm(
+            builder.wildcard_pattern(),
+            builder.call(eq_fn, [lhs_tag, rhs_tag]),
+        ));
+    }
+    Ok(builder.finish(builder.match_expr(
+        builder.tuple([lhs_value, rhs_value]),
+        arms,
+    )))
+}
+
+pub macro PartialEq {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let struct_def = ctx.struct_target()?;
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialEq")?;
+        let method = partial_eq_struct_method(ctx, struct_def)?;
+        let builder = InstanceBuilder.new(trait_def, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        builder.add_method(method);
+        Ok(builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialEq")?;
+        let method = partial_eq_enum_method(ctx, enum_def)?;
+        let builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        builder.add_method(method);
+        Ok(builder.finish())
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        let struct_def = ctx.struct_target()?;
+        Ok(partial_eq_struct_method(ctx, struct_def)?.instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        Ok(partial_eq_enum_method(ctx, enum_def)?.instance_body())
+    }
+}
+
+}

@@ -1,0 +1,42 @@
+module Std.Macro.Derive.Eq {
+
+import Std.Macro
+import Std.Macro.InstanceBuilder
+
+pub macro Eq {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let struct_def = ctx.struct_target()?;
+        let trait_def = ctx.resolve_trait("Std.Ops.Eq")?;
+        let builder = InstanceBuilder.new(trait_def, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        Ok(builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        let enum_def = ctx.enum_target()?;
+        let trait_def = ctx.resolve_trait("Std.Ops.Eq")?;
+        let builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        Ok(builder.finish())
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        ctx.struct_target()?;
+        Ok(InstanceBodyBuilder.new().finish())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        ctx.enum_target()?;
+        Ok(InstanceBodyBuilder.new().finish())
+    }
+}
+
+}
