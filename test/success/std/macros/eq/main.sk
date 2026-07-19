@@ -1,0 +1,65 @@
+module EqDerive {
+
+import Std.Macro
+import Std.Macro.InstanceBuilder
+
+pub macro EqMacro {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let struct_def = match ctx.target {
+            MacroTarget.Struct(def) => def,
+            MacroTarget.Enum(_) => return Err(MacroError.NotSupported("expected a struct")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.Eq")?;
+        let builder = InstanceBuilder.new(trait_def, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        Ok(builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let enum_def = match ctx.target {
+            MacroTarget.Enum(def) => def,
+            MacroTarget.Struct(_) => return Err(MacroError.NotSupported("expected an enum")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.Eq")?;
+        let builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            builder.add_bound(type_parameter, trait_def);
+        }
+        Ok(builder.finish())
+    }
+}
+
+}
+
+module Main {
+
+import EqDerive
+
+@derive(PartialEq)
+@derive2(EqMacro)
+struct Wrapper[T] {
+    value: T,
+}
+
+@derive(PartialEq)
+@derive2(EqMacro)
+enum Choice[T] {
+    Empty,
+    One(T),
+}
+
+fn require_eq[T: Eq[T]](value: T) -> T {
+    value
+}
+
+fn main() {
+    println(require_eq(Wrapper("struct")).value);
+    match require_eq(Choice.One("enum")) {
+        Choice.One(value) => println(value),
+        Choice.Empty => println("wrong variant"),
+    }
+}
+
+}

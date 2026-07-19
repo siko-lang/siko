@@ -1,0 +1,32 @@
+module Siko.Resolver.Macros.Bridge.Variables {
+
+import Std.Map
+import Siko.AST.Expr as E
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Value
+import Siko.Resolver.Macros.Bridge.Value
+import Siko.Utils.VarAllocator
+
+pub fn variable_id(value: Value) -> Result[Int, String] {
+    match read_handle(value, B.get_macro_function_variable_qn()) {
+        Some(id) => Ok(id),
+        None => Err("invalid function variable handle"),
+    }
+}
+
+pub fn get_or_allocate(
+    variables: Map[Int, E.VariableName],
+    var_allocator: VarAllocator,
+    id: Int,
+) -> E.VariableName {
+    match variables.get(id) {
+        Some(variable) => variable,
+        None => {
+            let variable = var_allocator.allocate_user(B.get_macro_generated_variable_name());
+            variables.insert(id, variable);
+            variable
+        }
+    }
+}
+
+}

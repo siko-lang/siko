@@ -1,15 +1,35 @@
 module Std.Macro {
 
-// The first macro MVP exposes only the data needed to exercise invocation and
-// name resolution. These are macro-facing values, never the compiler's AST.
-pub struct StructDef {}
-pub struct EnumDef {}
-pub struct TraitDef {
-    pub name: String,
-}
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+
 pub struct InstanceHeader {}
 pub struct InstanceBody {}
-pub struct InstanceDef {}
+
+pub struct InstanceBound {
+    type_parameter: TypeParameter,
+    trait_name: QualifiedName,
+
+    pub fn new(type_parameter: TypeParameter, trait_name: QualifiedName) -> InstanceBound {
+        InstanceBound(type_parameter, trait_name)
+    }
+}
+
+pub struct InstanceDef {
+    trait_name: QualifiedName,
+    target: TypeDef,
+    bounds: Vec[InstanceBound],
+    methods: Vec[FunctionDef],
+
+    pub fn new(
+        trait_name: QualifiedName,
+        target: TypeDef,
+        bounds: Vec[InstanceBound],
+        methods: Vec[FunctionDef],
+    ) -> InstanceDef {
+        InstanceDef(trait_name, target, bounds, methods)
+    }
+}
 
 pub enum MacroTarget {
     Struct(StructDef),
@@ -32,15 +52,33 @@ pub struct MacroContext {
     pub target: MacroTarget,
     pub instance_header: Option[InstanceHeader],
     pub args: Vec[MacroArg],
+
+    // These capabilities resolve in the application module, not in the module
+    // defining the macro. Their private builtins are the interpreter boundary.
+    pub fn resolve_trait(ctx: MacroContext, name: String) -> Result[TraitDef, MacroError] {
+        resolve_trait_builtin(ctx, name)
+    }
+
+    pub fn resolve_function(ctx: MacroContext, name: String) -> Result[QualifiedName, MacroError] {
+        resolve_function_builtin(ctx, name)
+    }
+
+    pub fn resolve_variant(ctx: MacroContext, name: String) -> Result[VariantDef, MacroError] {
+        resolve_variant_builtin(ctx, name)
+    }
 }
 
 pub enum MacroError {
     NotSupported(String),
 }
 
-// Supplied by the compiler as an interpreter extension closure. It resolves
-// in the application module, not in the module defining the macro.
 @builtin
-pub fn resolve_trait(ctx: MacroContext, name: String) -> Result[TraitDef, MacroError]
+fn resolve_trait_builtin(ctx: MacroContext, name: String) -> Result[TraitDef, MacroError]
+
+@builtin
+fn resolve_function_builtin(ctx: MacroContext, name: String) -> Result[QualifiedName, MacroError]
+
+@builtin
+fn resolve_variant_builtin(ctx: MacroContext, name: String) -> Result[VariantDef, MacroError]
 
 }

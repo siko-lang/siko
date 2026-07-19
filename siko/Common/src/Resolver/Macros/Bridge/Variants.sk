@@ -1,0 +1,58 @@
+module Siko.Resolver.Macros.Bridge.Variants {
+
+import Siko.AST.Data as D
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Strings
+import Siko.Interpreter.Types
+import Siko.Interpreter.Value
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+
+pub fn variant_def(state: BridgeState, variant: D.VariantDef) -> Value {
+    let qname = B.get_macro_variant_def_qn();
+    let items = variant.items
+        .iter()
+        .enumerate()
+        .map(|(index, _)| handle_value(B.get_macro_variant_item_def_qn(), index))
+        .collect();
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [
+            int_value(state.add_variant(variant)),
+            vec_value(items, named_type(B.get_macro_variant_item_def_qn())),
+            handle_value(
+                B.get_macro_qualified_name_qn(),
+                state.add_name(variant.qualified_name.unwrap()),
+            ),
+        ])),
+    )
+}
+
+fn macro_error(message: String) -> Value {
+    variant_value(
+        B.get_macro_error_qn(),
+        B.get_macro_error_not_supported_qn(),
+        0,
+        [make_string(message)],
+    )
+}
+
+pub fn resolution_ok(state: BridgeState, variant: D.VariantDef) -> Value {
+    result_value(
+        named_type(B.get_macro_variant_def_qn()),
+        named_type(B.get_macro_error_qn()),
+        True,
+        variant_def(state, variant),
+    )
+}
+
+pub fn resolution_error(message: String) -> Value {
+    result_value(
+        named_type(B.get_macro_variant_def_qn()),
+        named_type(B.get_macro_error_qn()),
+        False,
+        macro_error(message),
+    )
+}
+
+}

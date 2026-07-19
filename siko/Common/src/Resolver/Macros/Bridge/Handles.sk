@@ -1,0 +1,48 @@
+module Siko.Resolver.Macros.Bridge.Handles {
+
+import Siko.AST.Data as D
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Value
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+
+pub fn name_handle(state: BridgeState, value: Value) -> Result[QualifiedName, String] {
+    let id = match read_handle(value, B.get_macro_qualified_name_qn()) {
+        Some(id) => id,
+        None => return Err("invalid qualified-name handle"),
+    };
+    match state.name(id) {
+        Some(name) => Ok(name),
+        None => Err("unknown qualified-name handle"),
+    }
+}
+
+pub fn type_handle(state: BridgeState, value: Value) -> Result[TypeDef, String] {
+    let id = match read_handle(value, B.get_macro_type_def_qn()) {
+        Some(id) => id,
+        None => return Err("invalid type handle"),
+    };
+    match state.type_def(id) {
+        Some(ty) => Ok(ty),
+        None => Err("unknown type handle"),
+    }
+}
+
+pub fn reflected_variant(state: BridgeState, value: Value) -> Result[D.VariantDef, String] {
+    let fields = match read_struct(value, B.get_macro_variant_def_qn(), 3) {
+        Some(fields) => fields,
+        None => return Err("invalid variant handle"),
+    };
+    let id = match fields[0].kind {
+        ValueKind.Int(id) => id,
+        _ => return Err("invalid variant identity"),
+    };
+    match state.variant(id) {
+        Some(variant) => Ok(variant),
+        None => Err("unknown variant handle"),
+    }
+}
+
+}

@@ -1,0 +1,117 @@
+module Siko.Resolver.Macros.Bridge.FunctionDefs {
+
+import Std.Map
+import Siko.AST.Expr as E
+import Siko.AST.Function as F
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Macros.Bridge.Expressions
+import Siko.Resolver.Macros.Bridge.Handles
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+import Siko.Resolver.Macros.Bridge.Variables
+import Siko.Unification.Sub
+import Siko.Utils.LabelAllocator
+import Siko.Utils.VarAllocator
+
+fn method_short_name(name: QualifiedName, trait_name: QualifiedName) -> Result[I.String, String] {
+    match name {
+        QualifiedName.Base(info) => match info.base() {
+            BaseName.Method(parent, short_name) if parent == trait_name.name() => Ok(short_name),
+            BaseName.Method(_, _) => Err("generated method belongs to a different trait"),
+            _ => Err("generated instance function does not refer to a trait method"),
+        },
+        QualifiedName.Mono(_) => Err("generated instance function cannot be monomorphized"),
+    }
+}
+
+pub fn decode_function(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    parent: QualifiedName,
+    trait_name: QualifiedName,
+    target: TypeDef,
+    type_arg_defs: Option[TypeArgDefs],
+    module_name: I.String,
+    location: Location,
+    value: Value,
+) -> Result[(F.FunctionDef, Identifier), String] {
+    let fields = match read_struct(value, B.get_macro_function_def_qn(), 3) {
+        Some(fields) => fields,
+        None => return Err("invalid FunctionBuilder result"),
+    };
+    let trait_function = name_handle(state, fields[0])?;
+    let trait_def = match global_ctx.get_trait(trait_name) {
+        Some(def) => def,
+        None => return Err("generated instance trait is unavailable"),
+    };
+    if trait_def.type_args.len() != 1 {
+        return Err("normal derive methods currently require a single-argument trait");
+    }
+    let trait_method = match global_ctx.get_function(trait_function) {
+        Some(def) => def,
+        None => return Err("generated method target is unavailable"),
+    };
+    let declared_result = match trait_method.result_type {
+        Some(result) => result,
+        None => TypeDef.Tuple(Vec.new()),
+    };
+    let substitution = Substitution.new();
+    substitution.bind_named(trait_def.type_args[0].name, target);
+    let result_type = substitution.apply(declared_result);
+    let args = match read_vec(fields[1]) {
+        Some(args) => args,
+        None => return Err("function arguments are not a Vec"),
+    };
+    let var_allocator = VarAllocator.new();
+    let variables: Map[Int, E.VariableName] = Map.new();
+    let function_args = Vec.new();
+    for arg in args {
+        let arg_fields = match read_struct(arg, B.get_macro_function_argument_qn(), 2) {
+            Some(fields) => fields,
+            None => return Err("invalid function argument"),
+        };
+        let id = variable_id(arg_fields[0])?;
+        if variables.contains_key(id) {
+            return Err("function builder returned the same variable twice");
+        }
+        let variable = var_allocator.allocate_user(B.get_macro_generated_variable_name());
+        variables.insert(id, variable);
+        function_args.push(F.FunctionArg(variable, type_handle(state, arg_fields[1])?, None));
+    }
+    let body = decode_expr(global_ctx, state, variables, var_allocator, fields[2], location)?;
+    let short_name = method_short_name(trait_function, trait_name)?;
+    let short_ident = Identifier.new(short_name, location);
+    let method_qname = QualifiedName.new_method(parent.name(), short_name);
+    let full_name = Identifier.new(
+        I.intern(I.resolve(parent.name()) + "." + I.resolve(short_name)),
+        location,
+    );
+    Ok((F.FunctionDef(
+        annotations: Vec.new(),
+        public: False,
+        name: full_name,
+        qualified_name: Some(method_qname),
+        kind: F.FunctionDefKind.Regular,
+        type_arg_defs: type_arg_defs,
+        args: function_args,
+        yield_type: None,
+        result_type: Some(result_type),
+        body: Some(body),
+        module_name: module_name,
+        var_allocator: var_allocator,
+        label_allocator: LabelAllocator.new(),
+        is_varargs: False,
+        default_value_names: Vec.new(),
+        source_package: None,
+    ), short_ident))
+}
+
+}

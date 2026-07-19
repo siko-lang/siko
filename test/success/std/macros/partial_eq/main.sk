@@ -1,0 +1,135 @@
+module PartialEqDerive {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn all_equal(
+    builder: FunctionBuilder,
+    eq_fn: QualifiedName,
+    true_variant: VariantDef,
+    false_variant: VariantDef,
+    lhs: Vec[Expr],
+    rhs: Vec[Expr],
+    index: Int,
+) -> Expr {
+    if index == lhs.len() {
+        return builder.call(true_variant.constructor, Vec.new());
+    }
+    let condition = builder.call(eq_fn, [lhs[index], rhs[index]]);
+    builder.if_expr(
+        condition,
+        all_equal(builder, eq_fn, true_variant, false_variant, lhs, rhs, index + 1),
+        builder.call(false_variant.constructor, Vec.new()),
+    )
+}
+
+pub macro PartialEqMacro {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let struct_def = match ctx.target {
+            MacroTarget.Struct(def) => def,
+            MacroTarget.Enum(_) => return Err(MacroError.NotSupported("expected a struct")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialEq")?;
+        let eq_fn = ctx.resolve_function("Std.Ops.PartialEq.eq")?;
+        let true_variant = ctx.resolve_variant("Std.Bool.Bool.True")?;
+        let false_variant = ctx.resolve_variant("Std.Bool.Bool.False")?;
+
+        let builder = FunctionBuilder.new(eq_fn);
+        let lhs_value = builder.add_argument(struct_def.type_def);
+        let rhs_value = builder.add_argument(struct_def.type_def);
+        let lhs = Vec.new();
+        let rhs = Vec.new();
+        for field in struct_def.fields {
+            lhs.push(builder.field(lhs_value, field));
+            rhs.push(builder.field(rhs_value, field));
+        }
+        let method = builder.finish(all_equal(
+            builder, eq_fn, true_variant, false_variant, lhs, rhs, 0,
+        ));
+
+        let instance_builder = InstanceBuilder.new(trait_def, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            instance_builder.add_bound(type_parameter, trait_def);
+        }
+        instance_builder.add_method(method);
+        Ok(instance_builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let enum_def = match ctx.target {
+            MacroTarget.Enum(def) => def,
+            MacroTarget.Struct(_) => return Err(MacroError.NotSupported("expected an enum")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialEq")?;
+        let eq_fn = ctx.resolve_function("Std.Ops.PartialEq.eq")?;
+        let discriminator = ctx.resolve_function("Std.Util.discriminator")?;
+        let true_variant = ctx.resolve_variant("Std.Bool.Bool.True")?;
+        let false_variant = ctx.resolve_variant("Std.Bool.Bool.False")?;
+
+        let builder = FunctionBuilder.new(eq_fn);
+        let lhs_value = builder.add_argument(enum_def.type_def);
+        let rhs_value = builder.add_argument(enum_def.type_def);
+        let arms = Vec.new();
+        for variant in enum_def.variants {
+            let lhs = builder.destructure(variant);
+            let rhs = builder.destructure(variant);
+            let pattern = builder.tuple_pattern([lhs.pattern, rhs.pattern]);
+            let body = all_equal(
+                builder, eq_fn, true_variant, false_variant, lhs.values, rhs.values, 0,
+            );
+            arms.push(builder.arm(pattern, body));
+        }
+        if enum_def.variants.len() > 1 {
+            let lhs_tag = builder.call(discriminator, [lhs_value]);
+            let rhs_tag = builder.call(discriminator, [rhs_value]);
+            arms.push(builder.arm(
+                builder.wildcard_pattern(),
+                builder.call(eq_fn, [lhs_tag, rhs_tag]),
+            ));
+        }
+        let method = builder.finish(builder.match_expr(
+            builder.tuple([lhs_value, rhs_value]),
+            arms,
+        ));
+
+        let instance_builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            instance_builder.add_bound(type_parameter, trait_def);
+        }
+        instance_builder.add_method(method);
+        Ok(instance_builder.finish())
+    }
+}
+
+}
+
+module Main {
+
+import PartialEqDerive
+
+@derive2(PartialEqMacro)
+struct Duo[T] {
+    first: T,
+    second: T,
+}
+
+@derive2(PartialEqMacro)
+enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+fn main() {
+    println(Duo(1, 2) == Duo(1, 2));
+    println(Duo(1, 2) == Duo(1, 3));
+    let empty: Choice[Int] = Choice.Empty;
+    println(empty == empty);
+    println(empty == Choice.One(1));
+    println(Choice.Pair(1, 2) == Choice.Pair(1, 2));
+    println(Choice.Pair(1, 2) == Choice.Pair(1, 3));
+}
+
+}

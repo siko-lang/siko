@@ -1,0 +1,137 @@
+module Siko.Resolver.Macros.Bridge.Instances {
+
+import Std.Set
+import Siko.AST.Generics
+import Siko.AST.Identifier
+import Siko.AST.Instances as IDef
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Constants.Builtins as B
+import Siko.Interner as I
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Macros.Bridge.FunctionDefs
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+
+fn name_handle(state: BridgeState, value: Value) -> Result[QualifiedName, String] {
+    let id = match read_handle(value, B.get_macro_qualified_name_qn()) {
+        Some(id) => id,
+        None => return Err("invalid qualified-name handle"),
+    };
+    match state.name(id) {
+        Some(name) => Ok(name),
+        None => Err("unknown qualified-name handle"),
+    }
+}
+
+fn type_handle(state: BridgeState, value: Value) -> Result[TypeDef, String] {
+    let id = match read_handle(value, B.get_macro_type_def_qn()) {
+        Some(id) => id,
+        None => return Err("invalid type handle"),
+    };
+    match state.type_def(id) {
+        Some(ty) => Ok(ty),
+        None => Err("unknown type handle"),
+    }
+}
+
+fn decode_type_args(
+    state: BridgeState,
+    value: Value,
+    location: Location,
+) -> Result[Option[TypeArgDefs], String] {
+    let values = match read_vec(value) {
+        Some(values) => values,
+        None => return Err("instance bounds are not a Vec"),
+    };
+    if values.is_empty() {
+        return Ok(None);
+    }
+    let type_args = Vec.new();
+    let seen = Set.new();
+    let bounds = Vec.new();
+    for value in values {
+        let fields = match read_struct(value, B.get_macro_instance_bound_qn(), 2) {
+            Some(fields) => fields,
+            None => return Err("invalid instance bound"),
+        };
+        let parameter_id = match read_handle(fields[0], B.get_macro_type_parameter_qn()) {
+            Some(id) => id,
+            None => return Err("invalid type-parameter handle"),
+        };
+        let parameter = match state.type_parameter(parameter_id) {
+            Some(parameter) => parameter,
+            None => return Err("unknown type-parameter handle"),
+        };
+        if seen.insert(parameter.name) {
+            type_args.push(parameter);
+        }
+        let trait_name = name_handle(state, fields[1])?;
+        bounds.push(Bound(
+            Name.inner(trait_name),
+            [Name.Unresolved(Identifier.new(parameter.name, location))],
+            Vec.new(),
+            BoundOrigin.InstanceContext,
+        ));
+    }
+    Ok(Some(TypeArgDefs(type_args, bounds)))
+}
+
+pub fn decode_instance(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    module_name: I.String,
+    location: Location,
+    value: Value,
+) -> Result[IDef.InstanceDef, String] {
+    let fields = match read_struct(value, B.get_macro_instance_def_qn(), 4) {
+        Some(fields) => fields,
+        None => return Err("invalid InstanceBuilder result"),
+    };
+    let trait_name = name_handle(state, fields[0])?;
+    let target = type_handle(state, fields[1])?;
+    let type_arg_defs = decode_type_args(state, fields[2], location)?;
+    let method_values = match read_vec(fields[3]) {
+        Some(methods) => methods,
+        None => return Err("instance methods are not a Vec"),
+    };
+    let parent = QualifiedName.new_unnamed_instance(trait_name.name(), [target]);
+    let methods = Vec.new();
+    let method_names = Vec.new();
+    for method_value in method_values {
+        let (method, short_name) = decode_function(
+            global_ctx,
+            state,
+            parent,
+            trait_name,
+            target,
+            type_arg_defs,
+            module_name,
+            location,
+            method_value,
+        )?;
+        methods.push(method);
+        method_names.push(short_name);
+    }
+    Ok(IDef.InstanceDef(
+        annotations: Vec.new(),
+        public: False,
+        name: None,
+        qualified_name: None,
+        type_arg_defs: type_arg_defs,
+        subject: IDef.InstanceKind.Trait(Name.inner(trait_name)),
+        args: [target],
+        type_assignments: Vec.new(),
+        methods: methods,
+        module_name: module_name,
+        method_names: method_names,
+        location: location,
+        external_derived_instance_info: None,
+        macro_derive_info: None,
+    ))
+}
+
+}

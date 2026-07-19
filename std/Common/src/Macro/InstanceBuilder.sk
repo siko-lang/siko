@@ -1,0 +1,34 @@
+module Std.Macro.InstanceBuilder {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+
+pub struct InstanceBuilder {
+    trait_name: QualifiedName,
+    target: TypeDef,
+    bounds: Vec[InstanceBound],
+    methods: Vec[FunctionDef],
+
+    pub fn new(trait_def: TraitDef, target: TypeDef) -> InstanceBuilder {
+        InstanceBuilder(trait_def.qualified_name(), target, Vec.new(), Vec.new())
+    }
+
+    pub fn add_bound(
+        builder: InstanceBuilder,
+        type_parameter: TypeParameter,
+        trait_def: TraitDef,
+    ) {
+        builder.bounds.push(InstanceBound.new(type_parameter, trait_def.qualified_name()));
+    }
+
+    pub fn add_method(builder: InstanceBuilder, method: FunctionDef) {
+        builder.methods.push(method);
+    }
+
+    pub fn finish(builder: InstanceBuilder) -> InstanceDef {
+        InstanceDef.new(builder.trait_name, builder.target, builder.bounds, builder.methods)
+    }
+}
+
+}

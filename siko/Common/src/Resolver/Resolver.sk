@@ -108,12 +108,28 @@ pub struct GlobalResolverContext {
         ctx.variant_enum_map.get(variant_qname).and_then(|enum_qname| ctx.enums.get(enum_qname))
     }
 
+    pub fn get_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[VariantDef] {
+        let enum_def = match ctx.get_enum_for_variant(variant_qname) {
+            Some(def) => def,
+            None => return None,
+        };
+        enum_def.variants.iter().find(|variant| variant.qualified_name == Some(variant_qname))
+    }
+
     pub fn get_module_resolver(ctx: GlobalResolverContext, module_name: I.String) -> Option[ModuleResolver] {
         ctx.module_resolvers.get(module_name)
     }
 
     pub fn get_macro(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[MacroDef] {
         ctx.macros.get(qname)
+    }
+
+    pub fn get_trait(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[TraitDef] {
+        ctx.traits.get(qname)
+    }
+
+    pub fn get_function(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[FunctionDef] {
+        ctx.functions.get(qname)
     }
 }
 
@@ -200,7 +216,7 @@ pub struct Resolver {
                 resolver.process_external_derives(modules, module_name)?;
             }
 
-            run_macro_group(resolver.ctx, modules, group, resolver.build_program())?;
+            run_macro_group(resolver, resolver.ctx, modules, group, resolver.build_program())?;
 
             for module_name in group {
                 resolver.warn_unused_imports(modules, module_name);
@@ -630,7 +646,7 @@ pub struct Resolver {
         Ok(())
     }
 
-    fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) -> Result[(), ResolveError] {
+    pub fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) -> Result[(), ResolveError] {
         let synth = instance_def.synth_name()?;
         let trait_name = instance_def.subject.try_trait_name()?;
         let synth_qname = QualifiedName.new_unnamed_instance(trait_name.name(), instance_def.args.clone());
@@ -1415,10 +1431,6 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
-
-
-
 
 
 

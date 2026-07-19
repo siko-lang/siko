@@ -1,0 +1,135 @@
+module Siko.Resolver.Macros.Bridge.Expressions {
+
+import Std.Map
+import Siko.AST.Expr as E
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Macros.Bridge.Handles
+import Siko.Resolver.Macros.Bridge.Patterns
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+import Siko.Resolver.Macros.Bridge.Variables
+import Siko.Utils.VarAllocator
+
+fn call_kind(global_ctx: GlobalResolverContext, name: QualifiedName) -> E.FunctionKind {
+    if global_ctx.get_struct(name).is_some() {
+        E.FunctionKind.StructCtor
+    } else if global_ctx.get_enum_for_variant(name).is_some() {
+        E.FunctionKind.VariantCtor
+    } else if let Some(function) = global_ctx.get_function(name) {
+        function.get_kind()
+    } else {
+        E.FunctionKind.UserDefined
+    }
+}
+
+pub fn decode_expr(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    variables: Map[Int, E.VariableName],
+    var_allocator: VarAllocator,
+    value: Value,
+    location: Location,
+) -> Result[E.Expr, String] {
+    let fields = match read_struct(value, B.get_macro_function_expr_qn(), 1) {
+        Some(fields) => fields,
+        None => return Err("invalid builder expression"),
+    };
+    let variant = match fields[0].kind {
+        ValueKind.Variant(vbox) if vbox.enum_qname == B.get_macro_function_expr_kind_qn() => vbox,
+        _ => return Err("invalid builder expression kind"),
+    };
+    let kind = if variant.variant_qname == B.get_macro_function_expr_variable_qn() {
+        if variant.items.len() != 1 {
+            return Err("variable expression must contain one handle");
+        }
+        let id = variable_id(variant.items[0])?;
+        let variable = match variables.get(id) {
+            Some(variable) => variable,
+            None => return Err("expression references a variable not allocated by this function builder"),
+        };
+        E.ExprKind.Var(variable)
+    } else if variant.variant_qname == B.get_macro_function_expr_field_access_qn() {
+        if variant.items.len() != 2 {
+            return Err("field expression must contain a receiver and field handle");
+        }
+        let receiver = decode_expr(global_ctx, state, variables, var_allocator, variant.items[0], location)?;
+        let field_id = match read_handle(variant.items[1], B.get_macro_field_def_qn()) {
+            Some(id) => id,
+            None => return Err("invalid field handle"),
+        };
+        let field = match state.field(field_id) {
+            Some(field) => field,
+            None => return Err("unknown field handle"),
+        };
+        E.ExprKind.FieldAccess(receiver, field.name)
+    } else if variant.variant_qname == B.get_macro_function_expr_call_qn() {
+        if variant.items.len() != 2 {
+            return Err("call expression must contain a function and arguments");
+        }
+        let function = name_handle(state, variant.items[0])?;
+        let args = match read_vec(variant.items[1]) {
+            Some(args) => args,
+            None => return Err("call expression arguments are not a Vec"),
+        };
+        let decoded_args: Vec[_] = args
+            .iter()
+            .map(|arg| decode_expr(global_ctx, state, variables, var_allocator, arg, location))
+            .collect();
+        E.ExprKind.FunctionCall(E.FunctionCallInfo(
+            qname: function,
+            kind: call_kind(global_ctx, function),
+            args: Result.collect(decoded_args)?,
+        ))
+    } else if variant.variant_qname == B.get_macro_function_expr_tuple_qn() {
+        if variant.items.len() != 1 {
+            return Err("tuple expression must contain one expression Vec");
+        }
+        let items = match read_vec(variant.items[0]) {
+            Some(items) => items,
+            None => return Err("tuple expression items are not a Vec"),
+        };
+        let decoded: Vec[_] = items
+            .iter()
+            .map(|item| decode_expr(global_ctx, state, variables, var_allocator, item, location))
+            .collect();
+        E.ExprKind.Tuple(Result.collect(decoded)?)
+    } else if variant.variant_qname == B.get_macro_function_expr_if_qn() {
+        if variant.items.len() != 3 {
+            return Err("if expression must contain condition, then, and else values");
+        }
+        E.ExprKind.If(
+            decode_expr(global_ctx, state, variables, var_allocator, variant.items[0], location)?,
+            decode_expr(global_ctx, state, variables, var_allocator, variant.items[1], location)?,
+            Some(decode_expr(global_ctx, state, variables, var_allocator, variant.items[2], location)?),
+        )
+    } else if variant.variant_qname == B.get_macro_function_expr_match_qn() {
+        if variant.items.len() != 2 {
+            return Err("match expression must contain a value and arm Vec");
+        }
+        let scrutinee = decode_expr(global_ctx, state, variables, var_allocator, variant.items[0], location)?;
+        let arms = match read_vec(variant.items[1]) {
+            Some(arms) => arms,
+            None => return Err("match arms are not a Vec"),
+        };
+        let decoded_arms = Vec.new();
+        for arm in arms {
+            let fields = match read_struct(arm, B.get_macro_function_match_arm_qn(), 2) {
+                Some(fields) => fields,
+                None => return Err("invalid match arm"),
+            };
+            let pattern = decode_pattern(state, variables, var_allocator, fields[0], location)?;
+            let body = decode_expr(global_ctx, state, variables, var_allocator, fields[1], location)?;
+            decoded_arms.push(E.MatchArm(pattern, body));
+        }
+        E.ExprKind.Match(E.MatchInfo(scrutinee, decoded_arms))
+    } else {
+        return Err("unknown builder expression kind");
+    };
+    Ok(E.Expr(kind, location, None))
+}
+
+}

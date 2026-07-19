@@ -10,10 +10,14 @@ import Siko.Interpreter.Value
 import Siko.Location
 import Siko.Resolver
 import Siko.Resolver.Macros.Bridge.Input as MacroInput
+import Siko.Resolver.Macros.Bridge.Functions as MacroFunctions
+import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Traits as MacroTraits
+import Siko.Resolver.Macros.Bridge.Variants as MacroVariants
 
 fn resolve_trait(
     global_ctx: GlobalResolverContext,
+    state: BridgeState,
     module_name: I.String,
     application_location: Location,
     args: Vec[Value],
@@ -21,7 +25,7 @@ fn resolve_trait(
 ) -> Result[Value, InterpreterError] {
     if args.len() != 2 {
         return Err(error(
-            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_trait_qn().name()), 2, args.len()),
+            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_trait_builtin_qn().name()), 2, args.len()),
             call_location,
         ));
     }
@@ -46,17 +50,103 @@ fn resolve_trait(
     if !item.kind.is_trait() {
         return Ok(MacroTraits.resolution_error("`${name}` does not name a trait"));
     }
-    Ok(MacroTraits.resolution_ok(item.qualified_name))
+    Ok(MacroTraits.resolution_ok(state, item.qualified_name))
+}
+
+fn resolve_function(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    module_name: I.String,
+    application_location: Location,
+    args: Vec[Value],
+    call_location: Location,
+) -> Result[Value, InterpreterError] {
+    if args.len() != 2 {
+        return Err(error(
+            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_function_builtin_qn().name()), 2, args.len()),
+            call_location,
+        ));
+    }
+    if !MacroInput.is_macro_context(args[0]) {
+        return Err(error(
+            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
+            call_location,
+        ));
+    }
+    let name = match render_string(args[1]) {
+        Some(name) => name,
+        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
+    };
+    // Function names are produced dynamically by interpreted macro code and
+    // therefore cannot be supplied by the fixed builtin name cache.
+    let ident = Identifier.new(I.intern(name), application_location);
+    let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
+    let item = match module_resolver.resolve(ident) {
+        Ok(item) => item,
+        Err(_) => return Ok(MacroFunctions.resolution_error("cannot resolve `${name}` as a function")),
+    };
+    if !item.kind.is_function() {
+        return Ok(MacroFunctions.resolution_error("`${name}` does not name a function"));
+    }
+    Ok(MacroFunctions.resolution_ok(state, item.qualified_name))
+}
+
+fn resolve_variant(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    module_name: I.String,
+    application_location: Location,
+    args: Vec[Value],
+    call_location: Location,
+) -> Result[Value, InterpreterError] {
+    if args.len() != 2 {
+        return Err(error(
+            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_variant_builtin_qn().name()), 2, args.len()),
+            call_location,
+        ));
+    }
+    if !MacroInput.is_macro_context(args[0]) {
+        return Err(error(
+            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
+            call_location,
+        ));
+    }
+    let name = match render_string(args[1]) {
+        Some(name) => name,
+        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
+    };
+    // Variant names are supplied dynamically by interpreted macro code.
+    let ident = Identifier.new(I.intern(name), application_location);
+    let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
+    let item = match module_resolver.resolve(ident) {
+        Ok(item) => item,
+        Err(_) => return Ok(MacroVariants.resolution_error("cannot resolve `${name}` as a variant")),
+    };
+    if !item.kind.is_variant() {
+        return Ok(MacroVariants.resolution_error("`${name}` does not name a variant"));
+    }
+    let variant = match global_ctx.get_variant(item.qualified_name) {
+        Some(variant) => variant,
+        None => return Ok(MacroVariants.resolution_error("resolved variant `${name}` is unavailable")),
+    };
+    Ok(MacroVariants.resolution_ok(state, variant))
 }
 
 pub fn build(
     global_ctx: GlobalResolverContext,
+    state: BridgeState,
     module_name: I.String,
     application_location: Location,
 ) -> InterpreterExtensions {
     let extensions = InterpreterExtensions.new();
-    extensions.insert(B.get_macro_resolve_trait_qn(), |args, call_location| {
-        resolve_trait(global_ctx, module_name, application_location, args, call_location)
+    extensions.insert(B.get_macro_resolve_trait_builtin_qn(), |args, call_location| {
+        resolve_trait(global_ctx, state, module_name, application_location, args, call_location)
+    });
+    extensions.insert(B.get_macro_resolve_function_builtin_qn(), |args, call_location| {
+        resolve_function(global_ctx, state, module_name, application_location, args, call_location)
+    });
+    extensions.insert(B.get_macro_resolve_variant_builtin_qn(), |args, call_location| {
+        resolve_variant(global_ctx, state, module_name, application_location, args, call_location)
     });
     extensions
 }

@@ -1,31 +1,99 @@
 module Siko.Resolver.Macros.Bridge.Input {
 
 import Siko.AST.Macros
+import Siko.AST.Data as D
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Strings
 import Siko.Interpreter.Types
 import Siko.Interpreter.Value
 import Siko.Resolver.Macros.Bridge.Value
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Variants as MacroVariants
 import Siko.Resolver.Macros.Request
+import Siko.Resolver
 
-fn struct_def() -> Value { empty_struct(B.get_macro_struct_def_qn()) }
-fn enum_def() -> Value { empty_struct(B.get_macro_enum_def_qn()) }
+fn qualified_name(state: BridgeState, name: QualifiedName) -> Value {
+    handle_value(B.get_macro_qualified_name_qn(), state.add_name(name))
+}
+
+fn type_def(state: BridgeState, ty: TypeDef) -> Value {
+    handle_value(B.get_macro_type_def_qn(), state.add_type(ty))
+}
+
+fn type_parameter(state: BridgeState, ident: Identifier) -> Value {
+    handle_value(B.get_macro_type_parameter_qn(), state.add_type_parameter(ident))
+}
+
+fn field_def(state: BridgeState, field: D.FieldDef) -> Value {
+    handle_value(B.get_macro_field_def_qn(), state.add_field(field))
+}
+
+fn struct_def(global_ctx: GlobalResolverContext, state: BridgeState, name: QualifiedName) -> Value {
+    let def = global_ctx.get_struct(name).unwrap();
+    let type_args = match def.type_arg_defs {
+        Some(args) => args.type_args.iter().map(|arg| TypeDef.Var(TypeVar.Named(arg.name))).collect(),
+        None => Vec.new(),
+    };
+    let self_type = TypeDef.Named(NamedInfo(Name.inner(name), type_args));
+    let type_params = match def.type_arg_defs {
+        Some(args) => args.type_args.iter().map(|arg| type_parameter(state, arg)).collect(),
+        None => Vec.new(),
+    };
+    let fields = def.fields.iter().map(|field| field_def(state, field)).collect();
+    let qname = B.get_macro_struct_def_qn();
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [
+            type_def(state, self_type),
+            vec_value(type_params, named_type(B.get_macro_type_parameter_qn())),
+            vec_value(fields, named_type(B.get_macro_field_def_qn())),
+            qualified_name(state, name),
+        ])),
+    )
+}
+
+fn enum_def(global_ctx: GlobalResolverContext, state: BridgeState, name: QualifiedName) -> Value {
+    let def = global_ctx.get_enum(name).unwrap();
+    let type_args = match def.type_arg_defs {
+        Some(args) => args.type_args.iter().map(|arg| TypeDef.Var(TypeVar.Named(arg.name))).collect(),
+        None => Vec.new(),
+    };
+    let self_type = TypeDef.Named(NamedInfo(Name.inner(name), type_args));
+    let type_params = match def.type_arg_defs {
+        Some(args) => args.type_args.iter().map(|arg| type_parameter(state, arg)).collect(),
+        None => Vec.new(),
+    };
+    let variants = def.variants.iter().map(|variant| MacroVariants.variant_def(state, variant)).collect();
+    let qname = B.get_macro_enum_def_qn();
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [
+            type_def(state, self_type),
+            vec_value(type_params, named_type(B.get_macro_type_parameter_qn())),
+            vec_value(variants, named_type(B.get_macro_variant_def_qn())),
+        ])),
+    )
+}
 fn instance_header() -> Value { empty_struct(B.get_macro_instance_header_qn()) }
 
-fn macro_target(target: MacroTarget) -> Value {
+fn macro_target(global_ctx: GlobalResolverContext, state: BridgeState, target: MacroTarget) -> Value {
     match target {
-        MacroTarget.Struct(_) => variant_value(
+        MacroTarget.Struct(name) => variant_value(
             B.get_macro_target_qn(),
             B.get_macro_target_struct_qn(),
             0,
-            [struct_def()],
+            [struct_def(global_ctx, state, name)],
         ),
-        MacroTarget.Enum(_) => variant_value(
+        MacroTarget.Enum(name) => variant_value(
             B.get_macro_target_qn(),
             B.get_macro_target_enum_qn(),
             1,
-            [enum_def()],
+            [enum_def(global_ctx, state, name)],
         ),
         MacroTarget.Invalid => panic("invalid macro target reached bridge"),
     }
@@ -77,7 +145,13 @@ fn macro_arg(arg: MacroArg) -> Value {
     }
 }
 
-pub fn macro_context(target: MacroTarget, external: Bool, args: Vec[MacroArg]) -> Value {
+pub fn macro_context(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    target: MacroTarget,
+    external: Bool,
+    args: Vec[MacroArg],
+) -> Value {
     let qname = B.get_macro_context_qn();
     let header_type = named_type(B.get_macro_instance_header_qn());
     let header = if external {
@@ -89,7 +163,7 @@ pub fn macro_context(target: MacroTarget, external: Bool, args: Vec[MacroArg]) -
     let args = vec_value(args.iter().map(|arg| macro_arg(arg)).collect(), arg_type);
     Value(
         named_type(qname),
-        ValueKind.Struct(StructBox(qname, [macro_target(target), header, args])),
+        ValueKind.Struct(StructBox(qname, [macro_target(global_ctx, state, target), header, args])),
     )
 }
 

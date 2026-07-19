@@ -1,0 +1,136 @@
+module Std.Macro.FunctionBuilder {
+
+import Std.Macro.Reflection
+
+struct VariableRef {
+    id: Int,
+}
+
+enum ExprKind {
+    Variable(VariableRef),
+    FieldAccess(Expr, FieldDef),
+    Call(QualifiedName, Vec[Expr]),
+    Tuple(Vec[Expr]),
+    If(Expr, Expr, Expr),
+    Match(Expr, Vec[MatchArm]),
+}
+
+pub struct Expr {
+    kind: ExprKind,
+}
+
+struct FunctionArgument {
+    variable: VariableRef,
+    type_def: TypeDef,
+}
+
+enum PatternKind {
+    Binding(VariableRef),
+    Tuple(Vec[Pattern]),
+    Variant(VariantDef, Vec[Pattern]),
+    Wildcard,
+}
+
+pub struct Pattern {
+    kind: PatternKind,
+}
+
+pub struct PatternBinding {
+    pub pattern: Pattern,
+    pub value: Expr,
+}
+
+pub struct VariantBinding {
+    pub pattern: Pattern,
+    pub values: Vec[Expr],
+}
+
+pub struct MatchArm {
+    pattern: Pattern,
+    body: Expr,
+}
+
+pub struct FunctionDef {
+    function: QualifiedName,
+    arguments: Vec[FunctionArgument],
+    body: Expr,
+}
+
+pub struct FunctionBuilder {
+    function: QualifiedName,
+    arguments: Vec[FunctionArgument],
+    next_variable: Int,
+
+    pub fn new(function: QualifiedName) -> FunctionBuilder {
+        FunctionBuilder(function, Vec.new(), 0)
+    }
+
+    pub fn add_argument(builder: FunctionBuilder, type_def: TypeDef) -> Expr {
+        let variable = VariableRef(builder.next_variable);
+        builder.next_variable += 1;
+        builder.arguments.push(FunctionArgument(variable, type_def));
+        Expr(ExprKind.Variable(variable))
+    }
+
+    pub fn field(builder: FunctionBuilder, receiver: Expr, field: FieldDef) -> Expr {
+        Expr(ExprKind.FieldAccess(receiver, field))
+    }
+
+    pub fn call(builder: FunctionBuilder, function: QualifiedName, args: Vec[Expr]) -> Expr {
+        Expr(ExprKind.Call(function, args))
+    }
+
+    pub fn tuple(builder: FunctionBuilder, items: Vec[Expr]) -> Expr {
+        Expr(ExprKind.Tuple(items))
+    }
+
+    pub fn if_expr(builder: FunctionBuilder, condition: Expr, then_expr: Expr, else_expr: Expr) -> Expr {
+        Expr(ExprKind.If(condition, then_expr, else_expr))
+    }
+
+    pub fn match_expr(builder: FunctionBuilder, value: Expr, arms: Vec[MatchArm]) -> Expr {
+        Expr(ExprKind.Match(value, arms))
+    }
+
+    pub fn bind(builder: FunctionBuilder) -> PatternBinding {
+        let variable = VariableRef(builder.next_variable);
+        builder.next_variable += 1;
+        PatternBinding(
+            Pattern(PatternKind.Binding(variable)),
+            Expr(ExprKind.Variable(variable)),
+        )
+    }
+
+    pub fn destructure(builder: FunctionBuilder, variant: VariantDef) -> VariantBinding {
+        let patterns = Vec.new();
+        let values = Vec.new();
+        for _ in variant.items {
+            let binding = builder.bind();
+            patterns.push(binding.pattern);
+            values.push(binding.value);
+        }
+        VariantBinding(Pattern(PatternKind.Variant(variant, patterns)), values)
+    }
+
+    pub fn variant_pattern(builder: FunctionBuilder, variant: VariantDef, items: Vec[Pattern]) -> Pattern {
+        Pattern(PatternKind.Variant(variant, items))
+    }
+
+    pub fn tuple_pattern(builder: FunctionBuilder, items: Vec[Pattern]) -> Pattern {
+        Pattern(PatternKind.Tuple(items))
+    }
+
+    pub fn wildcard_pattern(builder: FunctionBuilder) -> Pattern {
+        Pattern(PatternKind.Wildcard)
+    }
+
+    pub fn arm(builder: FunctionBuilder, pattern: Pattern, body: Expr) -> MatchArm {
+        MatchArm(pattern, body)
+    }
+
+    pub fn finish(builder: FunctionBuilder, body: Expr) -> FunctionDef {
+        FunctionDef(builder.function, builder.arguments, body)
+    }
+}
+
+}

@@ -1,0 +1,83 @@
+module Siko.Resolver.Macros.Bridge.Patterns {
+
+import Std.Map
+import Siko.AST.Expr as E
+import Siko.AST.Name
+import Siko.AST.Pattern as P
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver.Macros.Bridge.Handles
+import Siko.Resolver.Macros.Bridge.State
+import Siko.Resolver.Macros.Bridge.Value
+import Siko.Resolver.Macros.Bridge.Variables
+import Siko.Utils.VarAllocator
+
+pub fn decode_pattern(
+    state: BridgeState,
+    variables: Map[Int, E.VariableName],
+    var_allocator: VarAllocator,
+    value: Value,
+    location: Location,
+) -> Result[P.Pattern, String] {
+    let fields = match read_struct(value, B.get_macro_function_pattern_qn(), 1) {
+        Some(fields) => fields,
+        None => return Err("invalid builder pattern"),
+    };
+    let variant = match fields[0].kind {
+        ValueKind.Variant(vbox) if vbox.enum_qname == B.get_macro_function_pattern_kind_qn() => vbox,
+        _ => return Err("invalid builder pattern kind"),
+    };
+    let kind = if variant.variant_qname == B.get_macro_function_pattern_binding_qn() {
+        if variant.items.len() != 1 {
+            return Err("binding pattern must contain one variable");
+        }
+        let id = variable_id(variant.items[0])?;
+        P.PatternKind.Binding(get_or_allocate(variables, var_allocator, id))
+    } else if variant.variant_qname == B.get_macro_function_pattern_tuple_qn() {
+        if variant.items.len() != 1 {
+            return Err("tuple pattern must contain one pattern Vec");
+        }
+        let items = match read_vec(variant.items[0]) {
+            Some(items) => items,
+            None => return Err("tuple pattern items are not a Vec"),
+        };
+        let decoded: Vec[_] = items
+            .iter()
+            .map(|item| decode_pattern(state, variables, var_allocator, item, location))
+            .collect();
+        P.PatternKind.Tuple(Result.collect(decoded)?)
+    } else if variant.variant_qname == B.get_macro_function_pattern_variant_qn() {
+        if variant.items.len() != 2 {
+            return Err("variant pattern must contain a variant and pattern Vec");
+        }
+        let reflected = reflected_variant(state, variant.items[0])?;
+        let items = match read_vec(variant.items[1]) {
+            Some(items) => items,
+            None => return Err("variant pattern items are not a Vec"),
+        };
+        if items.len() != reflected.items.len() {
+            return Err("variant pattern has the wrong item count");
+        }
+        let decoded: Vec[_] = items
+            .iter()
+            .map(|item| decode_pattern(state, variables, var_allocator, item, location))
+            .collect();
+        P.PatternKind.Named(P.NamedPatternInfo(
+            name: Name.inner(reflected.qualified_name.unwrap()),
+            args: Result.collect(decoded)?,
+            named_args: Vec.new(),
+            has_rest: False,
+        ))
+    } else if variant.variant_qname == B.get_macro_function_pattern_wildcard_qn() {
+        if !variant.items.is_empty() {
+            return Err("wildcard pattern must not contain values");
+        }
+        P.PatternKind.Wildcard
+    } else {
+        return Err("unknown builder pattern kind");
+    };
+    Ok(P.Pattern(kind, location, None))
+}
+
+}

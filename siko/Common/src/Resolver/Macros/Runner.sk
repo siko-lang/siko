@@ -10,10 +10,12 @@ import Siko.Resolver
 import Siko.Resolver.Error
 import Siko.Resolver.Macros.Bridge as Bridge
 import Siko.Resolver.Macros.Bridge.Input as MacroInput
+import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Extensions as MacroExtensions
 import Siko.Resolver.Macros.Request
 
 fn invoke_request(
+    resolver: Resolver,
     global_ctx: GlobalResolverContext,
     program: Program,
     request: MacroRequest,
@@ -50,8 +52,9 @@ fn invoke_request(
     } else {
         Bridge.MacroOutput.InstanceDef
     };
-    let context = MacroInput.macro_context(request.target, external, request.args);
-    let extensions = MacroExtensions.build(global_ctx, request.module_name, request.location);
+    let state = BridgeState.new();
+    let context = MacroInput.macro_context(global_ctx, state, request.target, external, request.args);
+    let extensions = MacroExtensions.build(global_ctx, state, request.module_name, request.location);
     let value = match Interp.invoke_with_extensions(
         program,
         entry_qname,
@@ -62,8 +65,16 @@ fn invoke_request(
         Ok(value) => value,
         Err(error) => return Err(ResolveError.MacroExecutionFailed(error)),
     };
-    match Bridge.decode_result(value, expected) {
-        Bridge.MacroCallResult.Success => Ok(()),
+    match Bridge.decode_result(
+        global_ctx,
+        state,
+        request.module_name,
+        request.location,
+        value,
+        expected,
+    ) {
+        Bridge.MacroCallResult.Instance(generated) => resolver.register_derived_instance(generated),
+        Bridge.MacroCallResult.InstanceBody => Ok(()),
         Bridge.MacroCallResult.NotSupported(message) => Err(ResolveError.MacroNotSupported(
             request.provider,
             message,
@@ -78,6 +89,7 @@ fn invoke_request(
 }
 
 pub fn run_macro_group(
+    resolver: Resolver,
     global_ctx: GlobalResolverContext,
     modules: Vec[M.Module],
     group: Vec[I.String],
@@ -89,7 +101,7 @@ pub fn run_macro_group(
     }
     program.instance_resolver = InstanceResolver.build(program);
     for request in requests {
-        invoke_request(global_ctx, program, request)?;
+        invoke_request(resolver, global_ctx, program, request)?;
     }
     Ok(())
 }

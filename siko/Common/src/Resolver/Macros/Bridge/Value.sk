@@ -8,6 +8,64 @@ import Siko.Interpreter.Memory
 import Siko.Interpreter.Types
 import Siko.Interpreter.Value
 
+pub fn int_value(value: Int) -> Value {
+    Value(int_type(), ValueKind.Int(value))
+}
+
+pub fn handle_value(qname: QualifiedName, id: Int) -> Value {
+    Value(
+        named_type(qname),
+        ValueKind.Struct(StructBox(qname, [int_value(id)])),
+    )
+}
+
+pub fn read_handle(value: Value, qname: QualifiedName) -> Option[Int] {
+    let sbox = match value.kind {
+        ValueKind.Struct(sbox) if sbox.qname == qname && sbox.fields.len() == 1 => sbox,
+        _ => return None,
+    };
+    match sbox.fields[0].kind {
+        ValueKind.Int(id) => Some(id),
+        _ => None,
+    }
+}
+
+pub fn read_struct(value: Value, qname: QualifiedName, field_count: Int) -> Option[Vec[Value]] {
+    match value.kind {
+        ValueKind.Struct(sbox) if sbox.qname == qname && sbox.fields.len() == field_count => Some(sbox.fields),
+        _ => None,
+    }
+}
+
+pub fn read_vec(value: Value) -> Option[Vec[Value]] {
+    let fields = match value.kind {
+        ValueKind.Struct(sbox) if sbox.qname == B.get_vec_type_qn() && sbox.fields.len() == 3 => sbox.fields,
+        _ => return None,
+    };
+    let len = match fields[1].kind {
+        ValueKind.Int(len) => len,
+        _ => return None,
+    };
+    if len == 0 {
+        return Some(Vec.new());
+    }
+    let (array, start) = match fields[0].kind {
+        ValueKind.Ptr(PtrValue.Slot(array, start)) => (array, start),
+        _ => return None,
+    };
+    if start < 0 || len < 0 || start + len > array.slots.len() {
+        return None;
+    }
+    let items = Vec.new();
+    for i in 0..len {
+        match array.slots[start + i] {
+            Some(item) => items.push(item),
+            None => return None,
+        }
+    }
+    Some(items)
+}
+
 fn generic_type(name: QualifiedName, args: Vec[TypeDef]) -> TypeDef {
     TypeDef.Named(NamedInfo(Name.inner(name), args))
 }

@@ -1,0 +1,83 @@
+module Siko.Resolver.Macros.Bridge.State {
+
+import Std.Map
+import Siko.AST.Data as D
+import Siko.AST.Identifier
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+
+// Per-invocation identity table. Opaque macro values contain only these IDs;
+// every compiler object is recovered from this table when the result returns.
+pub struct BridgeState {
+    next_name: Int,
+    names: Map[Int, QualifiedName],
+    next_type: Int,
+    types: Map[Int, TypeDef],
+    next_type_parameter: Int,
+    type_parameters: Map[Int, Identifier],
+    next_field: Int,
+    fields: Map[Int, D.FieldDef],
+    next_variant: Int,
+    variants: Map[Int, D.VariantDef],
+
+    pub fn new() -> BridgeState {
+        BridgeState(0, Map.new(), 0, Map.new(), 0, Map.new(), 0, Map.new(), 0, Map.new())
+    }
+
+    pub fn add_name(state: BridgeState, value: QualifiedName) -> Int {
+        let id = state.next_name;
+        state.next_name += 1;
+        state.names.insert(id, value);
+        id
+    }
+
+    pub fn name(state: BridgeState, id: Int) -> Option[QualifiedName] {
+        state.names.get(id)
+    }
+
+    pub fn add_type(state: BridgeState, value: TypeDef) -> Int {
+        let id = state.next_type;
+        state.next_type += 1;
+        state.types.insert(id, value);
+        id
+    }
+
+    pub fn type_def(state: BridgeState, id: Int) -> Option[TypeDef] {
+        state.types.get(id)
+    }
+
+    pub fn add_type_parameter(state: BridgeState, value: Identifier) -> Int {
+        let id = state.next_type_parameter;
+        state.next_type_parameter += 1;
+        state.type_parameters.insert(id, value);
+        id
+    }
+
+    pub fn type_parameter(state: BridgeState, id: Int) -> Option[Identifier] {
+        state.type_parameters.get(id)
+    }
+
+    pub fn add_field(state: BridgeState, value: D.FieldDef) -> Int {
+        let id = state.next_field;
+        state.next_field += 1;
+        state.fields.insert(id, value);
+        id
+    }
+
+    pub fn field(state: BridgeState, id: Int) -> Option[D.FieldDef] {
+        state.fields.get(id)
+    }
+
+    pub fn add_variant(state: BridgeState, value: D.VariantDef) -> Int {
+        let id = state.next_variant;
+        state.next_variant += 1;
+        state.variants.insert(id, value);
+        id
+    }
+
+    pub fn variant(state: BridgeState, id: Int) -> Option[D.VariantDef] {
+        state.variants.get(id)
+    }
+}
+
+}

@@ -1,10 +1,15 @@
 module Siko.Resolver.Macros.Bridge {
 
 import Siko.AST.QualifiedName
+import Siko.AST.Instances as IDef
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Strings
 import Siko.Interpreter.Value
+import Siko.Location
+import Siko.Resolver
+import Siko.Resolver.Macros.Bridge.Instances
+import Siko.Resolver.Macros.Bridge.State
 
 pub enum MacroOutput {
     InstanceDef,
@@ -12,16 +17,10 @@ pub enum MacroOutput {
 }
 
 pub enum MacroCallResult {
-    Success,
+    Instance(IDef.InstanceDef),
+    InstanceBody,
     NotSupported(String),
     InvalidResult(String),
-}
-
-fn expected_output(output: MacroOutput) -> QualifiedName {
-    match output {
-        MacroOutput.InstanceDef => B.get_macro_instance_def_qn(),
-        MacroOutput.InstanceBody => B.get_macro_instance_body_qn(),
-    }
 }
 
 fn is_empty_struct(value: Value, expected: QualifiedName) -> Bool {
@@ -47,7 +46,14 @@ fn decode_error(value: Value) -> MacroCallResult {
     }
 }
 
-pub fn decode_result(value: Value, output: MacroOutput) -> MacroCallResult {
+pub fn decode_result(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    module_name: I.String,
+    location: Location,
+    value: Value,
+    output: MacroOutput,
+) -> MacroCallResult {
     let result = match value.kind {
         ValueKind.Variant(vbox) => vbox,
         _ => return MacroCallResult.InvalidResult("macro entry point did not return Result"),
@@ -56,10 +62,22 @@ pub fn decode_result(value: Value, output: MacroOutput) -> MacroCallResult {
         return MacroCallResult.InvalidResult("macro Result variant must contain one value");
     }
     if result.variant_qname == B.get_result_ok_qn() {
-        if is_empty_struct(result.items[0], expected_output(output)) {
-            MacroCallResult.Success
-        } else {
-            MacroCallResult.InvalidResult("macro returned the wrong success value")
+        match output {
+            MacroOutput.InstanceDef => match decode_instance(
+                global_ctx,
+                state,
+                module_name,
+                location,
+                result.items[0],
+            ) {
+                Ok(generated) => MacroCallResult.Instance(generated),
+                Err(message) => MacroCallResult.InvalidResult(message),
+            },
+            MacroOutput.InstanceBody => if is_empty_struct(result.items[0], B.get_macro_instance_body_qn()) {
+                MacroCallResult.InstanceBody
+            } else {
+                MacroCallResult.InvalidResult("macro returned the wrong external instance body")
+            },
         }
     } else if result.variant_qname == B.get_result_err_qn() {
         decode_error(result.items[0])

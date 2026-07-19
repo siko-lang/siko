@@ -1,0 +1,197 @@
+module PartialOrdDerive {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn some_equal(
+    builder: FunctionBuilder,
+    some_variant: VariantDef,
+    equal_variant: VariantDef,
+) -> Expr {
+    builder.call(some_variant.constructor, [
+        builder.call(equal_variant.constructor, Vec.new()),
+    ])
+}
+
+fn compare_all(
+    builder: FunctionBuilder,
+    partial_cmp_fn: QualifiedName,
+    some_variant: VariantDef,
+    equal_variant: VariantDef,
+    lhs: Vec[Expr],
+    rhs: Vec[Expr],
+    index: Int,
+) -> Expr {
+    if index == lhs.len() {
+        return some_equal(builder, some_variant, equal_variant);
+    }
+    let result = builder.call(partial_cmp_fn, [lhs[index], rhs[index]]);
+    let equal_pattern = builder.variant_pattern(equal_variant, Vec.new());
+    let some_equal_pattern = builder.variant_pattern(some_variant, [equal_pattern]);
+    let other = builder.bind();
+    builder.match_expr(result, [
+        builder.arm(
+            some_equal_pattern,
+            compare_all(
+                builder,
+                partial_cmp_fn,
+                some_variant,
+                equal_variant,
+                lhs,
+                rhs,
+                index + 1,
+            ),
+        ),
+        builder.arm(other.pattern, other.value),
+    ])
+}
+
+pub macro PartialOrdMacro {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let struct_def = match ctx.target {
+            MacroTarget.Struct(def) => def,
+            MacroTarget.Enum(_) => return Err(MacroError.NotSupported("expected a struct")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialOrd")?;
+        let partial_cmp_fn = ctx.resolve_function("Std.Ops.PartialOrd.partial_cmp")?;
+        let some_variant = ctx.resolve_variant("Std.Option.Option.Some")?;
+        let equal_variant = ctx.resolve_variant("Std.Ordering.Ordering.Equal")?;
+
+        let builder = FunctionBuilder.new(partial_cmp_fn);
+        let lhs_value = builder.add_argument(struct_def.type_def);
+        let rhs_value = builder.add_argument(struct_def.type_def);
+        let lhs = Vec.new();
+        let rhs = Vec.new();
+        for field in struct_def.fields {
+            lhs.push(builder.field(lhs_value, field));
+            rhs.push(builder.field(rhs_value, field));
+        }
+        let method = builder.finish(compare_all(
+            builder,
+            partial_cmp_fn,
+            some_variant,
+            equal_variant,
+            lhs,
+            rhs,
+            0,
+        ));
+
+        let instance_builder = InstanceBuilder.new(trait_def, struct_def.type_def);
+        for type_parameter in struct_def.type_params {
+            instance_builder.add_bound(type_parameter, trait_def);
+        }
+        instance_builder.add_method(method);
+        Ok(instance_builder.finish())
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        let enum_def = match ctx.target {
+            MacroTarget.Enum(def) => def,
+            MacroTarget.Struct(_) => return Err(MacroError.NotSupported("expected an enum")),
+        };
+        let trait_def = ctx.resolve_trait("Std.Ops.PartialOrd")?;
+        let partial_cmp_fn = ctx.resolve_function("Std.Ops.PartialOrd.partial_cmp")?;
+        let discriminator = ctx.resolve_function("Std.Util.discriminator")?;
+        let some_variant = ctx.resolve_variant("Std.Option.Option.Some")?;
+        let equal_variant = ctx.resolve_variant("Std.Ordering.Ordering.Equal")?;
+
+        let builder = FunctionBuilder.new(partial_cmp_fn);
+        let lhs_value = builder.add_argument(enum_def.type_def);
+        let rhs_value = builder.add_argument(enum_def.type_def);
+        let arms = Vec.new();
+        for variant in enum_def.variants {
+            let lhs = builder.destructure(variant);
+            let rhs = builder.destructure(variant);
+            let pattern = builder.tuple_pattern([lhs.pattern, rhs.pattern]);
+            let body = compare_all(
+                builder,
+                partial_cmp_fn,
+                some_variant,
+                equal_variant,
+                lhs.values,
+                rhs.values,
+                0,
+            );
+            arms.push(builder.arm(pattern, body));
+        }
+        if enum_def.variants.len() > 1 {
+            let lhs_tag = builder.call(discriminator, [lhs_value]);
+            let rhs_tag = builder.call(discriminator, [rhs_value]);
+            arms.push(builder.arm(
+                builder.wildcard_pattern(),
+                builder.call(partial_cmp_fn, [lhs_tag, rhs_tag]),
+            ));
+        }
+        let method = builder.finish(builder.match_expr(
+            builder.tuple([lhs_value, rhs_value]),
+            arms,
+        ));
+
+        let instance_builder = InstanceBuilder.new(trait_def, enum_def.type_def);
+        for type_parameter in enum_def.type_params {
+            instance_builder.add_bound(type_parameter, trait_def);
+        }
+        instance_builder.add_method(method);
+        Ok(instance_builder.finish())
+    }
+}
+
+}
+
+module Main {
+
+import PartialOrdDerive
+
+@derive(PartialEq)
+@derive2(PartialOrdMacro)
+struct Duo[T] {
+    first: T,
+    second: T,
+}
+
+@derive(PartialEq)
+@derive2(PartialOrdMacro)
+enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+struct Unordered {}
+
+instance PartialEq[Unordered] {
+    fn eq(a: Unordered, b: Unordered) -> Bool {
+        True
+    }
+}
+
+instance PartialOrd[Unordered] {
+    fn partial_cmp(a: Unordered, b: Unordered) -> Option[Ordering] {
+        None
+    }
+}
+
+fn print_ordering(value: Option[Ordering]) {
+    match value {
+        Some(Ordering.Less) => println("less"),
+        Some(Ordering.Equal) => println("equal"),
+        Some(Ordering.Greater) => println("greater"),
+        None => println("none"),
+    }
+}
+
+fn main() {
+    print_ordering(Duo(1, 2).partial_cmp(Duo(1, 3)));
+    print_ordering(Duo(1, 2).partial_cmp(Duo(1, 2)));
+    print_ordering(Duo(2, 0).partial_cmp(Duo(1, 9)));
+
+    let empty: Choice[Int] = Choice.Empty;
+    print_ordering(empty.partial_cmp(Choice.One(0)));
+    print_ordering(Choice.Pair(1, 3).partial_cmp(Choice.Pair(1, 2)));
+    print_ordering(Choice.One(4).partial_cmp(Choice.One(4)));
+    print_ordering(Duo(Unordered(), Unordered()).partial_cmp(Duo(Unordered(), Unordered())));
+}
+
+}
