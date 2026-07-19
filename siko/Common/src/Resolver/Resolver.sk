@@ -661,6 +661,26 @@ pub struct Resolver {
         Ok(())
     }
 
+    pub fn register_macro_external_instance(
+        resolver: Resolver,
+        instance_def: InstanceDef,
+    ) -> Result[(), ResolveError] {
+        let qualified_name = instance_def.qualified_name.unwrap();
+        let is_named = instance_def.name.is_some();
+        for method in instance_def.methods {
+            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+        }
+        instance_def.methods = Vec.new();
+        if is_named {
+            resolver.ctx.named_instances.insert(qualified_name, instance_def);
+        } else {
+            instance_def.name = Some(instance_def.synth_name()?);
+            resolver.ctx.canonical_instances.push(instance_def);
+        }
+        resolver.ctx.all_instances.insert(qualified_name, instance_def);
+        Ok(())
+    }
+
     fn process_instance(
         resolver: Resolver,
         module_name: I.String,
@@ -1431,7 +1451,6 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
 
 
 

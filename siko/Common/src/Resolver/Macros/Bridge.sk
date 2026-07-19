@@ -1,6 +1,5 @@
 module Siko.Resolver.Macros.Bridge {
 
-import Siko.AST.QualifiedName
 import Siko.AST.Instances as IDef
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
@@ -13,21 +12,14 @@ import Siko.Resolver.Macros.Bridge.State
 
 pub enum MacroOutput {
     InstanceDef,
-    InstanceBody,
+    InstanceBody(instance_def: IDef.InstanceDef),
 }
 
 pub enum MacroCallResult {
-    Instance(IDef.InstanceDef),
-    InstanceBody,
+    AttachedInstance(IDef.InstanceDef),
+    ExternalInstance(IDef.InstanceDef),
     NotSupported(String),
     InvalidResult(String),
-}
-
-fn is_empty_struct(value: Value, expected: QualifiedName) -> Bool {
-    match value.kind {
-        ValueKind.Struct(sbox) => sbox.qname == expected && sbox.fields.is_empty(),
-        _ => False,
-    }
 }
 
 fn decode_error(value: Value) -> MacroCallResult {
@@ -70,13 +62,17 @@ pub fn decode_result(
                 location,
                 result.items[0],
             ) {
-                Ok(generated) => MacroCallResult.Instance(generated),
+                Ok(generated) => MacroCallResult.AttachedInstance(generated),
                 Err(message) => MacroCallResult.InvalidResult(message),
             },
-            MacroOutput.InstanceBody => if is_empty_struct(result.items[0], B.get_macro_instance_body_qn()) {
-                MacroCallResult.InstanceBody
-            } else {
-                MacroCallResult.InvalidResult("macro returned the wrong external instance body")
+            MacroOutput.InstanceBody(instance_def) => match decode_instance_body(
+                global_ctx,
+                state,
+                instance_def,
+                result.items[0],
+            ) {
+                Ok(generated) => MacroCallResult.ExternalInstance(generated),
+                Err(message) => MacroCallResult.InvalidResult(message),
             },
         }
     } else if result.variant_qname == B.get_result_err_qn() {

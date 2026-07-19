@@ -43,14 +43,12 @@ fn invoke_request(
             request.location,
         )),
     };
-    let external = match request.invocation {
-        MacroInvocation.Attached => False,
-        MacroInvocation.External(_) => True,
-    };
-    let expected = if external {
-        Bridge.MacroOutput.InstanceBody
-    } else {
-        Bridge.MacroOutput.InstanceDef
+    let (external, expected) = match request.invocation {
+        MacroInvocation.Attached => (False, Bridge.MacroOutput.InstanceDef),
+        MacroInvocation.External(instance_def) => (
+            True,
+            Bridge.MacroOutput.InstanceBody(instance_def),
+        ),
     };
     let state = BridgeState.new();
     let context = MacroInput.macro_context(global_ctx, state, request.target, external, request.args);
@@ -73,8 +71,8 @@ fn invoke_request(
         value,
         expected,
     ) {
-        Bridge.MacroCallResult.Instance(generated) => resolver.register_derived_instance(generated),
-        Bridge.MacroCallResult.InstanceBody => Ok(()),
+        Bridge.MacroCallResult.AttachedInstance(generated) => resolver.register_derived_instance(generated),
+        Bridge.MacroCallResult.ExternalInstance(generated) => resolver.register_macro_external_instance(generated),
         Bridge.MacroCallResult.NotSupported(message) => Err(ResolveError.MacroNotSupported(
             request.provider,
             message,

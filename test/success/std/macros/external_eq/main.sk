@@ -1,0 +1,59 @@
+module ExternalEqDerive {
+
+import Std.Macro
+import Std.Macro.InstanceBuilder
+
+pub macro ExternalEqMacro {
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        match ctx.target {
+            MacroTarget.Struct(_) => Ok(InstanceBodyBuilder.new().finish()),
+            MacroTarget.Enum(_) => Err(MacroError.NotSupported("expected a struct")),
+        }
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        match ctx.target {
+            MacroTarget.Enum(_) => Ok(InstanceBodyBuilder.new().finish()),
+            MacroTarget.Struct(_) => Err(MacroError.NotSupported("expected an enum")),
+        }
+    }
+}
+
+}
+
+module ExternalEqTypes {
+
+@derive(PartialEq)
+pub struct Wrapper[T] {
+    pub value: T,
+}
+
+@derive(PartialEq)
+pub enum Choice[T] {
+    Empty,
+    One(T),
+}
+
+}
+
+module Main {
+
+import ExternalEqDerive
+import ExternalEqTypes
+
+instance[T: Eq[T]] Eq[Wrapper[T]] = auto2(ExternalEqMacro)
+instance[T: Eq[T]] Eq[Choice[T]] = auto2(ExternalEqMacro)
+
+fn require_eq[T: Eq[T]](value: T) -> T {
+    value
+}
+
+fn main() {
+    println(require_eq(Wrapper("struct")).value);
+    match require_eq(Choice.One("enum")) {
+        Choice.One(value) => println(value),
+        Choice.Empty => println("wrong variant"),
+    }
+}
+
+}

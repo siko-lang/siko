@@ -80,6 +80,17 @@ fn decode_type_args(
     Ok(Some(TypeArgDefs(type_args, bounds)))
 }
 
+fn external_method_type_args(type_arg_defs: Option[TypeArgDefs]) -> Option[TypeArgDefs] {
+    type_arg_defs.map(|defs| {
+        let bounds = defs.bounds.iter().map(|bound| {
+            let bound = bound.clone();
+            bound.origin = BoundOrigin.InstanceContext;
+            bound
+        }).collect();
+        TypeArgDefs(defs.type_args, bounds)
+    })
+}
+
 pub fn decode_instance(
     global_ctx: GlobalResolverContext,
     state: BridgeState,
@@ -132,6 +143,43 @@ pub fn decode_instance(
         external_derived_instance_info: None,
         macro_derive_info: None,
     ))
+}
+
+pub fn decode_instance_body(
+    global_ctx: GlobalResolverContext,
+    state: BridgeState,
+    instance_def: IDef.InstanceDef,
+    value: Value,
+) -> Result[IDef.InstanceDef, String] {
+    let fields = match read_struct(value, B.get_macro_instance_body_qn(), 1) {
+        Some(fields) => fields,
+        None => return Err("invalid InstanceBodyBuilder result"),
+    };
+    let method_values = match read_vec(fields[0]) {
+        Some(methods) => methods,
+        None => return Err("external instance methods are not a Vec"),
+    };
+    let trait_name = instance_def.subject.trait_name().resolved();
+    let target = instance_def.args[0];
+    let parent = instance_def.qualified_name.unwrap();
+    let method_type_arg_defs = external_method_type_args(instance_def.type_arg_defs);
+    for method_value in method_values {
+        let (method, short_name) = decode_function(
+            global_ctx,
+            state,
+            parent,
+            trait_name,
+            target,
+            method_type_arg_defs,
+            instance_def.module_name,
+            instance_def.location,
+            method_value,
+        )?;
+        instance_def.methods.push(method);
+        instance_def.method_names.push(short_name);
+    }
+    instance_def.macro_derive_info = None;
+    Ok(instance_def)
 }
 
 }

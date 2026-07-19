@@ -1,0 +1,145 @@
+module ExternalOrdDerive {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.InstanceBuilder
+
+fn compare_all(
+    builder: FunctionBuilder,
+    cmp_fn: QualifiedName,
+    equal_variant: VariantDef,
+    lhs: Vec[Expr],
+    rhs: Vec[Expr],
+    index: Int,
+) -> Expr {
+    if index == lhs.len() {
+        return builder.call(equal_variant.constructor, Vec.new());
+    }
+    let result = builder.call(cmp_fn, [lhs[index], rhs[index]]);
+    let equal_pattern = builder.variant_pattern(equal_variant, Vec.new());
+    let other = builder.bind();
+    builder.match_expr(result, [
+        builder.arm(
+            equal_pattern,
+            compare_all(builder, cmp_fn, equal_variant, lhs, rhs, index + 1),
+        ),
+        builder.arm(other.pattern, other.value),
+    ])
+}
+
+pub macro ExternalOrdMacro {
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        let struct_def = match ctx.target {
+            MacroTarget.Struct(def) => def,
+            MacroTarget.Enum(_) => return Err(MacroError.NotSupported("expected a struct")),
+        };
+        let cmp_fn = ctx.resolve_function("Std.Ops.Ord.cmp")?;
+        let equal_variant = ctx.resolve_variant("Std.Ordering.Ordering.Equal")?;
+
+        let builder = FunctionBuilder.new(cmp_fn);
+        let lhs_value = builder.add_argument(struct_def.type_def);
+        let rhs_value = builder.add_argument(struct_def.type_def);
+        let lhs = Vec.new();
+        let rhs = Vec.new();
+        for field in struct_def.fields {
+            lhs.push(builder.field(lhs_value, field));
+            rhs.push(builder.field(rhs_value, field));
+        }
+        let method = builder.finish(compare_all(
+            builder, cmp_fn, equal_variant, lhs, rhs, 0,
+        ));
+
+        let body_builder = InstanceBodyBuilder.new();
+        body_builder.add_method(method);
+        Ok(body_builder.finish())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        let enum_def = match ctx.target {
+            MacroTarget.Enum(def) => def,
+            MacroTarget.Struct(_) => return Err(MacroError.NotSupported("expected an enum")),
+        };
+        let cmp_fn = ctx.resolve_function("Std.Ops.Ord.cmp")?;
+        let discriminator = ctx.resolve_function("Std.Util.discriminator")?;
+        let equal_variant = ctx.resolve_variant("Std.Ordering.Ordering.Equal")?;
+
+        let builder = FunctionBuilder.new(cmp_fn);
+        let lhs_value = builder.add_argument(enum_def.type_def);
+        let rhs_value = builder.add_argument(enum_def.type_def);
+        let arms = Vec.new();
+        for variant in enum_def.variants {
+            let lhs = builder.destructure(variant);
+            let rhs = builder.destructure(variant);
+            let pattern = builder.tuple_pattern([lhs.pattern, rhs.pattern]);
+            let body = compare_all(
+                builder, cmp_fn, equal_variant, lhs.values, rhs.values, 0,
+            );
+            arms.push(builder.arm(pattern, body));
+        }
+        if enum_def.variants.len() > 1 {
+            let lhs_tag = builder.call(discriminator, [lhs_value]);
+            let rhs_tag = builder.call(discriminator, [rhs_value]);
+            arms.push(builder.arm(
+                builder.wildcard_pattern(),
+                builder.call(cmp_fn, [lhs_tag, rhs_tag]),
+            ));
+        }
+        let method = builder.finish(builder.match_expr(
+            builder.tuple([lhs_value, rhs_value]),
+            arms,
+        ));
+
+        let body_builder = InstanceBodyBuilder.new();
+        body_builder.add_method(method);
+        Ok(body_builder.finish())
+    }
+}
+
+}
+
+module ExternalOrdTypes {
+
+@derive(PartialEq, Eq, PartialOrd)
+pub struct Duo[T] {
+    pub first: T,
+    pub second: T,
+}
+
+@derive(PartialEq, Eq, PartialOrd)
+pub enum Choice[T] {
+    Empty,
+    One(T),
+    Pair(T, T),
+}
+
+}
+
+module Main {
+
+import ExternalOrdDerive
+import ExternalOrdTypes
+
+instance[T: Ord[T]] Ord[Duo[T]] = auto2(ExternalOrdMacro)
+instance[T: Ord[T]] Ord[Choice[T]] = auto2(ExternalOrdMacro)
+
+fn print_ordering(value: Ordering) {
+    match value {
+        Ordering.Less => println("less"),
+        Ordering.Equal => println("equal"),
+        Ordering.Greater => println("greater"),
+    }
+}
+
+fn main() {
+    print_ordering(Duo(1, 2).cmp(Duo(1, 3)));
+    print_ordering(Duo(1, 2).cmp(Duo(1, 2)));
+    print_ordering(Duo(2, 0).cmp(Duo(1, 9)));
+
+    let empty: Choice[Int] = Choice.Empty;
+    print_ordering(empty.cmp(Choice.One(0)));
+    print_ordering(Choice.Pair(1, 3).cmp(Choice.Pair(1, 2)));
+    print_ordering(Choice.One(4).cmp(Choice.One(4)));
+}
+
+}

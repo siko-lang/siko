@@ -20,7 +20,7 @@ pub enum MacroTarget {
 
 pub enum MacroInvocation {
     Attached,
-    External(trait_name: QualifiedName),
+    External(instance_def: InstanceDef),
 }
 
 pub struct MacroRequest {
@@ -95,11 +95,15 @@ fn collect_external(
     let ctx = ResolverContext.new(TypeResolver.new(module_resolver), global_ctx);
     let resolved = instance_def.resolve(ctx)?;
     let trait_name = resolved.subject.try_trait_name()?.resolved();
+    resolved.qualified_name = Some(match instance_def.name {
+        Some(name) => QualifiedName.new_named_instance(module_name, name.name()),
+        None => QualifiedName.new_unnamed_instance(trait_name.name(), resolved.args.clone()),
+    });
     let target = external_target(global_ctx, resolved);
     out.push(MacroRequest(
         provider,
         target,
-        MacroInvocation.External(trait_name),
+        MacroInvocation.External(resolved),
         app.args,
         module_name,
         instance_def.location,
