@@ -8,7 +8,6 @@ import Siko.Monomorphizer.DataPreprocessor
 import Siko.Monomorphizer.Statistics
 import Siko.AST.Type
 import Siko.AST.QualifiedName
-import Siko.Constants.Builtins as B
 import Siko.AST.Expr
 import Siko.Location
 import Siko.HIR.Program
@@ -262,16 +261,24 @@ pub struct Monomorphizer {
 
     fn run(mono: Monomorphizer) {
         mono.data_eat_deps = preprocess_data_eat_deps(mono.source);
-        let main_key = B.get_main_entry_qn();
-        if !mono.source.functions.contains_key(main_key) {
-            panic("mono: `Main.main` not found in program");
+        for entry_point in mono.source.entry_points {
+            if !mono.source.functions.contains_key(entry_point) {
+                mono.errors.push(MonoError.EntryPointNotFound(entry_point));
+            }
         }
-        mono.fn_queue.push_back(FnWork(
-            main_key,
-            [],
-            [],
-            MonoContext.new(),
-        ));
+        if !mono.errors.is_empty() {
+            return;
+        }
+        for entry_point in mono.source.entry_points {
+            let mono_ctx = MonoContext.new();
+            mono.output.entry_points.push(fn_mono_key(mono, entry_point, [], [], mono_ctx));
+            mono.fn_queue.push_back(FnWork(
+                qname: entry_point,
+                type_args: [],
+                witnesses: [],
+                mono_ctx: mono_ctx,
+            ));
+        }
 
         loop {
             mono.clear_type_cache();
