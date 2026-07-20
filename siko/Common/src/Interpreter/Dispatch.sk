@@ -7,6 +7,8 @@ import Siko.Format.Utils
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Interpreter.Error
+import Siko.Interpreter.InstanceCache
+import Siko.Interpreter.LookupCache
 import Siko.Interpreter.Types
 import Siko.Interpreter.Witnesses
 import Siko.Location
@@ -33,6 +35,7 @@ pub struct DispatchedCall {
 // to the trait method's default body.
 pub fn dispatch_trait_call(
     program: Program,
+    cache: InstanceCache,
     callee: QualifiedName,
     fdef: FunctionDef,
     args: Vec[CallArg],
@@ -40,13 +43,14 @@ pub fn dispatch_trait_call(
     context: CallContext,
     location: Location,
 ) -> Result[DispatchedCall, InterpreterError] {
-    dispatch_with_self(program, callee, fdef, args, None, expected, context, location)
+    dispatch_with_self(program, cache, callee, fdef, args, None, expected, context, location)
 }
 
 // `SomeType.method(args)`: dispatch with the trait's primary type param
 // pinned to the explicitly named type.
 pub fn dispatch_type_associated_call(
     program: Program,
+    cache: InstanceCache,
     callee: QualifiedName,
     fdef: FunctionDef,
     self_type: TypeDef,
@@ -55,11 +59,12 @@ pub fn dispatch_type_associated_call(
     context: CallContext,
     location: Location,
 ) -> Result[DispatchedCall, InterpreterError] {
-    dispatch_with_self(program, callee, fdef, args, Some(self_type), expected, context, location)
+    dispatch_with_self(program, cache, callee, fdef, args, Some(self_type), expected, context, location)
 }
 
 fn dispatch_with_self(
     program: Program,
+    cache: InstanceCache,
     callee: QualifiedName,
     fdef: FunctionDef,
     args: Vec[CallArg],
@@ -110,6 +115,7 @@ fn dispatch_with_self(
         .collect();
     let resolution = resolve_bound(
         program,
+        cache,
         context,
         trait_name,
         symbolic_query,
@@ -140,6 +146,7 @@ fn dispatch_with_self(
 // resolve_trait_method).
 pub fn resolve_method_call(
     program: Program,
+    cache: LookupCache,
     receiver_ty: TypeDef,
     method: I.String,
     module_name: I.String,
@@ -149,16 +156,23 @@ pub fn resolve_method_call(
         TypeDef.Named(NamedInfo(name, _)) => name.resolved(),
         _ => return Err(error(ErrorKind.InvalidReceiver(format_type(receiver_ty)), location)),
     };
+    if let Some(target) = cache.get_method(type_qname, method, module_name) {
+        return Ok(target);
+    }
     if let Some(struct_def) = program.structs.get(type_qname) {
         if let Some(mq) = struct_def.method_map.names.get(method) {
+            cache.insert_method(type_qname, method, module_name, mq);
             return Ok(mq);
         }
     } else if let Some(enum_def) = program.enums.get(type_qname) {
         if let Some(mq) = enum_def.method_map.names.get(method) {
+            cache.insert_method(type_qname, method, module_name, mq);
             return Ok(mq);
         }
     }
-    resolve_trait_method(program, type_qname, method, module_name, location)
+    let target = resolve_trait_method(program, type_qname, method, module_name, location)?;
+    cache.insert_method(type_qname, method, module_name, target);
+    Ok(target)
 }
 
 fn resolve_trait_method(

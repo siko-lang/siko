@@ -1,11 +1,10 @@
 module Siko.Resolver.Macros.Runner {
 
-import Siko.AST.Module as M
 import Siko.HIR.Program
 import Siko.Instances.InstanceResolver
 import Siko.Constants.Builtins as B
-import Siko.Interner as I
 import Siko.Interpreter.Interpreter as Interp
+import Siko.Interpreter.Cache
 import Siko.Resolver
 import Siko.Resolver.Error
 import Siko.Resolver.Macros.Bridge as Bridge
@@ -18,6 +17,7 @@ fn invoke_request(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
     program: Program,
+    cache: InterpreterCache,
     request: MacroRequest,
 ) -> Result[(), ResolveError] {
     let entry = match request.target {
@@ -59,12 +59,13 @@ fn invoke_request(
         request.location,
         request.target,
     );
-    let value = match Interp.invoke_with_extensions(
+    let value = match Interp.invoke_with_extensions_and_cache(
         program,
         entry_qname,
         [context],
         request.location,
         extensions,
+        cache,
     ) {
         Ok(value) => value,
         Err(error) => return Err(ResolveError.MacroExecutionFailed(error)),
@@ -92,20 +93,16 @@ fn invoke_request(
     }
 }
 
-pub fn run_macro_group(
+pub fn run_macro_requests(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
-    modules: Vec[M.Module],
-    group: Vec[I.String],
+    requests: Vec[MacroRequest],
     program: Program,
 ) -> Result[(), ResolveError] {
-    let requests = collect_requests(global_ctx, modules, group)?;
-    if requests.is_empty() {
-        return Ok(());
-    }
     program.instance_resolver = InstanceResolver.build(program);
+    let cache = InterpreterCache.new();
     for request in requests {
-        invoke_request(resolver, global_ctx, program, request)?;
+        invoke_request(resolver, global_ctx, program, cache, request)?;
     }
     Ok(())
 }

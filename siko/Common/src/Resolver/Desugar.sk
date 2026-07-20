@@ -263,8 +263,12 @@ pub fn desugar_unary_op(op: UnaryOp, operand: Expr) -> ExprKind {
     // sign into the literal so its type is inferred as one (Neg's associated
     // Output would otherwise hide the expected type from the literal).
     if let UnaryOp.Neg = op {
-        if let ExprKind.IntLiteral(s) = operand.kind {
-            return ExprKind.IntLiteral("-" + s);
+        if let ExprKind.IntLiteral(text, value) = operand.kind {
+            let value = match value {
+                Some(value) => Some(0 - value),
+                None => None,
+            };
+            return ExprKind.IntLiteral(I.intern("-" + I.resolve(text)), value);
         }
         if let ExprKind.FloatLiteral(s) = operand.kind {
             return ExprKind.FloatLiteral("-" + s);

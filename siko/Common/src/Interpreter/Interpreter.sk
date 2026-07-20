@@ -12,9 +12,11 @@ import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Interpreter.Builtins
+import Siko.Interpreter.Cache
 import Siko.Interpreter.Dispatch
 import Siko.Interpreter.Error
 import Siko.Interpreter.Extensions
+import Siko.Interpreter.LookupCache
 import Siko.Interpreter.Memory
 import Siko.Interpreter.Strings
 import Siko.Interpreter.SymbolicTypes
@@ -49,11 +51,26 @@ pub fn invoke_with_extensions(
     location: Location,
     extensions: InterpreterExtensions,
 ) -> Result[Value, InterpreterError] {
+    invoke_with_extensions_and_cache(program, entry, args, location, extensions, InterpreterCache.new())
+}
+
+// Reuse resolution and structural lookups while repeatedly invoking the same
+// immutable Program. Callers are responsible for discarding the cache when
+// instance tables or definitions change.
+pub fn invoke_with_extensions_and_cache(
+    program: Program,
+    entry: QualifiedName,
+    args: Vec[Value],
+    location: Location,
+    extensions: InterpreterExtensions,
+    cache: InterpreterCache,
+) -> Result[Value, InterpreterError] {
     let interp = Interpreter(
         program: program,
         call_stack: Vec.new(),
         depth_limit: 500,
         extensions: extensions,
+        cache: cache,
     );
     let fdef = match program.functions.get(entry) {
         Some(f) => f,
@@ -76,6 +93,7 @@ struct Interpreter {
     call_stack: Vec[FrameInfo],
     depth_limit: Int,
     extensions: InterpreterExtensions,
+    cache: InterpreterCache,
 }
 
 // One function invocation. The resolver alpha-renames every variable to be
@@ -153,7 +171,7 @@ fn call_function_with_bounds(
     match fdef.kind {
         FunctionDefKind.Regular => execute_body(interp, caller, fdef, qname, args, provided, expected, location),
         FunctionDefKind.TraitMethod => {
-            let dispatched = dispatch_trait_call(interp.program, qname, fdef, args, expected, caller, location)?;
+            let dispatched = dispatch_trait_call(interp.program, interp.cache.instances, qname, fdef, args, expected, caller, location)?;
             match dispatched.target {
                 CallTarget.Concrete(target) => {
                     let target_def = match interp.program.functions.get(target) {
@@ -195,7 +213,7 @@ fn execute_body(
         None => return Err(error(ErrorKind.MissingBody(display(qname)), location)),
     };
     let result_hint = function_result_hint(interp.program, fdef, args, expected);
-    let context = build_call_context(interp.program, caller, fdef, args, result_hint, provided, location)?;
+    let context = build_call_context(interp.program, interp.cache.instances, caller, fdef, args, result_hint, provided, location)?;
     let frame = Frame(
         vars: Map.new(),
         var_types: Map.new(),
@@ -321,6 +339,28 @@ fn construct_struct(interp: Interpreter, caller: CallContext, qname: QualifiedNa
 }
 
 fn construct_variant(interp: Interpreter, qname: QualifiedName, args: Vec[Value], location: Location) -> Result[Value, InterpreterError] {
+    let metadata = variant_metadata(interp, qname, location)?;
+    if args.len() != metadata.item_count {
+        return Err(error(ErrorKind.WrongArgCount(display(qname), metadata.item_count, args.len()), location));
+    }
+    let items = Vec.new();
+    for arg in args {
+        items.push(pass_value(interp.program, arg));
+    }
+    let value = Value(TypeDef.Wildcard, ValueKind.Variant(VariantBox(
+        enum_qname: metadata.enum_name,
+        variant_qname: qname,
+        tag: metadata.tag,
+        items: items,
+    )));
+    value.ty = runtime_type(interp.program, value);
+    Ok(value)
+}
+
+fn variant_metadata(interp: Interpreter, qname: QualifiedName, location: Location) -> Result[VariantMetadata, InterpreterError] {
+    if let Some(metadata) = interp.cache.lookups.get_variant(qname) {
+        return Ok(metadata);
+    }
     let enum_qname = match interp.program.variant_enum_map.get(qname) {
         Some(e) => e,
         None => return Err(error(ErrorKind.Internal("variant not found: ${display(qname)}"), location)),
@@ -329,35 +369,14 @@ fn construct_variant(interp: Interpreter, qname: QualifiedName, args: Vec[Value]
         Some(ed) => ed,
         None => return Err(error(ErrorKind.Internal("enum not found: ${display(enum_qname)}"), location)),
     };
-    let tag = 0;
-    let found = False;
-    let item_count = 0;
-    for (i, variant) in enum_def.variants.iter().enumerate() {
+    for (tag, variant) in enum_def.variants.iter().enumerate() {
         if variant.qualified_name.unwrap_or(qname) == qname {
-            tag = i;
-            item_count = variant.items.len();
-            found = True;
-            break;
+            let metadata = VariantMetadata(enum_qname, tag, variant.items.len());
+            interp.cache.lookups.insert_variant(qname, metadata);
+            return Ok(metadata);
         }
     }
-    if !found {
-        return Err(error(ErrorKind.Internal("variant ${display(qname)} not in enum ${display(enum_qname)}"), location));
-    }
-    if args.len() != item_count {
-        return Err(error(ErrorKind.WrongArgCount(display(qname), item_count, args.len()), location));
-    }
-    let items = Vec.new();
-    for arg in args {
-        items.push(pass_value(interp.program, arg));
-    }
-    let value = Value(TypeDef.Wildcard, ValueKind.Variant(VariantBox(
-        enum_qname: enum_qname,
-        variant_qname: qname,
-        tag: tag,
-        items: items,
-    )));
-    value.ty = runtime_type(interp.program, value);
-    Ok(value)
+    Err(error(ErrorKind.Internal("variant ${display(qname)} not in enum ${display(enum_qname)}"), location))
 }
 
 // ── Expressions ───────────────────────────────────────────────────────────────
@@ -392,11 +411,15 @@ fn eval_expr_inner(
 ) -> Result[Flow, InterpreterError] {
     let location = expr.location;
     match expr.kind {
-        ExprKind.IntLiteral(s) => {
-            match parse_int_literal(s) {
-                Some(n) => Ok(Flow.Val(Value(literal_int_type(), ValueKind.Int(n)))),
-                None => Err(error(ErrorKind.InvalidLiteral(s), location)),
-            }
+        ExprKind.IntLiteral(text, cached) => {
+            let value = match cached {
+                Some(value) => value,
+                None => match parse_uncached_int_literal(I.resolve(text)) {
+                    Some(value) => value,
+                    None => return Err(error(ErrorKind.InvalidLiteral(I.resolve(text)), location)),
+                },
+            };
+            Ok(Flow.Val(Value(literal_int_type(), ValueKind.Int(value))))
         }
         ExprKind.FloatLiteral(s) => {
             match parse_float_literal(s) {
@@ -528,7 +551,7 @@ fn eval_expr_inner(
             };
             let call_args: Vec[CallArg] = [make_call_arg(interp, frame, receiver, recv)];
             let receiver_ty = dispatch_type(interp.program, recv);
-            let target = resolve_method_call(interp.program, receiver_ty, method.name(), frame.module_name, location)?;
+            let target = resolve_method_call(interp.program, interp.cache.lookups, receiver_ty, method.name(), frame.module_name, location)?;
             let hints = function_call_hints(interp.program, target, expected);
             hints.observe_arg(0, receiver_ty);
             for (index, arg) in args.iter().enumerate() {
@@ -662,7 +685,7 @@ fn call_type_associated(
     };
     match fdef.kind {
         FunctionDefKind.TraitMethod => {
-            let dispatched = dispatch_type_associated_call(interp.program, fn_name, fdef, type_def, args, expected, frame.context, location)?;
+            let dispatched = dispatch_type_associated_call(interp.program, interp.cache.instances, fn_name, fdef, type_def, args, expected, frame.context, location)?;
             match dispatched.target {
                 CallTarget.Concrete(target) => {
                     let target_def = match interp.program.functions.get(target) {
@@ -984,10 +1007,13 @@ fn match_pattern(interp: Interpreter, frame: Frame, pattern: Pattern, value: Val
                 }
             }
         }
-        PatternKind.IntLiteral(s) => {
-            let expected = match parse_int_literal(I.resolve(s)) {
-                Some(n) => n,
-                None => return Err(error(ErrorKind.InvalidLiteral(I.resolve(s)), location)),
+        PatternKind.IntLiteral(text, cached) => {
+            let expected = match cached {
+                Some(value) => value,
+                None => match parse_uncached_int_literal(I.resolve(text)) {
+                    Some(value) => value,
+                    None => return Err(error(ErrorKind.InvalidLiteral(I.resolve(text)), location)),
+                },
             };
             match value.kind {
                 ValueKind.Int(n) => Ok(n == expected),
@@ -1043,6 +1069,12 @@ fn make_call_arg(interp: Interpreter, frame: Frame, expr: Expr, value: Value) ->
 }
 
 fn field_index(interp: Interpreter, sbox: StructBox, field: I.String, location: Location) -> Result[Int, InterpreterError] {
+    if let Some(index) = interp.cache.lookups.get_field(sbox.qname, field) {
+        if index >= sbox.fields.len() {
+            return Err(error(ErrorKind.Internal("struct value is missing fields"), location));
+        }
+        return Ok(index);
+    }
     match interp.program.structs.get(sbox.qname) {
         Some(struct_def) => {
             for (i, f) in struct_def.fields.iter().enumerate() {
@@ -1050,6 +1082,7 @@ fn field_index(interp: Interpreter, sbox: StructBox, field: I.String, location: 
                     if i >= sbox.fields.len() {
                         return Err(error(ErrorKind.Internal("struct value is missing fields"), location));
                     }
+                    interp.cache.lookups.insert_field(sbox.qname, field, i);
                     return Ok(i);
                 }
             }
@@ -1059,52 +1092,19 @@ fn field_index(interp: Interpreter, sbox: StructBox, field: I.String, location: 
     }
 }
 
-fn parse_int_literal(s: String) -> Option[Int] {
-    let bytes = s.as_slice();
-    let n = s.len();
-    if n == 0 {
-        return None;
-    }
-    let i = 0;
-    let negative = False;
-    if bytes[0] == '-' {
-        negative = True;
-        i = 1;
-    }
-    if i >= n {
-        return None;
-    }
-    let value = 0;
-    if n - i > 2 && bytes[i] == '0' && bytes[i + 1] == 'x' {
-        i += 2;
-        while i < n {
-            let c = bytes[i];
-            let digit = if c >= '0' && c <= '9' {
-                c.as_int() - 48
-            } else if c >= 'a' && c <= 'f' {
-                c.as_int() - 87
-            } else if c >= 'A' && c <= 'F' {
-                c.as_int() - 55
-            } else {
-                return None;
-            };
-            value = value * 16 + digit;
-            i += 1;
-        }
-    } else {
-        while i < n {
-            let c = bytes[i];
-            if c < '0' || c > '9' {
-                return None;
-            }
-            value = value * 10 + (c.as_int() - 48);
-            i += 1;
-        }
-    }
-    if negative {
-        Some(0 - value)
-    } else {
-        Some(value)
+// Values outside signed Int are deliberately absent from the AST cache. The
+// interpreter only reparses those exceptional literals, preserving the old
+// 64-bit bit-pattern behavior for typed unsigned values.
+fn parse_uncached_int_literal(text: String) -> Option[Int] {
+    match text.strip_prefix("-") {
+        Some(magnitude) => match magnitude.parse_int(10) {
+            Ok(value) => Some(0 - value),
+            Err(_) => None,
+        },
+        None => match text.parse_int(10) {
+            Ok(value) => Some(value),
+            Err(_) => None,
+        },
     }
 }
 
@@ -1171,7 +1171,7 @@ fn parse_float_literal(s: String) -> Option[F64] {
 // Names the node kind for unsupported-expression errors.
 fn expr_kind_name(kind: ExprKind) -> String {
     match kind {
-        ExprKind.IntLiteral(_) => "integer literal",
+        ExprKind.IntLiteral(_, _) => "integer literal",
         ExprKind.FloatLiteral(_) => "float literal",
         ExprKind.StringLiteral(_) => "string literal",
         ExprKind.CharLiteral(_) => "char literal",

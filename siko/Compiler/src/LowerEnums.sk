@@ -102,13 +102,13 @@ struct EnumLowerer {
                 if is_enum {
                     return l.tag_read(l.lower_expr(inner), loc);
                 }
-                return Expr(ExprKind.IntLiteral("0"), loc, Some(l.int_ty));
+                return Expr(ExprKind.IntLiteral(I.intern("0"), Some(0)), loc, Some(l.int_ty));
             }
             ExprKind.ReadVariant(value, _) => {
                 let result_ty = expr.ty.expect("lower-enums: ReadVariant has no type");
                 return l.payload_read(l.lower_expr(value), result_ty, loc);
             }
-            ExprKind.IntLiteral(_) |
+            ExprKind.IntLiteral(_, _) |
             ExprKind.FloatLiteral(_) |
             ExprKind.StringLiteral(_) |
             ExprKind.CharLiteral(_) |
@@ -308,7 +308,7 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
     b.assign_field(
         b.var_expr(result, ret_ty),
         VP.container_tag_name(),
-        Expr(ExprKind.IntLiteral("${tag}"), b.loc, Some(u32_ty)),
+        Expr(ExprKind.IntLiteral(I.intern("${tag}"), Some(tag)), b.loc, Some(u32_ty)),
     );
     if let Some(v) = variant_var {
         // *(P*)&result.payload = variant  (P* is P** for heap enums)

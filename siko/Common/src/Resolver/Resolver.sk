@@ -17,6 +17,7 @@ import Siko.Resolver.Autoderive.Fold
 import Siko.Resolver.Autoderive.FromInt
 import Siko.Resolver.Autoderive.Json
 import Siko.Resolver.Macros.Runner
+import Siko.Resolver.Macros.Request
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
@@ -216,7 +217,10 @@ pub struct Resolver {
                 resolver.process_external_derives(modules, module_name)?;
             }
 
-            run_macro_group(resolver, resolver.ctx, modules, group, resolver.build_program())?;
+            let macro_requests = collect_requests(resolver.ctx, modules, group)?;
+            if !macro_requests.is_empty() {
+                run_macro_requests(resolver, resolver.ctx, macro_requests, resolver.build_program())?;
+            }
 
             for module_name in group {
                 resolver.warn_unused_imports(modules, module_name);
@@ -1451,9 +1455,3 @@ fn update_type_arg_def(module_def: M.Module, trait_def: TraitDef, resolved_metho
 }
 
 }
-
-
-
-
-
-

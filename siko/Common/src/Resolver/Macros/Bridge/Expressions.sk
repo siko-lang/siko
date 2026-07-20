@@ -5,6 +5,7 @@ import Siko.AST.Expr as E
 import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
 import Siko.Interpreter.Value
 import Siko.Interpreter.Strings
 import Siko.Location
@@ -160,7 +161,7 @@ pub fn decode_expr(
             ValueKind.Int(value) => value,
             _ => return Err("integer literal expression payload is not an Int"),
         };
-        E.ExprKind.IntLiteral(value.to_string())
+        E.ExprKind.IntLiteral(I.intern(value.to_string()), Some(value))
     } else if variant.variant_qname == B.get_macro_function_expr_return_qn() {
         if variant.items.len() != 1 {
             return Err("return expression must contain one expression");

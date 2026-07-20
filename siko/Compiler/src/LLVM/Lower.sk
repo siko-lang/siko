@@ -825,7 +825,7 @@ struct FunctionLowerer {
     fn lower_expr(fl: FunctionLowerer, expr: Expr) -> TypedValue {
         let ty = fl.ml.lower_type(expr.ty.unwrap());
         match expr.kind {
-            ExprKind.IntLiteral(v) => TypedValue(ty, ty.handle.const_int_text(v)),
+            ExprKind.IntLiteral(text, _) => TypedValue(ty, ty.handle.const_int_text(I.resolve(text))),
             ExprKind.FloatLiteral(v) => TypedValue(ty, ty.handle.const_real_text(v)),
             ExprKind.StringLiteral(s) => TypedValue(ty, fl.ml.global(fl.ml.lowerer.string_symbol(s))),
             ExprKind.CharLiteral(v) => TypedValue(ty, ty.handle.const_int(v.as_int().as_u64(), False)),

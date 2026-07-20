@@ -10,6 +10,43 @@ import Siko.Parser.Parser
 import Siko.Parser.Token
 import Siko.Parser.Type
 
+fn parse_integer_literal_value(value: I.String) -> Option[Int] {
+    let text = I.resolve(value);
+    // Numeric tokens are non-negative. A leading minus can only be the
+    // lexer's signed bit-pattern spelling of a hexadecimal/octal value that
+    // does not fit Int, so it must not be admitted to the signed cache.
+    if text.starts_with("-") {
+        return None;
+    }
+
+    let bytes = text.as_slice();
+    let start = 0;
+    while start < bytes.len() && bytes[start] == '0' {
+        start += 1;
+    }
+    let digit_count = bytes.len() - start;
+    if digit_count > 19 {
+        return None;
+    }
+    if digit_count == 19 {
+        let max = "9223372036854775807".as_slice();
+        for i in 0..19 {
+            let digit = bytes[start + i];
+            if digit < max[i] {
+                break;
+            }
+            if digit > max[i] {
+                return None;
+            }
+        }
+    }
+
+    match text.parse_int(10) {
+        Ok(value) => Some(value),
+        Err(_) => None,
+    }
+}
+
 pub trait ExprParser[T] {
     fn parse_expr(p: T) -> Result[Expr, ParseError]
     fn parse_range_expr(p: T) -> Result[Expr, ParseError]
@@ -331,7 +368,8 @@ instance ExprParser[Parser] {
                 let end = parser.current().end;
                 parser.advance();
                 let location = parser.loc(start, end);
-                Ok(Expr(ExprKind.IntLiteral(I.resolve(s)), location, None))
+                let value = parse_integer_literal_value(s);
+                Ok(Expr(ExprKind.IntLiteral(s, value), location, None))
             }
             TokenKind.FloatLiteral(s) => {
                 let end = parser.current().end;
@@ -694,7 +732,8 @@ instance ExprParser[Parser] {
                 let end = parser.current().end;
                 parser.advance();
                 let location = parser.loc(start, end);
-                Ok(Pattern(PatternKind.IntLiteral(s), location, None))
+                let value = parse_integer_literal_value(s);
+                Ok(Pattern(PatternKind.IntLiteral(s, value), location, None))
             }
             TokenKind.CharLiteral(b) => {
                 let end = parser.current().end;

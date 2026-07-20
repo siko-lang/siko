@@ -215,13 +215,13 @@ pub struct MatchLowerer {
         };
         let bool_ty = TypeDef.Named(NamedInfo(Name.inner(B.get_bool_type_qn()), []));
 
-        let int_cases: Vec[(I.String, Expr)] = [];
+        let int_cases: Vec[(I.String, Option[Int], Expr)] = [];
         let default_body: Option[Expr] = None;
 
         for (case, sub_node) in switch.cases.into_iter() {
             let body = lowerer.stmt_block(lowerer.lower_node(sub_node, path_env, path_ty_env, arms, loc), loc);
             match case {
-                T.Case.Integer(s) => int_cases.push((s, body)),
+                T.Case.Integer(text, value) => int_cases.push((text, value, body)),
                 T.Case.Default    => { default_body = Some(body) }
                 _ => panic("unexpected case in integer switch"),
             }
@@ -232,8 +232,8 @@ pub struct MatchLowerer {
             Some(d) => d,
             None    => Expr(ExprKind.Tuple([]), loc.clone(), unit_type()),
         };
-        for (s, body) in int_cases {
-            let literal = Expr(ExprKind.IntLiteral(I.resolve(s)), loc.clone(), Some(int_ty.clone()));
+        for (text, value, body) in int_cases {
+            let literal = Expr(ExprKind.IntLiteral(text, value), loc.clone(), Some(int_ty.clone()));
             let cond = Expr(
                 ExprKind.FunctionCall(FunctionCallInfo(
                     qname: eq_qn,
@@ -350,7 +350,7 @@ pub struct MatchLowerer {
             PatternKind.Wildcard => MC.Pattern.wildcard(),
             PatternKind.Binding(v) => MC.Pattern.new(MC.PatternKind.Bind(v)),
             PatternKind.StringLiteral(s) => MC.Pattern.new(MC.PatternKind.StringLiteral(s)),
-            PatternKind.IntLiteral(s) => MC.Pattern.new(MC.PatternKind.IntegerLiteral(s)),
+            PatternKind.IntLiteral(text, value) => MC.Pattern.new(MC.PatternKind.IntegerLiteral(text, value)),
             PatternKind.CharLiteral(b) => MC.Pattern.new(MC.PatternKind.CharLiteral(b.as_int())),
             PatternKind.Tuple(pats) => MC.Pattern.new(MC.PatternKind.Tuple(
                 pats.iter().map(|p| lowerer.to_mc_pat(p)).collect(),

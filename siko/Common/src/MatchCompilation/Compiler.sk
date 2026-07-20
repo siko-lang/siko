@@ -55,7 +55,7 @@ pub fn compile(branches: Vec[MatchBranch], enums: Map[QualifiedName, EnumInfo], 
                     let parent = path.get_parent();
                     data_types.insert(parent, DataType.Enum(enum_name));
                 }
-                DataPathSegment.IntegerLiteral(_) => {
+                DataPathSegment.IntegerLiteral(_, _) => {
                     let parent = path.get_parent();
                     data_types.insert(parent, DataType.Integer);
                 }
@@ -191,15 +191,15 @@ fn build_node(
                     Node.Tuple(TupleNode(size, tuple_path, child))
                 }
                 DataType.Integer => {
-                    let values: Set[I.String] = Set.new();
+                    let values: Map[I.String, Option[Int]] = Map.new();
                     for m in all_matches {
                         match remaining_match_decisions(current_decision.decisions, m.decision_path.decisions) {
                             Some(remaining) => {
                                 match remaining.first() {
                                     Some(next) => {
                                         match next.last() {
-                                            DataPathSegment.IntegerLiteral(value) => {
-                                                values.insert(value);
+                                            DataPathSegment.IntegerLiteral(text, value) => {
+                                                values.insert(text, value);
                                             }
                                             _ => {}
                                         }
@@ -211,13 +211,13 @@ fn build_node(
                         }
                     }
                     let cases: Map[Case, Node] = Map.new();
-                    for value in values {
-                        let lit_path = current_path.push(DataPathSegment.IntegerLiteral(value));
+                    for (text, value) in values {
+                        let lit_path = current_path.push(DataPathSegment.IntegerLiteral(text, value));
                         let pendings = rest.clone();
                         pendings.insert(0, lit_path);
                         let child_decision = current_decision.add(lit_path);
                         let child = build_node(pendings, child_decision, data_types, all_matches, enums, structs);
-                        cases.insert(Case.Integer(value), child);
+                        cases.insert(Case.Integer(text, value), child);
                     }
                     let wildcard_path = current_path.push(DataPathSegment.Wildcard);
                     let pendings = rest.clone();
@@ -370,8 +370,8 @@ fn generate_decisions(
         PatternKind.StringLiteral(v) => {
             (decision.add(parent_data.push(DataPathSegment.StringLiteral(v))), bindings)
         }
-        PatternKind.IntegerLiteral(v) => {
-            (decision.add(parent_data.push(DataPathSegment.IntegerLiteral(v))), bindings)
+        PatternKind.IntegerLiteral(text, value) => {
+            (decision.add(parent_data.push(DataPathSegment.IntegerLiteral(text, value))), bindings)
         }
         PatternKind.CharLiteral(b) => {
             (decision.add(parent_data.push(DataPathSegment.CharLiteral(b))), bindings)
@@ -447,7 +447,7 @@ fn generate_choices(pattern: Pattern) -> Vec[Pattern] {
             result
         }
         PatternKind.StringLiteral(_) => [wildcard],
-        PatternKind.IntegerLiteral(_) => [wildcard],
+        PatternKind.IntegerLiteral(_, _) => [wildcard],
         PatternKind.CharLiteral(_) => [wildcard],
         PatternKind.Wildcard => [],
     }

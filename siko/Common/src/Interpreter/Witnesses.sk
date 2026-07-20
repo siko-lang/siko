@@ -10,6 +10,7 @@ import Siko.HIR.Program
 import Siko.Instances.FunctionInstanceResolver
 import Siko.Interner as I
 import Siko.Interpreter.Error
+import Siko.Interpreter.InstanceCache
 import Siko.Interpreter.Types
 import Siko.Interpreter.Value
 import Siko.Location
@@ -67,6 +68,7 @@ pub fn call_arg_values(args: Vec[CallArg]) -> Vec[Value] {
 // instance's own bounds and captures their child witnesses.
 pub fn resolve_bound(
     program: Program,
+    cache: InstanceCache,
     context: CallContext,
     trait_name: I.String,
     symbolic_args: Vec[TypeDef],
@@ -79,6 +81,15 @@ pub fn resolve_bound(
         if bound.trait_name == trait_name && bound.symbolic_args == symbolic_args {
             extract_associated_types(bound.assoc_types, constraints, out);
             return Ok(RuntimeResolution(bound.witness, bound.assoc_types, bound.concrete_args));
+        }
+    }
+
+    let cacheable = concrete_args.iter().all(|arg| is_concrete_type(arg));
+    if cacheable {
+        if let Some(resolution) = cache.get_bound(context.module_name, trait_name, concrete_args) {
+            extract_associated_types(resolution.assoc_types, constraints, out);
+            let witness = resolve_witness(context, resolution.witness, location)?;
+            return Ok(RuntimeResolution(witness, resolution.assoc_types, resolution.primary_args));
         }
     }
 
@@ -95,6 +106,14 @@ pub fn resolve_bound(
     );
     match resolver.resolve_and_extract(trait_name, concrete_args, constraints, Substitution.new(), out) {
         BoundResult.Satisfied(resolution) => {
+            if cacheable {
+                cache.insert_bound(
+                    context.module_name,
+                    trait_name,
+                    concrete_args,
+                    resolution.clone(),
+                );
+            }
             let witness = resolve_witness(context, resolution.witness, location)?;
             Ok(RuntimeResolution(witness, resolution.assoc_types, resolution.primary_args))
         }
@@ -110,6 +129,7 @@ pub fn resolve_bound(
 // and for context bounds captured by a generic instance.
 pub fn build_call_context(
     program: Program,
+    cache: InstanceCache,
     caller: CallContext,
     fdef: FunctionDef,
     args: Vec[CallArg],
@@ -147,6 +167,7 @@ pub fn build_call_context(
         let resolution = match known {
             Some(witness) => resolve_provided(
                 program,
+                cache,
                 witness,
                 concrete_query,
                 bound.constraints,
@@ -154,6 +175,7 @@ pub fn build_call_context(
             ),
             None => resolve_bound(
                 program,
+                cache,
                 caller,
                 bound.trait_name.name(),
                 symbolic_query,
@@ -221,12 +243,25 @@ pub fn default_method_bounds(fdef: FunctionDef, self_witness: ResolvedWitness) -
 
 fn resolve_provided(
     program: Program,
+    cache: InstanceCache,
     witness: ResolvedWitness,
     concrete_args: Vec[TypeDef],
     constraints: Vec[Constraint],
     out: Substitution,
 ) -> RuntimeResolution {
-    let resolution = resolve_known_instance(program, witness, concrete_args, TypeVarAllocator.new());
+    let cacheable = concrete_args.iter().all(|arg| is_concrete_type(arg));
+    let resolution = if cacheable {
+        match cache.get_known(witness, concrete_args) {
+            Some(resolution) => resolution,
+            None => {
+                let resolution = resolve_known_instance(program, witness, concrete_args, TypeVarAllocator.new());
+                cache.insert_known(witness, concrete_args, resolution.clone());
+                resolution
+            }
+        }
+    } else {
+        resolve_known_instance(program, witness, concrete_args, TypeVarAllocator.new())
+    };
     extract_associated_types(resolution.assoc_types, constraints, out);
     RuntimeResolution(witness, resolution.assoc_types, resolution.primary_args)
 }
