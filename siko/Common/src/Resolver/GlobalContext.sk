@@ -1,0 +1,420 @@
+module Siko.Resolver.GlobalContext {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Data
+import Siko.AST.Effects as Eff
+import Siko.AST.Function
+import Siko.AST.Implicits
+import Siko.AST.Instances
+import Siko.AST.Macros
+import Siko.AST.QualifiedName
+import Siko.AST.Traits
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Instances.InstanceResolver
+import Siko.Interner as I
+import Siko.Resolver.ModuleItem
+import Siko.Resolver.ModuleResolver
+
+pub struct EffectInstanceInfo {
+    pub effect_qname: QualifiedName,
+    pub method_pairs: Vec[(QualifiedName, QualifiedName)],
+    pub assoc_type_pairs: Vec[(QualifiedName, TypeDef)],
+}
+
+struct ProgramPiece {
+    structs: Map[QualifiedName, StructDef],
+    enums: Map[QualifiedName, EnumDef],
+    variant_enum_map: Map[QualifiedName, QualifiedName],
+    traits: Map[QualifiedName, TraitDef],
+    named_instances: Map[QualifiedName, InstanceDef],
+    canonical_instances: Vec[InstanceDef],
+    all_instances: Map[QualifiedName, InstanceDef],
+    functions: Map[QualifiedName, FunctionDef],
+    effects: Map[QualifiedName, Eff.EffectDef],
+    effect_associated_types: Map[QualifiedName, Eff.AssociatedTypeDef],
+    implicits: Map[QualifiedName, ImplicitDef],
+    module_instance_imports: Vec[QualifiedName],
+
+    fn new() -> ProgramPiece {
+        ProgramPiece(
+            structs: Map.new(),
+            enums: Map.new(),
+            variant_enum_map: Map.new(),
+            traits: Map.new(),
+            named_instances: Map.new(),
+            canonical_instances: Vec.new(),
+            all_instances: Map.new(),
+            functions: Map.new(),
+            effects: Map.new(),
+            effect_associated_types: Map.new(),
+            implicits: Map.new(),
+            module_instance_imports: Vec.new(),
+        )
+    }
+
+    fn add_to_program(piece: ProgramPiece, program: Program) {
+        for (qname, def) in piece.structs {
+            program.structs.insert(qname, def);
+        }
+        for (qname, def) in piece.enums {
+            program.enums.insert(qname, def);
+        }
+        for (variant_qname, enum_qname) in piece.variant_enum_map {
+            program.variant_enum_map.insert(variant_qname, enum_qname);
+        }
+        for (qname, def) in piece.traits {
+            program.traits.insert(qname, def);
+        }
+        for (qname, def) in piece.named_instances {
+            program.named_instances.insert(qname, def);
+        }
+        program.canonical_instances.extend(piece.canonical_instances);
+        for (qname, def) in piece.all_instances {
+            program.all_instances.insert(qname, def);
+        }
+        for (qname, def) in piece.functions {
+            program.functions.insert(qname, def);
+        }
+        for (qname, def) in piece.effects {
+            program.effects.insert(qname, def);
+        }
+        for (qname, def) in piece.effect_associated_types {
+            program.effect_associated_types.insert(qname, def);
+        }
+        for (qname, def) in piece.implicits {
+            program.implicits.insert(qname, def);
+        }
+    }
+}
+
+pub struct GlobalResolverContext {
+    exported_items: Map[I.String, Vec[ModuleItem]],
+    module_resolvers: Map[I.String, ModuleResolver],
+    structs: Map[QualifiedName, StructDef],
+    enums: Map[QualifiedName, EnumDef],
+    variant_enum_map: Map[QualifiedName, QualifiedName],
+    traits: Map[QualifiedName, TraitDef],
+    named_instances: Map[QualifiedName, InstanceDef],
+    canonical_instances: Vec[InstanceDef],
+    all_instances: Map[QualifiedName, InstanceDef],
+    functions: Map[QualifiedName, FunctionDef],
+    effects: Map[QualifiedName, Eff.EffectDef],
+    effect_associated_types: Map[QualifiedName, Eff.AssociatedTypeDef],
+    implicits: Map[QualifiedName, ImplicitDef],
+    module_names: Vec[I.String],
+    module_instance_imports: Map[I.String, Vec[QualifiedName]],
+    effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
+    macros: Map[QualifiedName, MacroDef],
+    program_pieces: Map[I.String, ProgramPiece],
+    macro_programs: Map[I.String, Program],
+
+    pub fn new() -> GlobalResolverContext {
+        GlobalResolverContext(
+            exported_items: Map.new(),
+            module_resolvers: Map.new(),
+            structs: Map.new(),
+            enums: Map.new(),
+            variant_enum_map: Map.new(),
+            traits: Map.new(),
+            named_instances: Map.new(),
+            canonical_instances: Vec.new(),
+            all_instances: Map.new(),
+            functions: Map.new(),
+            effects: Map.new(),
+            effect_associated_types: Map.new(),
+            implicits: Map.new(),
+            module_names: Vec.new(),
+            module_instance_imports: Map.new(),
+            effect_instance_infos: Map.new(),
+            macros: Map.new(),
+            program_pieces: Map.new(),
+            macro_programs: Map.new(),
+        )
+    }
+
+    fn program_piece(ctx: GlobalResolverContext, module_name: I.String) -> ProgramPiece {
+        ctx.program_pieces
+            .entry(module_name)
+            .or_insert_with(|| ProgramPiece.new())
+    }
+
+    pub fn build_program(
+        ctx: GlobalResolverContext,
+        entry_points: Vec[QualifiedName],
+        module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+    ) -> Program {
+        Program(
+            structs: ctx.structs,
+            enums: ctx.enums,
+            variant_enum_map: ctx.variant_enum_map,
+            traits: ctx.traits,
+            named_instances: ctx.named_instances,
+            canonical_instances: ctx.canonical_instances,
+            all_instances: ctx.all_instances,
+            functions: ctx.functions,
+            effects: ctx.effects,
+            effect_associated_types: ctx.effect_associated_types,
+            implicits: ctx.implicits,
+            entry_points: entry_points,
+            module_names: ctx.module_names,
+            module_instance_imports: ctx.module_instance_imports,
+            module_trait_method_map: module_trait_method_map,
+            instance_resolver: InstanceResolver.empty(),
+        )
+    }
+
+    pub fn build_macro_program(
+        ctx: GlobalResolverContext,
+        macro_module: I.String,
+        dependencies: Set[I.String],
+        module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+    ) {
+        let program = Program.new();
+        for module_name in ctx.module_names {
+            if !dependencies.contains(module_name) {
+                continue;
+            }
+            let piece = ctx.program_pieces.get(module_name).unwrap();
+            piece.add_to_program(program);
+            program.module_names.push(module_name);
+            program.module_instance_imports.insert(
+                module_name,
+                piece.module_instance_imports,
+            );
+            if let Some(method_map) = module_trait_method_map.get(module_name) {
+                program.module_trait_method_map.insert(module_name, method_map);
+            }
+        }
+        ctx.macro_programs.insert(macro_module, program);
+    }
+
+    pub fn get_effect_instance_info(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EffectInstanceInfo] {
+        ctx.effect_instance_infos.get(qname)
+    }
+
+    pub fn get_exported_items_by_module(ctx: GlobalResolverContext, module_name: I.String) -> Option[Vec[ModuleItem]] {
+        ctx.exported_items.get(module_name)
+    }
+
+    pub fn get_struct(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[StructDef] {
+        ctx.structs.get(qname)
+    }
+
+    pub fn get_enum(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EnumDef] {
+        ctx.enums.get(qname)
+    }
+
+    pub fn get_enum_for_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[EnumDef] {
+        ctx.variant_enum_map.get(variant_qname).and_then(|enum_qname| ctx.enums.get(enum_qname))
+    }
+
+    pub fn get_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[VariantDef] {
+        let enum_def = match ctx.get_enum_for_variant(variant_qname) {
+            Some(def) => def,
+            None => return None,
+        };
+        enum_def.variants.iter().find(|variant| variant.qualified_name == Some(variant_qname))
+    }
+
+    pub fn get_module_resolver(ctx: GlobalResolverContext, module_name: I.String) -> Option[ModuleResolver] {
+        ctx.module_resolvers.get(module_name)
+    }
+
+    pub fn get_macro(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[MacroDef] {
+        ctx.macros.get(qname)
+    }
+
+    pub fn has_macro_in_module(ctx: GlobalResolverContext, module_name: I.String) -> Bool {
+        ctx.macros.values().any(|macro_def| macro_def.module_name == module_name)
+    }
+
+    pub fn get_macro_program(
+        ctx: GlobalResolverContext,
+        provider: QualifiedName,
+    ) -> Option[Program] {
+        ctx.macros
+            .get(provider)
+            .and_then(|macro_def| ctx.macro_programs.get(macro_def.module_name))
+    }
+
+    pub fn get_trait(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[TraitDef] {
+        ctx.traits.get(qname)
+    }
+
+    pub fn get_function(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[FunctionDef] {
+        ctx.functions.get(qname)
+    }
+
+    pub fn get_effect(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[Eff.EffectDef] {
+        ctx.effects.get(qname)
+    }
+
+    pub fn get_effect_associated_type(
+        ctx: GlobalResolverContext,
+        qname: QualifiedName,
+    ) -> Option[Eff.AssociatedTypeDef] {
+        ctx.effect_associated_types.get(qname)
+    }
+
+    pub fn insert_exported_items(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        items: Vec[ModuleItem],
+    ) {
+        ctx.exported_items.insert(module_name, items);
+    }
+
+    pub fn insert_module_resolver(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        resolver: ModuleResolver,
+    ) {
+        ctx.module_resolvers.insert(module_name, resolver);
+    }
+
+    pub fn insert_struct(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: StructDef,
+    ) {
+        ctx.structs.insert(qname, def);
+        ctx.program_piece(module_name).structs.insert(qname, def);
+    }
+
+    pub fn insert_enum(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: EnumDef,
+    ) {
+        ctx.enums.insert(qname, def);
+        ctx.program_piece(module_name).enums.insert(qname, def);
+    }
+
+    pub fn insert_variant_enum(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        variant_qname: QualifiedName,
+        enum_qname: QualifiedName,
+    ) {
+        ctx.variant_enum_map.insert(variant_qname, enum_qname);
+        ctx.program_piece(module_name)
+            .variant_enum_map
+            .insert(variant_qname, enum_qname);
+    }
+
+    pub fn insert_trait(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: TraitDef,
+    ) {
+        ctx.traits.insert(qname, def);
+        ctx.program_piece(module_name).traits.insert(qname, def);
+    }
+
+    pub fn insert_named_instance(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: InstanceDef,
+    ) {
+        ctx.named_instances.insert(qname, def);
+        ctx.program_piece(module_name).named_instances.insert(qname, def);
+    }
+
+    pub fn push_canonical_instance(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        def: InstanceDef,
+    ) {
+        ctx.canonical_instances.push(def);
+        ctx.program_piece(module_name).canonical_instances.push(def);
+    }
+
+    pub fn insert_instance(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: InstanceDef,
+    ) {
+        ctx.all_instances.insert(qname, def);
+        ctx.program_piece(module_name).all_instances.insert(qname, def);
+    }
+
+    pub fn insert_function(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: FunctionDef,
+    ) {
+        ctx.functions.insert(qname, def);
+        ctx.program_piece(module_name).functions.insert(qname, def);
+    }
+
+    pub fn insert_effect(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: Eff.EffectDef,
+    ) {
+        ctx.effects.insert(qname, def);
+        ctx.program_piece(module_name).effects.insert(qname, def);
+    }
+
+    pub fn insert_effect_associated_type(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: Eff.AssociatedTypeDef,
+    ) {
+        ctx.effect_associated_types.insert(qname, def);
+        ctx.program_piece(module_name)
+            .effect_associated_types
+            .insert(qname, def);
+    }
+
+    pub fn insert_implicit(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        qname: QualifiedName,
+        def: ImplicitDef,
+    ) {
+        ctx.implicits.insert(qname, def);
+        ctx.program_piece(module_name).implicits.insert(qname, def);
+    }
+
+    pub fn push_module_name(ctx: GlobalResolverContext, module_name: I.String) {
+        ctx.module_names.push(module_name);
+    }
+
+    pub fn insert_module_instance_imports(
+        ctx: GlobalResolverContext,
+        module_name: I.String,
+        imports: Vec[QualifiedName],
+    ) {
+        ctx.module_instance_imports.insert(module_name, imports);
+        ctx.program_piece(module_name).module_instance_imports = imports;
+    }
+
+    pub fn insert_effect_instance_info(
+        ctx: GlobalResolverContext,
+        qname: QualifiedName,
+        info: EffectInstanceInfo,
+    ) {
+        ctx.effect_instance_infos.insert(qname, info);
+    }
+
+    pub fn insert_macro(
+        ctx: GlobalResolverContext,
+        qname: QualifiedName,
+        def: MacroDef,
+    ) {
+        ctx.macros.insert(qname, def);
+    }
+}
+
+}

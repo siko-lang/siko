@@ -9,9 +9,35 @@ import Siko.AST.Function
 import Siko.AST.Generics
 import Siko.Utils.SCC
 import Std.Map
+import Std.Set
 import Siko.Interner as I
 
-pub fn create_module_groups(modules: Vec[M.Module]) -> Result[Vec[Vec[I.String]], ResolveError] {
+pub struct ModuleGraph {
+    pub dependencies: Map[I.String, Vec[I.String]],
+    pub groups: Vec[Vec[I.String]],
+
+    pub fn dependency_closure(
+        graph: ModuleGraph,
+        roots: Vec[I.String],
+    ) -> Set[I.String] {
+        let result: Set[I.String] = Set.new();
+        let pending = Vec.new();
+        pending.extend(roots);
+        while !pending.is_empty() {
+            let module_name = pending.pop().unwrap();
+            if result.contains(module_name) {
+                continue;
+            }
+            result.insert(module_name);
+            for dependency in graph.dependencies.get(module_name).unwrap() {
+                pending.push(dependency);
+            }
+        }
+        result
+    }
+}
+
+pub fn create_module_graph(modules: Vec[M.Module]) -> Result[ModuleGraph, ResolveError] {
     let graph = Map.new();
 
     for m in modules {
@@ -30,7 +56,10 @@ pub fn create_module_groups(modules: Vec[M.Module]) -> Result[Vec[Vec[I.String]]
         }
     }
 
-    Ok(compute(graph))
+    Ok(ModuleGraph(
+        dependencies: graph,
+        groups: compute(graph),
+    ))
 }
 
 fn name_items(
@@ -278,7 +307,6 @@ fn get_type_arg_count(d: Option[TypeArgDefs]) -> Int {
 }
 
 }
-
 
 
 

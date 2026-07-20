@@ -1,11 +1,11 @@
 module Siko.Resolver.Macros.Runner {
 
-import Siko.HIR.Program
 import Siko.Instances.InstanceResolver
 import Siko.Constants.Builtins as B
 import Siko.Interpreter.Interpreter as Interp
 import Siko.Interpreter.Cache
 import Siko.Resolver
+import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
 import Siko.Resolver.Macros.Bridge as Bridge
 import Siko.Resolver.Macros.Bridge.Input as MacroInput
@@ -16,10 +16,10 @@ import Siko.Resolver.Macros.Request
 fn invoke_request(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
-    program: Program,
-    cache: InterpreterCache,
     request: MacroRequest,
 ) -> Result[(), ResolveError] {
+    request.program.instance_resolver = InstanceResolver.build(request.program);
+    let cache = InterpreterCache.new();
     let entry = match request.target {
         MacroTarget.Struct(_) => match request.invocation {
             MacroInvocation.Attached => B.get_macro_derive_struct_name(),
@@ -60,7 +60,7 @@ fn invoke_request(
         request.target,
     );
     let value = match Interp.invoke_with_extensions_and_cache(
-        program,
+        request.program,
         entry_qname,
         [context],
         request.location,
@@ -78,8 +78,10 @@ fn invoke_request(
         value,
         expected,
     ) {
-        Bridge.MacroCallResult.AttachedInstance(generated) => resolver.register_derived_instance(generated),
-        Bridge.MacroCallResult.ExternalInstance(generated) => resolver.register_macro_external_instance(generated),
+        Bridge.MacroCallResult.AttachedInstance(generated) =>
+            resolver.register_derived_instance(request.module_name, generated),
+        Bridge.MacroCallResult.ExternalInstance(generated) =>
+            resolver.register_macro_external_instance(request.module_name, generated),
         Bridge.MacroCallResult.NotSupported(message) => Err(ResolveError.MacroNotSupported(
             request.provider,
             message,
@@ -97,12 +99,9 @@ pub fn run_macro_requests(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
     requests: Vec[MacroRequest],
-    program: Program,
 ) -> Result[(), ResolveError] {
-    program.instance_resolver = InstanceResolver.build(program);
-    let cache = InterpreterCache.new();
     for request in requests {
-        invoke_request(resolver, global_ctx, program, cache, request)?;
+        invoke_request(resolver, global_ctx, request)?;
     }
     Ok(())
 }

@@ -2,6 +2,7 @@ module Siko.Resolver {
 
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.ModuleResolver
+import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Import
@@ -33,7 +34,6 @@ import Siko.AST.Macros
 import Siko.AST.Type
 import Siko.AST.Module as M
 import Siko.HIR.Program
-import Siko.Instances.InstanceResolver
 import Siko.Report
 import Siko.Constants.Builtins as B
 import Siko.Utils.VarAllocator
@@ -41,98 +41,6 @@ import Siko.Utils.LabelAllocator
 import Std.Map
 import Std.Set
 import Siko.Interner as I
-
-pub struct EffectInstanceInfo {
-    pub effect_qname: QualifiedName,
-    pub method_pairs: Vec[(QualifiedName, QualifiedName)],
-    pub assoc_type_pairs: Vec[(QualifiedName, TypeDef)],
-}
-
-pub struct GlobalResolverContext {
-    exported_items: Map[I.String, Vec[ModuleItem]],
-    module_resolvers: Map[I.String, ModuleResolver],
-    structs: Map[QualifiedName, StructDef],
-    enums: Map[QualifiedName, EnumDef],
-    variant_enum_map: Map[QualifiedName, QualifiedName],
-    traits: Map[QualifiedName, TraitDef],
-    named_instances: Map[QualifiedName, InstanceDef],
-    canonical_instances: Vec[InstanceDef],
-    all_instances: Map[QualifiedName, InstanceDef],
-    functions: Map[QualifiedName, FunctionDef],
-    effects: Map[QualifiedName, Eff.EffectDef],
-    effect_associated_types: Map[QualifiedName, Eff.AssociatedTypeDef],
-    implicits: Map[QualifiedName, ImplicitDef],
-    module_names: Vec[I.String],
-    module_instance_imports: Map[I.String, Vec[QualifiedName]],
-    effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
-    macros: Map[QualifiedName, MacroDef],
-
-    pub fn new() -> GlobalResolverContext {
-        GlobalResolverContext(
-            exported_items: Map.new(),
-            module_resolvers: Map.new(),
-            structs: Map.new(),
-            enums: Map.new(),
-            variant_enum_map: Map.new(),
-            traits: Map.new(),
-            named_instances: Map.new(),
-            canonical_instances: Vec.new(),
-            all_instances: Map.new(),
-            functions: Map.new(),
-            effects: Map.new(),
-            effect_associated_types: Map.new(),
-            implicits: Map.new(),
-            module_names: Vec.new(),
-            module_instance_imports: Map.new(),
-            effect_instance_infos: Map.new(),
-            macros: Map.new(),
-        )
-    }
-
-    pub fn get_effect_instance_info(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EffectInstanceInfo] {
-        ctx.effect_instance_infos.get(qname)
-    }
-
-    pub fn get_exported_items_by_module(ctx: GlobalResolverContext, module_name: I.String) -> Option[Vec[ModuleItem]] {
-        ctx.exported_items.get(module_name)
-    }
-
-    pub fn get_struct(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[StructDef] {
-        ctx.structs.get(qname)
-    }
-
-    pub fn get_enum(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EnumDef] {
-        ctx.enums.get(qname)
-    }
-
-    pub fn get_enum_for_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[EnumDef] {
-        ctx.variant_enum_map.get(variant_qname).and_then(|enum_qname| ctx.enums.get(enum_qname))
-    }
-
-    pub fn get_variant(ctx: GlobalResolverContext, variant_qname: QualifiedName) -> Option[VariantDef] {
-        let enum_def = match ctx.get_enum_for_variant(variant_qname) {
-            Some(def) => def,
-            None => return None,
-        };
-        enum_def.variants.iter().find(|variant| variant.qualified_name == Some(variant_qname))
-    }
-
-    pub fn get_module_resolver(ctx: GlobalResolverContext, module_name: I.String) -> Option[ModuleResolver] {
-        ctx.module_resolvers.get(module_name)
-    }
-
-    pub fn get_macro(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[MacroDef] {
-        ctx.macros.get(qname)
-    }
-
-    pub fn get_trait(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[TraitDef] {
-        ctx.traits.get(qname)
-    }
-
-    pub fn get_function(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[FunctionDef] {
-        ctx.functions.get(qname)
-    }
-}
 
 pub struct Resolver {
     ctx: GlobalResolverContext,
@@ -176,8 +84,8 @@ pub struct Resolver {
         check_trait_objects(modules);
 
         let module_visibility = resolver.build_module_visibility(modules, pkg_reachability);
-        let groups = create_module_groups(modules)?;
-        for group in groups {
+        let module_graph = create_module_graph(modules)?;
+        for group in module_graph.groups {
             //println("processing module group..");
             // collect exported items for each module_def in SCC
             for module_name in group {
@@ -187,9 +95,7 @@ pub struct Resolver {
                     .find(|m| m.name.name() == module_name);
                 let module_def = module_def.unwrap();
                 let exported_items = get_exported_items(module_def);
-                resolver.ctx
-                    .exported_items
-                    .insert(module_name, exported_items);
+                resolver.ctx.insert_exported_items(module_name, exported_items);
                 //println("Found ${exported_items.len()} exported items");
             }
 
@@ -217,10 +123,7 @@ pub struct Resolver {
                 resolver.process_external_derives(modules, module_name)?;
             }
 
-            let macro_requests = collect_requests(resolver.ctx, modules, group)?;
-            if !macro_requests.is_empty() {
-                run_macro_requests(resolver, resolver.ctx, macro_requests, resolver.build_program())?;
-            }
+            resolver.process_macro_requests_for_group(modules, group, module_graph)?;
 
             for module_name in group {
                 resolver.warn_unused_imports(modules, module_name);
@@ -230,24 +133,92 @@ pub struct Resolver {
         Ok(resolver.build_program())
     }
 
+    // In-SCC macro providers need programs before requests run; all other
+    // providers are built afterwards so their programs include generated instances.
+    fn process_macro_requests_for_group(
+        resolver: Resolver,
+        modules: Vec[M.Module],
+        group: Vec[I.String],
+        module_graph: ModuleGraph,
+    ) -> Result[(), ResolveError] {
+        let pending_macro_requests = collect_requests(resolver.ctx, modules, group)?;
+        let in_group_macro_modules = resolver.requested_macro_modules(
+            pending_macro_requests,
+            group,
+        );
+        if !in_group_macro_modules.is_empty() {
+            resolver.build_macro_programs(
+                in_group_macro_modules,
+                module_graph.dependency_closure(group),
+            );
+        }
+
+        let macro_requests = finalize_requests(resolver.ctx, pending_macro_requests);
+        if !macro_requests.is_empty() {
+            run_macro_requests(resolver, resolver.ctx, macro_requests)?;
+        }
+
+        let macro_modules = resolver.macro_modules(group);
+        let remaining_macro_modules: Vec[I.String] = macro_modules
+            .iter()
+            .filter(|module_name| !in_group_macro_modules.contains(module_name))
+            .collect();
+        if !remaining_macro_modules.is_empty() {
+            resolver.build_macro_programs(
+                remaining_macro_modules,
+                module_graph.dependency_closure(group),
+            );
+        }
+        Ok(())
+    }
+
+    fn macro_modules(
+        resolver: Resolver,
+        group: Vec[I.String],
+    ) -> Vec[I.String] {
+        let result = Vec.new();
+        for module_name in group {
+            if resolver.ctx.has_macro_in_module(module_name) {
+                result.push(module_name);
+            }
+        }
+        result
+    }
+
+    fn requested_macro_modules(
+        resolver: Resolver,
+        requests: Vec[PendingMacroRequest],
+        group: Vec[I.String],
+    ) -> Vec[I.String] {
+        let result: Set[I.String] = Set.new();
+        for request in requests {
+            let macro_module = resolver.ctx.get_macro(request.provider).unwrap().module_name;
+            if group.contains(macro_module) {
+                result.insert(macro_module);
+            }
+        }
+        result.iter().collect()
+    }
+
+    fn build_macro_programs(
+        resolver: Resolver,
+        macro_modules: Vec[I.String],
+        dependencies: Set[I.String],
+    ) {
+        let module_trait_method_map = resolver.build_module_trait_method_map();
+        for macro_module in macro_modules {
+            resolver.ctx.build_macro_program(
+                macro_module,
+                dependencies,
+                module_trait_method_map,
+            );
+        }
+    }
+
     fn build_program(resolver: Resolver) -> Program {
-        Program(
-            structs: resolver.ctx.structs,
-            enums: resolver.ctx.enums,
-            variant_enum_map: resolver.ctx.variant_enum_map,
-            traits: resolver.ctx.traits,
-            named_instances: resolver.ctx.named_instances,
-            canonical_instances: resolver.ctx.canonical_instances,
-            all_instances: resolver.ctx.all_instances,
-            functions: resolver.ctx.functions,
-            effects: resolver.ctx.effects,
-            effect_associated_types: resolver.ctx.effect_associated_types,
-            implicits: resolver.ctx.implicits,
-            entry_points: [B.get_main_entry_qn()],
-            module_names: resolver.ctx.module_names,
-            module_instance_imports: resolver.ctx.module_instance_imports,
-            module_trait_method_map: resolver.build_module_trait_method_map(),
-            instance_resolver: InstanceResolver.empty(),
+        resolver.ctx.build_program(
+            [B.get_main_entry_qn()],
+            resolver.build_module_trait_method_map(),
         )
     }
 
@@ -258,7 +229,7 @@ pub struct Resolver {
         for (module_def, traits) in resolver.module_traits_map {
             let method_map = Map.new();
             for trait_name in traits {
-                let traitdef = resolver.ctx.traits.get(trait_name).unwrap();
+                let traitdef = resolver.ctx.get_trait(trait_name).unwrap();
                 for (name, qname) in traitdef.method_map.names {
                     let names = method_map.entry(name).or_insert_with(|| Vec.new());
                     names.push(qname);
@@ -328,10 +299,8 @@ pub struct Resolver {
             .collect();
         instance_imports.sort();
         instance_imports.dedup();
-        resolver.ctx
-            .module_instance_imports
-            .insert(module_name, instance_imports);
-        resolver.ctx.module_names.push(module_name);
+        resolver.ctx.insert_module_instance_imports(module_name, instance_imports);
+        resolver.ctx.push_module_name(module_name);
         let all_items = [local_items, import_items, implicit_items];
         for item_list in all_items {
             for item in item_list {
@@ -352,9 +321,7 @@ pub struct Resolver {
             import_items,
             implicit_items,
         );
-        resolver.ctx
-            .module_resolvers
-            .insert(module_name, module_resolver);
+        resolver.ctx.insert_module_resolver(module_name, module_resolver);
         Ok(())
     }
 
@@ -483,14 +450,14 @@ pub struct Resolver {
         module_def: M.Module,
         function_def: FunctionDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_function_def = function_def.resolve(ctx)?;
         let qualified_name = QualifiedName.new_function(module_def.name.name(), function_def.name.name());
         let default_value_names = resolver.process_function_args(module_name, qualified_name, function_def, True)?;
         resolved_function_def.default_value_names = default_value_names;
-        resolver.ctx.functions.insert(qualified_name, resolved_function_def);
+        resolver.ctx.insert_function(module_name, qualified_name, resolved_function_def);
         Ok(())
     }
 
@@ -499,13 +466,13 @@ pub struct Resolver {
         module_name: I.String,
         macro_def: MacroDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let ctx = ResolverContext.new(TypeResolver.new(module_resolver), resolver.ctx);
         let resolved = macro_def.resolve(ctx)?;
         for function in resolved.functions {
-            resolver.ctx.functions.insert(function.qualified_name.unwrap(), function);
+            resolver.ctx.insert_function(module_name, function.qualified_name.unwrap(), function);
         }
-        resolver.ctx.macros.insert(resolved.qualified_name.unwrap(), resolved);
+        resolver.ctx.insert_macro(resolved.qualified_name.unwrap(), resolved);
         Ok(())
     }
 
@@ -515,7 +482,7 @@ pub struct Resolver {
         module_def: M.Module,
         struct_def: StructDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_struct_def = struct_def.resolve(ctx)?;
@@ -528,7 +495,7 @@ pub struct Resolver {
                 .names
                 .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
-        resolver.ctx.structs.insert(qualified_name, resolved_struct_def);
+        resolver.ctx.insert_struct(module_name, qualified_name, resolved_struct_def);
         resolver.process_struct_derives(module_name, resolved_struct_def)?;
         Ok(())
     }
@@ -539,7 +506,7 @@ pub struct Resolver {
         module_def: M.Module,
         struct_def: StructDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         for method in struct_def.methods {
             let type_resolver = TypeResolver.new(module_resolver);
             type_resolver.add_args(struct_def.type_arg_defs);
@@ -554,7 +521,7 @@ pub struct Resolver {
             resolved_method.qualified_name = Some(method_qn);
             let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
             resolved_method.default_value_names = default_value_names;
-            resolver.ctx.functions.insert(method_qn, resolved_method);
+            resolver.ctx.insert_function(module_name, method_qn, resolved_method);
         }
         Ok(())
     }
@@ -565,7 +532,7 @@ pub struct Resolver {
         module_def: M.Module,
         enum_def: EnumDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_enum_def = enum_def.resolve(ctx)?;
@@ -573,9 +540,7 @@ pub struct Resolver {
         for variant in resolved_enum_def.variants {
             let full_name = QualifiedName.new_variant(module_def.name.name(), enum_def.name.name(), variant.name.name());
             variant.qualified_name = Some(full_name);
-            resolver.ctx
-                .variant_enum_map
-                .insert(full_name, qualified_name);
+            resolver.ctx.insert_variant_enum(module_name, full_name, qualified_name);
         }
         for method in enum_def.methods {
             resolved_enum_def
@@ -584,7 +549,7 @@ pub struct Resolver {
                 .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
         resolver.process_derives(module_name, resolved_enum_def)?;
-        resolver.ctx.enums.insert(qualified_name, resolved_enum_def);
+        resolver.ctx.insert_enum(module_name, qualified_name, resolved_enum_def);
         Ok(())
     }
 
@@ -594,7 +559,7 @@ pub struct Resolver {
         module_def: M.Module,
         enum_def: EnumDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         for method in enum_def.methods {
             let type_resolver = TypeResolver.new(module_resolver);
             type_resolver.add_args(enum_def.type_arg_defs);
@@ -609,7 +574,7 @@ pub struct Resolver {
             resolved_method.qualified_name = Some(method_qn);
             let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
             resolved_method.default_value_names = default_value_names;
-            resolver.ctx.functions.insert(method_qn, resolved_method);
+            resolver.ctx.insert_function(module_name, method_qn, resolved_method);
         }
         Ok(())
     }
@@ -626,7 +591,7 @@ pub struct Resolver {
         ]
         {
             if let Some(derived) = derived {
-                resolver.register_derived_instance(derived)?;
+                resolver.register_derived_instance(module_name, derived)?;
             }
         }
         Ok(())
@@ -645,44 +610,49 @@ pub struct Resolver {
         ]
         {
             if let Some(derived) = derived {
-                resolver.register_derived_instance(derived)?;
+                resolver.register_derived_instance(module_name, derived)?;
             }
         }
         Ok(())
     }
 
-    pub fn register_derived_instance(resolver: Resolver, instance_def: InstanceDef) -> Result[(), ResolveError] {
+    pub fn register_derived_instance(
+        resolver: Resolver,
+        module_name: I.String,
+        instance_def: InstanceDef,
+    ) -> Result[(), ResolveError] {
         let synth = instance_def.synth_name()?;
         let trait_name = instance_def.subject.try_trait_name()?;
         let synth_qname = QualifiedName.new_unnamed_instance(trait_name.name(), instance_def.args.clone());
         for method in instance_def.methods {
-            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+            resolver.ctx.insert_function(module_name, method.qualified_name.unwrap(), method);
         }
         instance_def.methods = Vec.new();
         instance_def.name = Some(synth);
         instance_def.qualified_name = Some(synth_qname);
-        resolver.ctx.canonical_instances.push(instance_def);
-        resolver.ctx.all_instances.insert(synth_qname, instance_def);
+        resolver.ctx.push_canonical_instance(module_name, instance_def);
+        resolver.ctx.insert_instance(module_name, synth_qname, instance_def);
         Ok(())
     }
 
     pub fn register_macro_external_instance(
         resolver: Resolver,
+        module_name: I.String,
         instance_def: InstanceDef,
     ) -> Result[(), ResolveError] {
         let qualified_name = instance_def.qualified_name.unwrap();
         let is_named = instance_def.name.is_some();
         for method in instance_def.methods {
-            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+            resolver.ctx.insert_function(module_name, method.qualified_name.unwrap(), method);
         }
         instance_def.methods = Vec.new();
         if is_named {
-            resolver.ctx.named_instances.insert(qualified_name, instance_def);
+            resolver.ctx.insert_named_instance(module_name, qualified_name, instance_def);
         } else {
             instance_def.name = Some(instance_def.synth_name()?);
-            resolver.ctx.canonical_instances.push(instance_def);
+            resolver.ctx.push_canonical_instance(module_name, instance_def);
         }
-        resolver.ctx.all_instances.insert(qualified_name, instance_def);
+        resolver.ctx.insert_instance(module_name, qualified_name, instance_def);
         Ok(())
     }
 
@@ -692,7 +662,7 @@ pub struct Resolver {
         module_def: M.Module,
         instance_def: InstanceDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_instance_def = instance_def.resolve(ctx)?;
@@ -707,16 +677,16 @@ pub struct Resolver {
             QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone())
         };
         resolved_instance_def.qualified_name = Some(qualified_name);
-        resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
+        resolver.ctx.insert_instance(module_name, qualified_name, resolved_instance_def);
         if let Some(name) = instance_def.name {
-            resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
+            resolver.ctx.insert_named_instance(module_name, qualified_name, resolved_instance_def);
         } else {
             resolved_instance_def.name = Some(name);
-            resolver.ctx.canonical_instances.push(resolved_instance_def);
+            resolver.ctx.push_canonical_instance(module_name, resolved_instance_def);
         }
         if let Some(effect_name) = resolved_instance_def.subject.try_effect_name() {
             let effect_qname = effect_name.resolved();
-            let effect_def = resolver.ctx.effects.get(effect_qname).unwrap();
+            let effect_def = resolver.ctx.get_effect(effect_qname).unwrap();
             let method_pairs = Vec.new();
             for method in instance_def.methods {
                 let short_name = method.name.name;
@@ -741,12 +711,15 @@ pub struct Resolver {
                     effect_short,
                     ta.name.name,
                 );
-                if resolver.ctx.effect_associated_types.get(assoc_qname).is_none() {
+                if resolver.ctx.get_effect_associated_type(assoc_qname).is_none() {
                     return Err(ResolveError.UnknownAssociatedType(ta.name));
                 }
                 assoc_type_pairs.push((assoc_qname, ta.ty));
             }
-            resolver.ctx.effect_instance_infos.insert(qualified_name, EffectInstanceInfo(effect_qname, method_pairs, assoc_type_pairs));
+            resolver.ctx.insert_effect_instance_info(
+                qualified_name,
+                EffectInstanceInfo(effect_qname, method_pairs, assoc_type_pairs),
+            );
         }
         Ok(())
     }
@@ -757,7 +730,7 @@ pub struct Resolver {
         module_def: M.Module,
         instance_def: InstanceDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_instance_def = instance_def.resolve(ctx)?;
@@ -770,8 +743,8 @@ pub struct Resolver {
                 module_name,
             )?;
             resolved_instance_def.qualified_name = Some(qualified_name);
-            resolver.ctx.named_instances.insert(qualified_name, resolved_instance_def);
-            resolver.ctx.all_instances.insert(qualified_name, resolved_instance_def);
+            resolver.ctx.insert_named_instance(module_name, qualified_name, resolved_instance_def);
+            resolver.ctx.insert_instance(module_name, qualified_name, resolved_instance_def);
         } else {
             let synth_ident = resolved_instance_def.synth_name()?;
             let trait_name = resolved_instance_def.subject.try_trait_name()?;
@@ -783,8 +756,8 @@ pub struct Resolver {
             )?;
             resolved_instance_def.name = Some(synth_ident);
             resolved_instance_def.qualified_name = Some(synth_qname);
-            resolver.ctx.canonical_instances.push(resolved_instance_def);
-            resolver.ctx.all_instances.insert(synth_qname, resolved_instance_def);
+            resolver.ctx.push_canonical_instance(module_name, resolved_instance_def);
+            resolver.ctx.insert_instance(module_name, synth_qname, resolved_instance_def);
         })
     }
 
@@ -793,7 +766,7 @@ pub struct Resolver {
         module_name: I.String,
         instance_def: InstanceDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_instance_def = instance_def.resolve(ctx)?;
@@ -825,7 +798,7 @@ pub struct Resolver {
             let method_qn = QualifiedName.new_method(instance_qn.name(), method.name.name());
             resolved_method.qualified_name = Some(method_qn);
             resolver.process_function_args(module_name, method_qn, method, False)?;
-            resolver.ctx.functions.insert(method_qn, resolved_method);
+            resolver.ctx.insert_function(module_name, method_qn, resolved_method);
         }
         Ok(())
     }
@@ -846,9 +819,9 @@ pub struct Resolver {
             .unwrap();
 
 
-        let type_data = if let Some(e) = resolver.ctx.enums.get(type_qname) {
+        let type_data = if let Some(e) = resolver.ctx.get_enum(type_qname) {
             TypeData.Enum(e)
-        } else if let Some(s) = resolver.ctx.structs.get(type_qname) {
+        } else if let Some(s) = resolver.ctx.get_struct(type_qname) {
             TypeData.Struct(s)
         } else {
             return Ok(());
@@ -914,7 +887,7 @@ pub struct Resolver {
             }
             Some(params) => {
                 let trait_qname = resolved_instance_def.subject.try_trait_name()?.resolved();
-                let trait_def = if let Some(trait_def) = resolver.ctx.traits.get(trait_qname) {
+                let trait_def = if let Some(trait_def) = resolver.ctx.get_trait(trait_qname) {
                     trait_def
                 } else {
                     return Ok(());
@@ -941,7 +914,7 @@ pub struct Resolver {
                     }
                 };
                 let extra_args: Vec[FunctionArg] = {
-                    match resolver.ctx.functions.get(fn_qname) {
+                    match resolver.ctx.get_function(fn_qname) {
                         None => [],
                         Some(m) => {
                             m.args.iter().skip(1).collect()
@@ -975,7 +948,7 @@ pub struct Resolver {
 
         if let Some((method, short_name)) = maybe_method {
             resolved_instance_def.method_names.push(short_name);
-            resolver.ctx.functions.insert(method.qualified_name.unwrap(), method);
+            resolver.ctx.insert_function(module_name, method.qualified_name.unwrap(), method);
         }
         Ok(())
     }
@@ -986,7 +959,7 @@ pub struct Resolver {
         module_def: M.Module,
         trait_def: TraitDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_trait_def = trait_def.resolve(ctx)?;
@@ -1002,7 +975,7 @@ pub struct Resolver {
                     .push(method.name);
             }
         }
-        resolver.ctx.traits.insert(qualified_name, resolved_trait_def);
+        resolver.ctx.insert_trait(module_name, qualified_name, resolved_trait_def);
         Ok(())
     }
 
@@ -1012,7 +985,7 @@ pub struct Resolver {
         module_def: M.Module,
         trait_def: TraitDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_trait_def = trait_def.resolve(ctx)?;
@@ -1037,7 +1010,7 @@ pub struct Resolver {
             resolved_method.qualified_name = Some(method_qn);
             let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
             resolved_method.default_value_names = default_value_names;
-            resolver.ctx.functions.insert(method_qn, resolved_method);
+            resolver.ctx.insert_function(module_name, method_qn, resolved_method);
         }
         Ok(())
     }
@@ -1048,7 +1021,7 @@ pub struct Resolver {
         module_def: M.Module,
         effect_def: Eff.EffectDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_effect_def = effect_def.resolve(ctx)?;
@@ -1056,10 +1029,14 @@ pub struct Resolver {
         for method in effect_def.methods {
             resolved_effect_def.method_map.names.insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
-        resolver.ctx.effects.insert(qualified_name, resolved_effect_def);
+        resolver.ctx.insert_effect(module_name, qualified_name, resolved_effect_def);
         for assoc_type in effect_def.associated_types {
             let assoc_qname = QualifiedName.new_effect_associated_type(module_def.name.name(), effect_def.name.name(), assoc_type.name.name());
-            resolver.ctx.effect_associated_types.insert(assoc_qname, Eff.AssociatedTypeDef(effect_name: qualified_name));
+            resolver.ctx.insert_effect_associated_type(
+                module_name,
+                assoc_qname,
+                Eff.AssociatedTypeDef(effect_name: qualified_name),
+            );
         }
         Ok(())
     }
@@ -1070,7 +1047,7 @@ pub struct Resolver {
         module_def: M.Module,
         effect_def: Eff.EffectDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_effect_def = effect_def.resolve(ctx)?;
@@ -1090,7 +1067,7 @@ pub struct Resolver {
             resolved_method.qualified_name = Some(method_qn);
             let default_value_names = resolver.process_function_args(module_name, method_qn, method, True)?;
             resolved_method.default_value_names = default_value_names;
-            resolver.ctx.functions.insert(method_qn, resolved_method);
+            resolver.ctx.insert_function(module_name, method_qn, resolved_method);
         }
         Ok(())
     }
@@ -1119,12 +1096,12 @@ pub struct Resolver {
             default_value_names: Vec.new(),
             source_package: None,
         );
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_function_def = function_def.resolve(ctx)?;
         let qualified_name = QualifiedName.new_global(module_def.name.name(), global_def.name.name());
-        resolver.ctx.functions.insert(qualified_name, resolved_function_def);
+        resolver.ctx.insert_function(module_name, qualified_name, resolved_function_def);
         Ok(())
     }
 
@@ -1134,14 +1111,12 @@ pub struct Resolver {
         module_def: M.Module,
         implicit_def: ImplicitDef,
     ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         let type_resolver = TypeResolver.new(module_resolver);
         let ctx = ResolverContext.new(type_resolver, resolver.ctx);
         let resolved_implicit_def = implicit_def.resolve(ctx)?;
         let qualified_name = QualifiedName.new_implicit(module_def.name.name(), implicit_def.name.name());
-        resolver.ctx
-            .implicits
-            .insert(qualified_name, resolved_implicit_def);
+        resolver.ctx.insert_implicit(module_name, qualified_name, resolved_implicit_def);
         Ok(())
     }
 
@@ -1184,7 +1159,7 @@ pub struct Resolver {
         }
 
         let default_value_names = Vec.new();
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         for (index, arg) in function_def.args.iter().enumerate() {
             if let Some(expr) = arg.default_value {
                 let qualified_name = QualifiedName.new_default_arg(qualified_fn_name.name(), index);
@@ -1210,7 +1185,7 @@ pub struct Resolver {
                 let type_resolver = TypeResolver.new(module_resolver);
                 let ctx = ResolverContext.new(type_resolver, resolver.ctx);
                 let resolved_helper = helper_def.resolve(ctx)?;
-                resolver.ctx.functions.insert(qualified_name, resolved_helper);
+                resolver.ctx.insert_function(module_name, qualified_name, resolved_helper);
                 default_value_names.push(DefaultValueInfo(index, qualified_name));
             }
         }
@@ -1236,7 +1211,7 @@ pub struct Resolver {
         }
 
         let default_value_names = Vec.new();
-        let module_resolver = resolver.ctx.module_resolvers.get(module_name).unwrap();
+        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
         for (index, field) in struct_def.fields.iter().enumerate() {
             if let Some(expr) = field.default_value {
                 let qualified_name = QualifiedName.new_default_arg(qualified_struct_name.name(), index);
@@ -1262,7 +1237,7 @@ pub struct Resolver {
                 let type_resolver = TypeResolver.new(module_resolver);
                 let ctx = ResolverContext.new(type_resolver, resolver.ctx);
                 let resolved_helper = helper_def.resolve(ctx)?;
-                resolver.ctx.functions.insert(qualified_name, resolved_helper);
+                resolver.ctx.insert_function(module_name, qualified_name, resolved_helper);
                 default_value_names.push(DefaultValueInfo(index, qualified_name));
             }
         }

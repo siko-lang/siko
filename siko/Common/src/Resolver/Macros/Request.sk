@@ -7,8 +7,10 @@ import Siko.AST.Module as M
 import Siko.AST.Name
 import Siko.AST.QualifiedName
 import Siko.Interner as I
+import Siko.HIR.Program
 import Siko.Location
 import Siko.Resolver
+import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
 import Siko.Resolver.TypeResolver
 
@@ -24,6 +26,16 @@ pub enum MacroInvocation {
 }
 
 pub struct MacroRequest {
+    pub provider: QualifiedName,
+    pub program: Program,
+    pub target: MacroTarget,
+    pub invocation: MacroInvocation,
+    pub args: Vec[MacroArg],
+    pub module_name: I.String,
+    pub location: Location,
+}
+
+pub struct PendingMacroRequest {
     pub provider: QualifiedName,
     pub target: MacroTarget,
     pub invocation: MacroInvocation,
@@ -42,7 +54,7 @@ fn resolve_provider(
 }
 
 fn collect_attached(
-    out: Vec[MacroRequest],
+    out: Vec[PendingMacroRequest],
     global_ctx: GlobalResolverContext,
     module_name: I.String,
     target: MacroTarget,
@@ -52,7 +64,7 @@ fn collect_attached(
     for annotation in annotations {
         if let Annotation.Derive2(app) = annotation {
             let provider = resolve_provider(global_ctx, module_name, app.provider)?;
-            out.push(MacroRequest(
+            out.push(PendingMacroRequest(
                 provider,
                 target,
                 MacroInvocation.Attached,
@@ -84,7 +96,7 @@ fn external_target(global_ctx: GlobalResolverContext, instance_def: InstanceDef)
 }
 
 fn collect_external(
-    out: Vec[MacroRequest],
+    out: Vec[PendingMacroRequest],
     global_ctx: GlobalResolverContext,
     module_name: I.String,
     instance_def: InstanceDef,
@@ -100,7 +112,7 @@ fn collect_external(
         None => QualifiedName.new_unnamed_instance(trait_name.name(), resolved.args.clone()),
     });
     let target = external_target(global_ctx, resolved);
-    out.push(MacroRequest(
+    out.push(PendingMacroRequest(
         provider,
         target,
         MacroInvocation.External(resolved),
@@ -115,7 +127,7 @@ pub fn collect_requests(
     global_ctx: GlobalResolverContext,
     modules: Vec[M.Module],
     group: Vec[I.String],
-) -> Result[Vec[MacroRequest], ResolveError] {
+) -> Result[Vec[PendingMacroRequest], ResolveError] {
     let out = Vec.new();
     for module_name in group {
         let module_def = modules.iter().find(|m| m.name.name() == module_name).unwrap();
@@ -145,6 +157,24 @@ pub fn collect_requests(
         }
     }
     Ok(out)
+}
+
+pub fn finalize_requests(
+    global_ctx: GlobalResolverContext,
+    pending: Vec[PendingMacroRequest],
+) -> Vec[MacroRequest] {
+    pending
+        .iter()
+        .map(|request| MacroRequest(
+            provider: request.provider,
+            program: global_ctx.get_macro_program(request.provider).unwrap(),
+            target: request.target,
+            invocation: request.invocation,
+            args: request.args,
+            module_name: request.module_name,
+            location: request.location,
+        ))
+        .collect()
 }
 
 }
