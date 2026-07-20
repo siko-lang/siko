@@ -6,6 +6,7 @@ import Siko.Interner as I
 import Siko.Interpreter.Error
 import Siko.LowerDefer
 import Siko.MatchValidation
+import Siko.Monomorphizer.Error
 import Siko.Parser.Parser
 import Siko.Report
 import Siko.Resolver.Error
@@ -135,6 +136,23 @@ pub fn report_match_validation_error(e: MatchValidationError) {
             report("redundant pattern:", Some(location)),
         MatchValidationError.MissingPatterns(location, patterns) =>
             report("non-exhaustive match: missing patterns: ${join(patterns, ", ")}", Some(location)),
+    }
+}
+
+pub fn report_mono_errors(errors: Vec[MonoError]) {
+    for e in errors { report_mono_error(e); }
+}
+
+pub fn report_mono_error(error: MonoError) {
+    match error {
+        MonoError.EntryPointNotFound(entry_point) =>
+            report("entry point `${entry_point.name()}` was not found", None),
+        MonoError.UnresolvedEffectHandler(method, location) =>
+            report("unresolved effect handler for `${method}`", Some(location)),
+        MonoError.UnsetImplicit(name, location) =>
+            report("implicit `${name}` is not set in this context", Some(location)),
+        MonoError.UnboundEffectAssociatedType(name, location) =>
+            report("effect associated type `${name}` is not bound in this handler", Some(location)),
     }
 }
 

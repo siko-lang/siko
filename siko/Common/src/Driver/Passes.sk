@@ -6,7 +6,14 @@ import Siko.Parser.Parser
 import Siko.Parser.Module
 import Siko.Resolver
 import Siko.Interpreter.InterpreterTestRunner
+import Siko.ClosureLowering.Lower as ClosureLowering
+import Siko.CoroutineLowering
+import Siko.ImplicitPropagation.Function as IP
+import Siko.LambdaLift.Pass as LL
 import Siko.LowerDefer
+import Siko.LowerMatch
+import Siko.LowerTuples
+import Siko.Monomorphizer
 import Siko.Normalizer
 import Siko.BoundExpansion
 import Siko.Instances.InstanceChecker
@@ -14,6 +21,7 @@ import Siko.Instances.InstanceResolver
 import Siko.Typechecker.Checker
 import Siko.Typechecker.Statistics
 import Siko.TraitObjectLowering
+import Siko.TraitObjectCarriers
 import Siko.MatchValidation as MV
 import Siko.PurityCheck.Checker as PC
 import Siko.SafetyChecker as SC
@@ -181,6 +189,79 @@ pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
     };
 
     core_passes + safety_passes
+}
+
+pub fn build_common_passes(driver: Driver) -> Vec[Pass] {
+    let config = get_config();
+    let lowering_passes: Vec[Pass] = if config.check_only {
+        []
+    } else {
+        [
+            Pass(
+                name: "lambda-lift",
+                label: "Lambda lifting...",
+                run: |driver| { LL.lift_lambdas(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-match",
+                label: "Lowering match expressions...",
+                run: |driver| { lower_matches(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "mono",
+                label: "Monomorphizing...",
+                run: |driver| {
+                    match monomorphize(driver.program) {
+                        Err(errors) => { report_mono_errors(errors); }
+                        Ok(new_program) => { driver.program = new_program; }
+                    }
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "lower-trait-object-carriers",
+                label: "Lowering trait object carriers...",
+                run: |driver| {
+                    lower_trait_object_carriers(driver.program);
+                },
+                dump: Some(|driver| println(driver.program.format())),
+            ),
+            Pass(
+                name: "propagate-implicits",
+                label: "Propagating implicit arguments...",
+                run: |driver| { IP.propagate_implicits(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-closures",
+                label: "Lowering closures...",
+                run: |driver| {
+                    ClosureLowering.lower_closures(driver.program);
+                },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-coroutines",
+                label: "Lowering coroutines...",
+                run: |driver| { lower_coroutines(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+            Pass(
+                name: "lower-tuples",
+                label: "Lowering tuples...",
+                run: |driver| { lower_tuples(driver.program); },
+                dump: Some(|driver| println(driver.program.format())),
+                run_sanity_check: True,
+            ),
+        ]
+    };
+
+    build_check_passes(driver) + lowering_passes
 }
 
 }
