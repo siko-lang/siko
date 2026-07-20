@@ -489,14 +489,14 @@ fn eval_expr_inner(
             }
             Err(error(ErrorKind.NoMatch, location))
         }
-        ExprKind.FieldAccess(receiver, field) => {
+        ExprKind.FieldAccess(receiver, field, resolved_index) => {
             let recv = match eval_expr(interp, frame, receiver)? {
                 Flow.Val(v) => v,
                 other => return Ok(other),
             };
             match recv.kind {
                 ValueKind.Struct(sbox) => {
-                    let index = field_index(interp, sbox, field.name(), location)?;
+                    let index = field_index(interp, sbox, field.name(), resolved_index, location)?;
                     Ok(Flow.Val(pass_value(interp.program, sbox.fields[index])))
                 }
                 _ => Err(error(ErrorKind.TypeMismatch("struct", describe(recv)), location)),
@@ -628,14 +628,14 @@ fn eval_expr_inner(
         }
         ExprKind.AddrOf(inner) => {
             match inner.kind {
-                ExprKind.FieldAccess(receiver, field) => {
+                ExprKind.FieldAccess(receiver, field, resolved_index) => {
                     let recv = match eval_expr(interp, frame, receiver)? {
                         Flow.Val(v) => v,
                         other => return Ok(other),
                     };
                     match recv.kind {
                         ValueKind.Struct(sbox) => {
-                            let index = field_index(interp, sbox, field.name(), location)?;
+                            let index = field_index(interp, sbox, field.name(), resolved_index, location)?;
                             Ok(Flow.Val(Value(TypeDef.Ptr(TypeDef.Wildcard), ValueKind.Ptr(PtrValue.Field(sbox, index)))))
                         }
                         _ => Err(error(ErrorKind.TypeMismatch("struct", describe(recv)), location)),
@@ -832,14 +832,14 @@ fn eval_assign(interp: Interpreter, frame: Frame, lhs: Expr, value: Value) -> Re
             Ok(Flow.Val(Value.unit()))
         }
         ExprKind.Paren(inner) => eval_assign(interp, frame, inner, value),
-        ExprKind.FieldAccess(receiver, field) => {
+        ExprKind.FieldAccess(receiver, field, resolved_index) => {
             let recv = match eval_expr(interp, frame, receiver)? {
                 Flow.Val(v) => v,
                 other => return Ok(other),
             };
             match recv.kind {
                 ValueKind.Struct(sbox) => {
-                    let index = field_index(interp, sbox, field.name(), location)?;
+                    let index = field_index(interp, sbox, field.name(), resolved_index, location)?;
                     sbox.fields[index] = pass_value(interp.program, value);
                     Ok(Flow.Val(Value.unit()))
                 }
@@ -1068,7 +1068,16 @@ fn make_call_arg(interp: Interpreter, frame: Frame, expr: Expr, value: Value) ->
     CallArg(value, expression_type(interp.program, frame.var_types, expr, value))
 }
 
-fn field_index(interp: Interpreter, sbox: StructBox, field: I.String, location: Location) -> Result[Int, InterpreterError] {
+fn field_index(
+    interp: Interpreter,
+    sbox: StructBox,
+    field: I.String,
+    resolved_index: Option[Int],
+    location: Location,
+) -> Result[Int, InterpreterError] {
+    if let Some(index) = resolved_index {
+        return Ok(index);
+    }
     if let Some(index) = interp.cache.lookups.get_field(sbox.qname, field) {
         if index >= sbox.fields.len() {
             return Err(error(ErrorKind.Internal("struct value is missing fields"), location));
@@ -1181,7 +1190,7 @@ fn expr_kind_name(kind: ExprKind) -> String {
         ExprKind.UnaryOp(_, _) => "unary operator",
         ExprKind.Call(_) => "call",
         ExprKind.MethodCall(_) => "method call",
-        ExprKind.FieldAccess(_, _) => "field access",
+        ExprKind.FieldAccess(_, _, _) => "field access",
         ExprKind.TupleIndex(_, _) => "tuple index",
         ExprKind.FunctionCall(_) => "function call",
         ExprKind.DynamicCall(_, _) => "dynamic call",

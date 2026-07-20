@@ -35,6 +35,7 @@ pub struct HandlerLowerer {
     pub yielded_qn: QualifiedName,
     pub returned_qn: QualifiedName,
     pub var_map: Map[VariableName, I.String],
+    pub var_index_map: Map[VariableName, Int],
     pub local_set: Set[VariableName],
     pub repr_loc: Location,
     pub yield_counter: Int,
@@ -44,7 +45,7 @@ pub struct HandlerLowerer {
     }
 
     fn state_lhs(ctx: HandlerLowerer, loc: Location) -> Expr {
-        field_access(ctx.frame_expr(loc.clone()), I.intern("state"), ctx.frame_state_ty.clone(), loc)
+        field_access(ctx.frame_expr(loc.clone()), I.intern("state"), 0, ctx.frame_state_ty.clone(), loc)
     }
 
     fn set_state(ctx: HandlerLowerer, state_index: Int, loc: Location) -> S.Statement {
@@ -136,7 +137,8 @@ instance HandlerLower[Expr] {
                 match ctx.var_map.get(vn) {
                     Some(field_name) => {
                         let field_ty = ty.unwrap_or_else(|| TypeDef.Void);
-                        field_access(ctx.frame_expr(loc.clone()), field_name, field_ty, loc)
+                        let field_index = ctx.var_index_map.get(vn).unwrap();
+                        field_access(ctx.frame_expr(loc.clone()), field_name, field_index, field_ty, loc)
                     }
                     None => Expr(expr.kind.lower(ctx), loc, ty),
                 }
@@ -159,8 +161,9 @@ instance HandlerLower[S.Statement] {
                 if ctx.local_set.contains(name) {
                     let new_rhs = lower(rhs, ctx);
                     let field_name = ctx.var_map.get(name).unwrap();
+                    let field_index = ctx.var_index_map.get(name).unwrap();
                     let field_ty = new_rhs.ty.unwrap_or_else(|| ty.unwrap_or(TypeDef.Void));
-                    let lhs = field_access(ctx.frame_expr(ctx.repr_loc.clone()), field_name, field_ty, ctx.repr_loc.clone());
+                    let lhs = field_access(ctx.frame_expr(ctx.repr_loc.clone()), field_name, field_index, field_ty, ctx.repr_loc.clone());
                     S.Statement.Assign(lhs, new_rhs)
                 } else {
                     S.Statement.Let(S.LetInfo(name, ty, lower(rhs, ctx)))
@@ -197,14 +200,17 @@ pub fn make_handler_lowerer(
     repr_loc: Location,
 ) -> HandlerLowerer {
     let var_map: Map[VariableName, I.String] = Map.new();
+    let var_index_map: Map[VariableName, Int] = Map.new();
     let local_set: Set[VariableName] = Set.new();
 
     for i in 0..arg_var_names.len() {
         var_map.insert(arg_var_names[i].clone(), arg_names[i]);
+        var_index_map.insert(arg_var_names[i].clone(), i + 1);
     }
 
     for i in 0..local_var_names.len() {
         var_map.insert(local_var_names[i].clone(), local_names[i]);
+        var_index_map.insert(local_var_names[i].clone(), arg_var_names.len() + i + 1);
         local_set.insert(local_var_names[i].clone());
     }
 
@@ -220,6 +226,7 @@ pub fn make_handler_lowerer(
         yielded_qn: yielded_qn,
         returned_qn: returned_qn,
         var_map: var_map,
+        var_index_map: var_index_map,
         local_set: local_set,
         repr_loc: repr_loc,
         yield_counter: 0,

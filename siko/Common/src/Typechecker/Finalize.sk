@@ -156,10 +156,23 @@ pub struct Finalizer {
     pub sub: Substitution,
     pub program: Program,
     pub method_resolutions: Map[Int, CallResolution],
+    pub field_resolutions: Map[Int, Int],
     pub witness_map: Map[WitnessKey, BoundWitness],
 
-    pub fn new(sub: Substitution, program: Program, method_resolutions: Map[Int, CallResolution], witness_map: Map[WitnessKey, BoundWitness]) -> Finalizer {
-        Finalizer(sub, program, method_resolutions, witness_map)
+    pub fn new(
+        sub: Substitution,
+        program: Program,
+        method_resolutions: Map[Int, CallResolution],
+        field_resolutions: Map[Int, Int],
+        witness_map: Map[WitnessKey, BoundWitness],
+    ) -> Finalizer {
+        Finalizer(
+            sub: sub,
+            program: program,
+            method_resolutions: method_resolutions,
+            field_resolutions: field_resolutions,
+            witness_map: witness_map,
+        )
     }
 
     fn never_return_ty(f: Finalizer, qname: QualifiedName) -> Option[TypeDef] {
@@ -272,6 +285,13 @@ pub struct Finalizer {
         let loc = expr.location;
 
         match expr.kind {
+            ExprKind.FieldAccess(receiver, field_name, _) => {
+                let result_var = f.result_var(expr);
+                let receiver = f.finalize_expr(receiver);
+                let field_index = f.field_resolutions.get(result_var).expect("finalize: field access has no solver resolution");
+                Expr(ExprKind.FieldAccess(receiver, field_name, Some(field_index)), loc, ty)
+            }
+
             ExprKind.MethodCall(MethodCallInfo(receiver, _method, args, _named_args)) => {
                 let result_var = f.result_var(expr);
                 let cr = f.method_resolutions.get(result_var).unwrap();

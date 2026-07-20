@@ -169,10 +169,10 @@ pub struct Collector {
                 ExprKind.TupleIndex(new_receiver, index)
             }
 
-            ExprKind.FieldAccess(receiver, field) => {
+            ExprKind.FieldAccess(receiver, field, field_index) => {
                 let (recv_ty, new_receiver) = c.collect_expr(receiver, env);
                 c.emit(C.ConstraintKind.HasField(receiver: recv_ty, field: field.name(), result: ty), loc);
-                ExprKind.FieldAccess(new_receiver, field)
+                ExprKind.FieldAccess(new_receiver, field, field_index)
             }
 
             ExprKind.MethodCall(MethodCallInfo(receiver, method_name, args, named_args)) => {

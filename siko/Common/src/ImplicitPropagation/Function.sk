@@ -94,12 +94,14 @@ fn rewrite_function(
     let ctx_param_expr = typed_var_expr(ctx_param, Some(ctx_struct_ty.clone()), loc);
 
     let initial_implicits: Map[QualifiedName, Expr] = Map.new();
+    let field_index = 0;
     for imp in fn_implicits {
         let field = ctx_field_name(imp);
         let wrapper_ty = named_ty(wrapper_struct_name(imp));
         let ctx_var_expr = typed_var_expr(ctx_param, Some(ctx_struct_ty.clone()), loc);
-        let field_expr = typed_field_expr(ctx_var_expr, field, Some(wrapper_ty), loc);
+        let field_expr = typed_field_expr(ctx_var_expr, field, field_index, Some(wrapper_ty), loc);
         initial_implicits.insert(imp.clone(), field_expr);
+        field_index += 1;
     }
 
     if let Some(body) = func.body {

@@ -94,12 +94,12 @@ struct Normalizer {
             }
             ExprKind.AddrOf(inner) => {
                 match inner.kind {
-                    ExprKind.FieldAccess(recv, field) => {
+                    ExprKind.FieldAccess(recv, field, field_index) => {
                         let recv_atom = match norm.to_atom(recv, out) {
                             None => return None,
                             Some(v) => v,
                         };
-                        let field_expr = Expr(ExprKind.FieldAccess(recv_atom, field), inner.location, inner.ty);
+                        let field_expr = Expr(ExprKind.FieldAccess(recv_atom, field, field_index), inner.location, inner.ty);
                         Some(Expr(ExprKind.AddrOf(field_expr), loc, ty))
                     }
                     _ => {
@@ -217,12 +217,12 @@ struct Normalizer {
                 Some(Expr(ExprKind.MethodCall(MethodCallInfo(recv_atom, name, atom_args, named_args)), loc, ty))
             }
 
-            ExprKind.FieldAccess(recv, field) => {
+            ExprKind.FieldAccess(recv, field, field_index) => {
                 let recv_atom = match norm.to_atom(recv, out) {
                     None => return None,
                     Some(v) => v,
                 };
-                Some(Expr(ExprKind.FieldAccess(recv_atom, field), loc, ty))
+                Some(Expr(ExprKind.FieldAccess(recv_atom, field, field_index), loc, ty))
             }
 
             ExprKind.TupleIndex(recv, index) => {
@@ -328,12 +328,12 @@ struct Normalizer {
 
     fn lower_lvalue(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
         match expr.kind {
-            ExprKind.FieldAccess(recv, field) => {
+            ExprKind.FieldAccess(recv, field, field_index) => {
                 let recv_lowered = match norm.lower_lvalue(recv, out) {
                     None => return None,
                     Some(v) => v,
                 };
-                Some(Expr(ExprKind.FieldAccess(recv_lowered, field), expr.location, expr.ty))
+                Some(Expr(ExprKind.FieldAccess(recv_lowered, field, field_index), expr.location, expr.ty))
             }
             ExprKind.Index(container, idx) => {
                 let container_lowered = match norm.lower_lvalue(container, out) {

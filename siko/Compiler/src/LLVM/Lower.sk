@@ -1,6 +1,7 @@
 module Siko.LLVM.Lower {
 
 import Std.Map
+import Std.Set
 import Siko.AST.Expr
 import Siko.AST.Function
 import Siko.AST.QualifiedName
@@ -13,6 +14,7 @@ import Siko.Layout
 import Siko.LLVM.CApi as LLVM
 import Siko.LLVM.Deps
 import Siko.LLVM.Emit
+import Siko.LLVM.Strings
 import Siko.LLVM.Util
 import Siko.Config
 
@@ -46,12 +48,6 @@ struct LocalSlot {
 struct Address {
     ty: BackendType,
     ptr: LLVM.Value,
-}
-
-@value_type
-struct FieldInfo {
-    index: Int,
-    ty: TypeDef,
 }
 
 struct Lowerer {
@@ -129,17 +125,6 @@ struct Lowerer {
             TypeDef.Named(NamedInfo(name, _)) => name.resolved(),
             _ => panic("llvm: expected named type"),
         }
-    }
-
-    fn field_info(l: Lowerer, ty: TypeDef, field_name: I.String) -> FieldInfo {
-        let qname = l.named_qname(ty);
-        let sdef = l.program.structs.get(qname).unwrap();
-        for (i, field) in sdef.fields.iter().enumerate() {
-            if field.name.name() == field_name {
-                return FieldInfo(i, field.ty);
-            }
-        }
-        panic("llvm: field not found")
     }
 
     fn has_symbol(l: Lowerer, symbol: String) -> Bool {
@@ -799,22 +784,22 @@ struct FunctionLowerer {
                 let slot = fl.local(name);
                 Address(slot.ty, slot.ptr)
             }
-            ExprKind.FieldAccess(receiver, field) => {
+            ExprKind.FieldAccess(receiver, _, field_index) => {
                 let receiver_ty = receiver.ty.unwrap();
                 let owner_ty = match receiver_ty { TypeDef.Ptr(inner) => inner, _ => receiver_ty };
                 let base_ptr = match receiver.ty.unwrap() {
                     TypeDef.Ptr(_) => fl.lower_expr(receiver).value,
                     _ => fl.lower_addr(receiver).ptr,
                 };
-                let field_info = fl.ml.lowerer.field_info(owner_ty, field.name());
+                let field_index = field_index.expect("llvm: field access has no field index");
                 let i32_ty = fl.ml.ctx.int_type(32);
                 let ptr = fl.builder.build_gep(
                     fl.ml.lower_type(owner_ty).handle,
                     base_ptr,
-                    [i32_ty.const_int(0, False), i32_ty.const_int(field_info.index.as_u64(), False)],
+                    [i32_ty.const_int(0, False), i32_ty.const_int(field_index.as_u64(), False)],
                     True,
                 );
-                Address(fl.ml.lower_type(field_info.ty), ptr)
+                Address(ty, ptr)
             }
             ExprKind.Deref(inner) => Address(ty, fl.lower_expr(inner).value),
             ExprKind.Paren(inner) => fl.lower_addr(inner),
@@ -835,7 +820,7 @@ struct FunctionLowerer {
                 let slot = fl.local(name);
                 TypedValue(slot.ty, fl.builder.build_load(slot.ty.handle, slot.ptr))
             }
-            ExprKind.FieldAccess(_, _) | ExprKind.Deref(_) => {
+            ExprKind.FieldAccess(_, _, _) | ExprKind.Deref(_) => {
                 let addr = fl.lower_addr(expr);
                 TypedValue(addr.ty, fl.builder.build_load(addr.ty.handle, addr.ptr))
             }
@@ -958,118 +943,6 @@ struct FunctionLowerer {
 
 fn hex_digit(n: Int) -> String {
     String.from_byte("0123456789ABCDEF".as_slice()[n])
-}
-
-fn add_string(strings: Vec[String], value: String) {
-    if !strings.contains(value) {
-        strings.push(value);
-    }
-}
-
-fn collect_string_expr(expr: Expr, strings: Vec[String]) {
-    match expr.kind {
-        ExprKind.StringLiteral(s) => add_string(strings, s),
-        ExprKind.BinaryOp(_, lhs, rhs) => { collect_string_expr(lhs, strings); collect_string_expr(rhs, strings); }
-        ExprKind.UnaryOp(_, operand) |
-        ExprKind.FieldAccess(operand, _) |
-        ExprKind.Deref(operand) |
-        ExprKind.AddrOf(operand) |
-        ExprKind.Transmute(operand) |
-        ExprKind.Discriminator(operand) |
-        ExprKind.EnumTag(operand) |
-        ExprKind.Try(operand) |
-        ExprKind.Return(operand) |
-        ExprKind.Paren(operand) => collect_string_expr(operand, strings),
-        ExprKind.Call(info) => {
-            collect_string_expr(info.callee, strings);
-            for arg in info.args { collect_string_expr(arg, strings); }
-        }
-        ExprKind.MethodCall(info) => {
-            collect_string_expr(info.receiver, strings);
-            for arg in info.args { collect_string_expr(arg, strings); }
-        }
-        ExprKind.FunctionCall(info) => {
-            for arg in info.args { collect_string_expr(arg, strings); }
-        }
-        ExprKind.DynamicCall(callee, args) |
-        ExprKind.FunctionPtrCall(callee, args) => {
-            collect_string_expr(callee, strings);
-            for arg in args { collect_string_expr(arg, strings); }
-        }
-        ExprKind.If(cond, then_branch, else_branch) => {
-            collect_string_expr(cond, strings);
-            collect_string_expr(then_branch, strings);
-            if let Some(else_expr) = else_branch { collect_string_expr(else_expr, strings); }
-        }
-        ExprKind.IfLet(_, scrutinee, then_branch, else_branch) => {
-            collect_string_expr(scrutinee, strings);
-            collect_string_expr(then_branch, strings);
-            if let Some(else_expr) = else_branch { collect_string_expr(else_expr, strings); }
-        }
-        ExprKind.Range(start, end) => { collect_string_expr(start, strings); collect_string_expr(end, strings); }
-        ExprKind.Block(BlockInfo(stmts)) => {
-            for stmt in stmts { collect_string_stmt(stmt, strings); }
-        }
-        ExprKind.Tuple(items) | ExprKind.List(items) => {
-            for item in items { collect_string_expr(item, strings); }
-        }
-        ExprKind.Index(receiver, index) | ExprKind.ReadVariant(receiver, index) => {
-            collect_string_expr(receiver, strings);
-            collect_string_expr(index, strings);
-        }
-        ExprKind.Match(info) => {
-            collect_string_expr(info.scrutinee, strings);
-            for arm in info.arms { collect_string_expr(arm.body, strings); }
-        }
-        ExprKind.With(info) => collect_string_expr(info.body, strings),
-        ExprKind.ResolvedLambda(_, body, _) | ExprKind.UnresolvedLambda(_, body) => collect_string_expr(body, strings),
-        ExprKind.TypeAssociatedCall(info) => {
-            for arg in info.args { collect_string_expr(arg, strings); }
-        }
-        ExprKind.Yield(info) => collect_string_expr(info.arg, strings),
-        ExprKind.Switch(tag, arms) => {
-            collect_string_expr(tag, strings);
-            for arm in arms { collect_string_expr(arm, strings); }
-        }
-        ExprKind.AtomicLoad(pointer, _) => collect_string_expr(pointer, strings),
-        ExprKind.AtomicStore(pointer, value, _) |
-        ExprKind.AtomicRmw(_, pointer, value, _) => {
-            collect_string_expr(pointer, strings);
-            collect_string_expr(value, strings);
-        }
-        ExprKind.AtomicCompareExchange(pointer, current, new, _, _, _) => {
-            collect_string_expr(pointer, strings);
-            collect_string_expr(current, strings);
-            collect_string_expr(new, strings);
-        }
-        ExprKind.AtomicFence(_) => {}
-        _ => {}
-    }
-}
-
-fn collect_string_stmt(stmt: S.Statement, strings: Vec[String]) {
-    match stmt {
-        S.Statement.Let(info) => collect_string_expr(info.rhs, strings),
-        S.Statement.Assign(lhs, rhs) => { collect_string_expr(lhs, strings); collect_string_expr(rhs, strings); }
-        S.Statement.Expr(expr) | S.Statement.TrailingExpr(expr) | S.Statement.Defer(expr) => collect_string_expr(expr, strings),
-        S.Statement.Loop(BlockInfo(stmts)) |
-        S.Statement.ForLoop(_, _, stmts) |
-        S.Statement.WhileLoop(_, stmts) => {
-            for stmt in stmts { collect_string_stmt(stmt, strings); }
-        }
-        S.Statement.UnresolvedLet(_, _, expr) => collect_string_expr(expr, strings),
-        S.Statement.Declare(_) => {}
-    }
-}
-
-fn collect_strings(program: Program) -> Vec[String] {
-    let strings: Vec[String] = Vec.new();
-    for fdef in program.functions.values() {
-        if let Some(body) = fdef.body {
-            collect_string_expr(body, strings);
-        }
-    }
-    strings
 }
 
 fn add_global(
@@ -1281,7 +1154,7 @@ fn build_runtime_module(l: Lowerer) -> Emit.LLVMModule {
     ml.finish()
 }
 
-fn build_string_module(l: Lowerer, strings: Vec[String]) -> Emit.LLVMModule {
+fn build_string_module(l: Lowerer, strings: Set[String]) -> Emit.LLVMModule {
     let ml = ModuleLowerer.new(l, "siko.strings");
     for value in strings {
         add_string_global(ml, value, True);
@@ -1289,7 +1162,7 @@ fn build_string_module(l: Lowerer, strings: Vec[String]) -> Emit.LLVMModule {
     ml.finish()
 }
 
-fn build_user_module(l: Lowerer, strings: Vec[String], deps: Deps.FunctionDeps, plan: UserModulePlan) -> Emit.LLVMModule {
+fn build_user_module(l: Lowerer, strings: Set[String], deps: Deps.FunctionDeps, plan: UserModulePlan) -> Emit.LLVMModule {
     let ml = ModuleLowerer.new(l, "siko.${plan.index}");
     for value in strings {
         add_string_global(ml, value, False);
@@ -1317,7 +1190,7 @@ fn build_user_module(l: Lowerer, strings: Vec[String], deps: Deps.FunctionDeps, 
 
 pub fn lower(program: Program) -> Vec[Emit.LLVMModule] {
     let l = Lowerer.new(program);
-    let strings = collect_strings(program);
+    let strings = Strings.collect_strings(program);
     let deps = Deps.build(program);
     let plans = build_user_module_plans(deps);
     let modules: Vec[Emit.LLVMModule] = Vec.new(plans.len() + 2);

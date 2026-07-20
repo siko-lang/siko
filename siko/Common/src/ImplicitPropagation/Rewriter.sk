@@ -157,7 +157,7 @@ fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
         let val_ty = rewriter.implicit_types.get(qname_str);
         let wrap_ty = Some(named_ty(wrapper_struct_name(qname_str)));
         let wrap_var_expr = typed_var_expr(wrap, wrap_ty, loc);
-        let value_field = typed_field_expr(wrap_var_expr, I.intern("value"),val_ty.clone(), loc);
+        let value_field = typed_field_expr(wrap_var_expr, I.intern("value"), 0, val_ty.clone(), loc);
         let orig_var_expr = typed_var_expr(orig, val_ty, loc);
         stmts.push(S.Statement.Assign(orig_var_expr, value_field));
     }
@@ -261,7 +261,7 @@ pub struct Rewriter {
                     .get(qname)
                     .unwrap()
                     .clone();
-                typed_field_expr(wrapper, I.intern("value"),val_ty, loc)
+                typed_field_expr(wrapper, I.intern("value"), 0, val_ty, loc)
             }
 
             ExprKind.With(info) => {

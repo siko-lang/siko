@@ -32,6 +32,7 @@ pub struct SolverContext {
     pub program: Program,
     pub func_resolver: FunctionInstanceResolver,
     pub module_name: I.String,
+    pub field_resolutions: Map[Int, Int],
 }
 
 pub enum ProcessResult {
@@ -363,14 +364,14 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                                 None => Vec.new(),
                             };
                             let found = None;
-                            for f in struct_def.fields {
+                            for (field_index, f) in struct_def.fields.iter().enumerate() {
                                 if f.name.name() == field {
-                                    found = Some(f);
+                                    found = Some((field_index, f));
                                 }
                             }
                             match found {
                                 None => ProcessResult.Failed(TypeError.FieldNotFound(qname.name(), field, location)),
-                                Some(f) => {
+                                Some((field_index, f)) => {
                                     if ctx.module_name == struct_def.module_name || f.public {
                                         let sub = Substitution.new();
                                         let i = 0;
@@ -381,6 +382,11 @@ pub fn process(kind: C.ConstraintKind, ctx: SolverContext, location: Location) -
                                             i = i + 1;
                                         }
                                         let field_ty = sub.apply(f.ty);
+                                        let result_var = match result {
+                                            TypeDef.Var(TypeVar.Var(n)) => n,
+                                            _ => panic("solver: HasField result is not a fresh var"),
+                                        };
+                                        ctx.field_resolutions.insert(result_var, field_index);
                                         ok_satisfied([(C.ConstraintKind.Unify(lhs: result, rhs: field_ty), location)])
                                     } else {
                                         ProcessResult.Failed(TypeError.FieldNotPublic(qname.name(), field, location))
@@ -1111,6 +1117,7 @@ pub struct Solver {
     pub func_name: I.String,
     pub enable_debug: Bool,
     pub method_resolutions: Map[Int, CallResolution],
+    pub field_resolutions: Map[Int, Int],
     pub witness_map: Map[C.WitnessKey, BoundWitness],
 
     pub fn new(program: Program, instance_resolver: InstanceResolver, func: FunctionDef, constraints: Vec[C.Constraint], allocator: TypeVarAllocator) -> Solver {
@@ -1145,21 +1152,22 @@ pub struct Solver {
         }
 
         Solver(
-            constraints,
-            Substitution.new(),
-            allocator,
-            Map.new(),
-            active_unify,
-            0,
-            active,
-            0,
-            program,
-            func_resolver,
-            func.module_name,
-            func.name.name(),
-            False,
-            Map.new(),
-            Map.new(),
+            constraints: constraints,
+            sub: Substitution.new(),
+            allocator: allocator,
+            registry: Map.new(),
+            active_unify: active_unify,
+            active_unify_start: 0,
+            active: active,
+            active_start: 0,
+            program: program,
+            func_resolver: func_resolver,
+            module_name: func.module_name,
+            func_name: func.name.name(),
+            enable_debug: False,
+            method_resolutions: Map.new(),
+            field_resolutions: Map.new(),
+            witness_map: Map.new(),
         )
     }
 
@@ -1231,7 +1239,14 @@ pub struct Solver {
                 }
             }
 
-            let ctx = SolverContext(s.sub, s.allocator, s.program, s.func_resolver, s.module_name);
+            let ctx = SolverContext(
+                sub: s.sub,
+                allocator: s.allocator,
+                program: s.program,
+                func_resolver: s.func_resolver,
+                module_name: s.module_name,
+                field_resolutions: s.field_resolutions,
+            );
 
             match process(kind, ctx, location) {
                 ProcessResult.Satisfied(newly_bound, spawn, call_resolution, witness) => {
@@ -1388,6 +1403,10 @@ pub struct Solver {
 
     pub fn get_method_resolutions(s: Solver) -> Map[Int, CallResolution] {
         s.method_resolutions
+    }
+
+    pub fn get_field_resolutions(s: Solver) -> Map[Int, Int] {
+        s.field_resolutions
     }
 
     pub fn get_witness_map(s: Solver) -> Map[C.WitnessKey, BoundWitness] {

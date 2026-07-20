@@ -307,7 +307,7 @@ struct BlockLowerer {
                                     var,
                                     Some(item_ty),
                                     Expr(
-                                        ExprKind.FieldAccess(payload_var, Identifier.new(VP.payload_field_name(i), loc)),
+                                        ExprKind.FieldAccess(payload_var, Identifier.new(VP.payload_field_name(i), loc), Some(i)),
                                         loc,
                                         Some(item_ty),
                                     ),
@@ -388,7 +388,7 @@ fn check_value_expr(expr: Expr, where_: String) {
                 check_value_expr(arg, where_);
             }
         }
-        ExprKind.FieldAccess(recv, _) => check_value_expr(recv, where_),
+        ExprKind.FieldAccess(recv, _, _) => check_value_expr(recv, where_),
         ExprKind.TupleIndex(recv, _) => check_value_expr(recv, where_),
         ExprKind.Tuple(items) => {
             for item in items {

@@ -94,23 +94,21 @@ struct Checker {
             ExprKind.MethodCall(info) => {
                 ctx.fail("method call in sanity checker");
             }
-            ExprKind.FieldAccess(receiver, field) => {
+            ExprKind.FieldAccess(receiver, field, field_index) => {
                 let receiver_ty = ctx.check_expr(receiver);
                 match receiver_ty {
                     TypeDef.Named(NamedInfo(name, _)) => {
                         let struct_qname = name.resolved();
                         if let Some(def) = ctx.program.structs.get(struct_qname) {
-                            let found = False;
-                            let field_name = field.name();
-                            for f in def.fields {
-                                if f.name.name() == field_name {
-                                    ctx.unify(f.ty, ty);
-                                    found = True;
-                                }
+                            let index = field_index.expect("field access has no field index");
+                            if index < 0 || index >= def.fields.len() {
+                                ctx.fail("field access index out of bounds");
                             }
-                            if !found {
-                                ctx.fail("field access field not found");
+                            let field_def = def.fields[index];
+                            if field_def.name.name() != field.name() {
+                                ctx.fail("field access name does not match field index");
                             }
+                            ctx.unify(field_def.ty, ty);
                         } else {
                             ctx.fail("field access receiver type is not a struct");
                         }

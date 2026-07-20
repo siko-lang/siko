@@ -1,0 +1,95 @@
+module Siko.LLVM.Strings {
+
+import Std.Set
+import Siko.AST.Expr as E
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Location
+
+trait Collect[T] {
+    fn walk(t: T, strings: Set[String])
+}
+
+instance Collect[Location]                 = auto(Fold, =)
+instance Collect[TypeDef]                  = auto(Fold, =)
+instance Collect[I.String]                 = auto(Fold, =)
+instance Collect[String]                   = auto(Fold, =)
+instance Collect[Int]                      = auto(Fold, =)
+instance Collect[E.AtomicOrdering]         = auto(Fold, =)
+instance Collect[E.AtomicRmwOp]            = auto(Fold, =)
+instance Collect[U8]                       = auto(Fold, =)
+instance Collect[Bool]                     = auto(Fold, =)
+instance Collect[QualifiedName]            = auto(Fold, =)
+instance Collect[E.VariableName]           = auto(Fold, =)
+instance Collect[Name]                     = auto(Fold, =)
+instance Collect[Identifier]               = auto(Fold, =)
+instance Collect[E.WitnessInfo]            = auto(Fold, =)
+instance Collect[E.FunctionKind]           = auto(Fold, =)
+instance Collect[E.BinaryOp]               = auto(Fold, =)
+instance Collect[E.UnaryOp]                = auto(Fold, =)
+instance Collect[E.LambdaArg]              = auto(Fold, =)
+instance Collect[E.ImplicitRefInfo]        = auto(Fold, =)
+instance Collect[E.CreateClosureInfo]      = auto(Fold, =)
+instance Collect[E.FunctionPtrInfo]        = auto(Fold, =)
+instance Collect[E.NamedArgument]          = auto(Fold, =)
+instance Collect[E.HandlerSelection]       = auto(Fold, =)
+instance Collect[NamedPatternArg]          = auto(Fold, =)
+instance Collect[E.MethodCallInfo]         = auto(Fold)
+instance Collect[E.CallInfo]               = auto(Fold)
+instance Collect[E.FunctionCallInfo]       = auto(Fold)
+instance Collect[E.TypeAssociatedCallInfo] = auto(Fold)
+instance Collect[E.WithInfo]               = auto(Fold)
+instance Collect[E.MatchArm]               = auto(Fold)
+instance Collect[E.MatchInfo]              = auto(Fold)
+instance Collect[E.YieldInfo]              = auto(Fold)
+instance Collect[E.BlockInfo]              = auto(Fold)
+instance Collect[E.ExprKind]               = auto(Fold)
+instance Collect[S.LetInfo]                = auto(Fold)
+instance Collect[S.DeclareInfo]            = auto(Fold)
+instance Collect[S.Statement]              = auto(Fold)
+instance Collect[Pattern]                  = auto(Fold)
+instance Collect[PatternKind]              = auto(Fold)
+instance Collect[NamedPatternInfo]          = auto(Fold)
+
+instance[T: Collect[T]] Collect[Option[T]] {
+    fn walk(opt: Option[T], strings: Set[String]) {
+        if let Some(t) = opt {
+            walk(t, strings);
+        }
+    }
+}
+
+instance[T: Collect[T]] Collect[Vec[T]] {
+    fn walk(items: Vec[T], strings: Set[String]) {
+        for item in items {
+            walk(item, strings);
+        }
+    }
+}
+
+instance Collect[E.Expr] {
+    fn walk(expr: E.Expr, strings: Set[String]) {
+        if let E.ExprKind.StringLiteral(value) = expr.kind {
+            strings.insert(value);
+        }
+        walk(expr.kind, strings);
+    }
+}
+
+pub fn collect_strings(program: Program) -> Set[String] {
+    let strings: Set[String] = Set.new();
+    for fdef in program.functions.values() {
+        if let Some(body) = fdef.body {
+            walk(body, strings);
+        }
+    }
+    strings
+}
+
+}

@@ -171,7 +171,6 @@ pub fn boundary_vars(func: FunctionDef) -> Vec[TypeVar] {
 
 pub struct DataTables {
     struct_fields: Map[QualifiedName, Vec[Vec[Int]]],
-    struct_field_index: Map[QualifiedName, Map[I.String, Int]],
     variant_items: Map[QualifiedName, Vec[Vec[Int]]],
 }
 
@@ -194,19 +193,15 @@ fn pool_index_of(tad: Option[TypeArgDefs]) -> Map[TypeVar, Int] {
 
 pub fn build_tables(program: Program) -> DataTables {
     let struct_fields: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
-    let struct_field_index: Map[QualifiedName, Map[I.String, Int]] = Map.new();
     let variant_items: Map[QualifiedName, Vec[Vec[Int]]] = Map.new();
 
     for (qname, sdef) in program.structs.iter() {
         let pool_index = pool_index_of(sdef.type_arg_defs.clone());
         let fields: Vec[Vec[Int]] = Vec.new();
-        let index: Map[I.String, Int] = Map.new();
-        for (i, field) in sdef.fields.iter().enumerate() {
+        for field in sdef.fields.iter() {
             fields.push(pool_positions(pool_index, field.ty.clone()));
-            index.insert(field.name.name, i);
         }
         struct_fields.insert(qname, fields);
-        struct_field_index.insert(qname, index);
     }
 
     for (_, edef) in program.enums.iter() {
@@ -220,7 +215,7 @@ pub fn build_tables(program: Program) -> DataTables {
         }
     }
 
-    DataTables(struct_fields, struct_field_index, variant_items)
+    DataTables(struct_fields, variant_items)
 }
 
 // ── Residual records ─────────────────────────────────────────────────────────
@@ -450,9 +445,9 @@ instance Flow[E.Expr] {
             E.ExprKind.Var(v) => {
                 ctx.unify(ctx.env_nodes(v), out);
             }
-            E.ExprKind.FieldAccess(recv, fname) => {
+            E.ExprKind.FieldAccess(recv, _, field_index) => {
                 flow(recv, ctx);
-                field_access_edges(ctx, recv, fname.name, ctx.nodes(evars(expr)));
+                field_access_edges(ctx, recv, field_index.expect("closure flow: field access has no field index"), ctx.nodes(evars(expr)));
             }
             E.ExprKind.TupleIndex(recv, idx) => {
                 flow(recv, ctx);
@@ -689,23 +684,18 @@ instance Flow[Pattern] {
 
 // s.f — relate the receiver's type args (the datatype pool) to the field's
 // own vars via the slot table.
-fn field_access_edges(ctx: FlowCtx, recv: E.Expr, fname: I.String, out: Vec[FlowNode]) {
+fn field_access_edges(ctx: FlowCtx, recv: E.Expr, field_index: Int, out: Vec[FlowNode]) {
     let fallback = || ctx.unify(ctx.nodes(evars(recv)), out);
     match peel_named(recv.ty.unwrap()) {
         Some(NamedInfo(name, targs)) => {
             let dq = name.resolved();
-            match (ctx.tables.struct_field_index.get(dq), ctx.tables.struct_fields.get(dq)) {
-                (Some(index), Some(fields)) => {
-                    match index.get(fname) {
-                        Some(idx) => {
-                            let src_vars: Vec[TypeVar] = Vec.new();
-                            for p in fields[idx].iter() {
-                                src_vars.extend(ty_vars(targs[p]));
-                            }
-                            ctx.unify(ctx.nodes(src_vars), out);
-                        }
-                        None => fallback(),
+            match ctx.tables.struct_fields.get(dq) {
+                Some(fields) if field_index >= 0 && field_index < fields.len() => {
+                    let src_vars: Vec[TypeVar] = Vec.new();
+                    for p in fields[field_index].iter() {
+                        src_vars.extend(ty_vars(targs[p]));
                     }
+                    ctx.unify(ctx.nodes(src_vars), out);
                 }
                 _ => fallback(),
             }

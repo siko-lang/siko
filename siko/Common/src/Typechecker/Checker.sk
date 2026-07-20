@@ -40,8 +40,15 @@ pub fn typecheck_function(key: QualifiedName, program: Program, instance_resolve
         Ok(_) => {}
     }
     let method_resolutions = solver.get_method_resolutions();
+    let field_resolutions = solver.get_field_resolutions();
     let witness_map = solver.get_witness_map();
-    let finalizer = Finalizer.new(solver.into_subst(), program, method_resolutions, witness_map);
+    let finalizer = Finalizer.new(
+        solver.into_subst(),
+        program,
+        method_resolutions,
+        field_resolutions,
+        witness_map,
+    );
     let finalized = {
         stats.finalizer_start();
         defer stats.finalizer_end();

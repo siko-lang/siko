@@ -51,7 +51,7 @@ struct EnumLowerer {
     // `expr.tag` as a Siko Int, matching what EnumTag used to produce.
     fn tag_read(l: EnumLowerer, inner: Expr, loc: Location) -> Expr {
         let fa = Expr(
-            ExprKind.FieldAccess(inner, Identifier.new(VP.container_tag_name(), loc)),
+            ExprKind.FieldAccess(inner, Identifier.new(VP.container_tag_name(), loc), Some(0)),
             loc,
             Some(l.u32_ty),
         );
@@ -71,7 +71,7 @@ struct EnumLowerer {
             None => panic("lower-enums: ReadVariant on payload-less enum"),
         };
         let fa = Expr(
-            ExprKind.FieldAccess(value, Identifier.new(VP.container_payload_name(), loc)),
+            ExprKind.FieldAccess(value, Identifier.new(VP.container_payload_name(), loc), Some(1)),
             loc,
             Some(payload_ty),
         );
@@ -119,7 +119,7 @@ struct EnumLowerer {
             ExprKind.SizeOf(_) => expr.kind,
             ExprKind.BinaryOp(op, lhs, rhs) => ExprKind.BinaryOp(op, l.lower_expr(lhs), l.lower_expr(rhs)),
             ExprKind.UnaryOp(op, inner) => ExprKind.UnaryOp(op, l.lower_expr(inner)),
-            ExprKind.FieldAccess(receiver, field) => ExprKind.FieldAccess(l.lower_expr(receiver), field),
+            ExprKind.FieldAccess(receiver, field, field_index) => ExprKind.FieldAccess(l.lower_expr(receiver), field, field_index),
             ExprKind.FunctionCall(info) => {
                 info.args = l.lower_exprs(info.args);
                 match info.kind {
@@ -189,9 +189,9 @@ struct CtorBuilder {
         Expr(ExprKind.Var(name), b.loc, Some(ty))
     }
 
-    fn field_access(b: CtorBuilder, receiver: Expr, name: I.String, ty: TypeDef) -> Expr {
+    fn field_access(b: CtorBuilder, receiver: Expr, name: I.String, field_index: Int, ty: TypeDef) -> Expr {
         Expr(
-            ExprKind.FieldAccess(receiver, Identifier.new(name, b.loc)),
+            ExprKind.FieldAccess(receiver, Identifier.new(name, b.loc), Some(field_index)),
             b.loc,
             Some(ty),
         )
@@ -213,9 +213,9 @@ struct CtorBuilder {
         name
     }
 
-    fn assign_field(b: CtorBuilder, receiver: Expr, field: I.String, value: Expr) {
+    fn assign_field(b: CtorBuilder, receiver: Expr, field: I.String, field_index: Int, value: Expr) {
         let field_ty = value.ty.expect("lower-enums: ctor field value has no type");
-        b.stmts.push(S.Statement.Assign(b.field_access(receiver, field, field_ty), value));
+        b.stmts.push(S.Statement.Assign(b.field_access(receiver, field, field_index, field_ty), value));
     }
 
     fn ret(b: CtorBuilder, value: Expr) {
@@ -266,6 +266,7 @@ fn generate_struct_ctor(sdef: StructDef) -> (QualifiedName, FunctionDef) {
         b.assign_field(
             b.var_expr(result, ret_ty),
             field.name.name(),
+            i,
             b.var_expr(param_names[i], field.ty),
         );
     }
@@ -298,6 +299,7 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
             b.assign_field(
                 b.var_expr(v, payload_repr),
                 VP.payload_field_name(i),
+                i,
                 b.var_expr(param_names[i], item.ty),
             );
         }
@@ -308,6 +310,7 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
     b.assign_field(
         b.var_expr(result, ret_ty),
         VP.container_tag_name(),
+        0,
         Expr(ExprKind.IntLiteral(I.intern("${tag}"), Some(tag)), b.loc, Some(u32_ty)),
     );
     if let Some(v) = variant_var {
@@ -315,7 +318,7 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
         let buffer_ty = payload_types
             .get(enum_qname)
             .expect("lower-enums: variant with payload but container has no payload field");
-        let fa = b.field_access(b.var_expr(result, ret_ty), VP.container_payload_name(), buffer_ty);
+        let fa = b.field_access(b.var_expr(result, ret_ty), VP.container_payload_name(), 1, buffer_ty);
         let addr = Expr(ExprKind.AddrOf(fa), b.loc, Some(TypeDef.Ptr(buffer_ty)));
         let cast = Expr(ExprKind.Transmute(addr), b.loc, Some(TypeDef.Ptr(payload_repr)));
         let slot = Expr(ExprKind.Deref(cast), b.loc, Some(payload_repr));
