@@ -26,14 +26,22 @@ pub fn expand_program(program: Program) {
         let expanded = expand_effect(effect_def, program);
         program.effects.insert(key, expanded);
     }
-    // Expand instance bounds in place. The InstanceResolver holds the same
-    // InstanceDef objects, so this is seen at typecheck — and it keeps an
-    // instance's captured context witnesses aligned with the (also expanded)
-    // InstanceContext bounds of its methods. all_instances is the de-duped union.
+    // all_instances is authoritative. Rebind the filtered instance views after
+    // expansion instead of relying on the same InstanceDef object being shared
+    // across all three containers; Program.clone() cannot preserve that
+    // cross-container aliasing.
     let instance_keys: Vec[_] = program.all_instances.keys().collect();
     for key in instance_keys {
         let inst = program.all_instances.get(key).unwrap();
         inst.type_arg_defs = expand_bounds(inst.type_arg_defs, program, inst.location);
+    }
+    let named_keys: Vec[_] = program.named_instances.keys().collect();
+    for key in named_keys {
+        program.named_instances.insert(key, program.all_instances.get(key).unwrap());
+    }
+    for index in 0..program.canonical_instances.len() {
+        let qname = program.canonical_instances[index].qualified_name.unwrap();
+        program.canonical_instances[index] = program.all_instances.get(qname).unwrap();
     }
 }
 

@@ -1,0 +1,62 @@
+module Siko.Interpreter2.InterpreterTestRunner {
+
+import Siko.AST.QualifiedName
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Interpreter2.Compiler
+import Siko.Interpreter2.Error
+import Siko.Interpreter2.Extensions
+import Siko.Interpreter2.Interpreter as Interp
+import Siko.Location
+import Siko.Report
+
+pub struct InterpreterTests {
+    pub program: Program,
+    pub locations: Vec[Location],
+
+    pub fn is_empty(tests: InterpreterTests) -> Bool {
+        tests.locations.is_empty()
+    }
+}
+
+pub fn collect_interpreter_tests(program: Program) -> InterpreterTests {
+    let test_program = program.clone();
+    test_program.entry_points = Vec.new();
+    let locations: Vec[Location] = Vec.new();
+    for (_, struct_def) in program.structs {
+        for annotation in struct_def.annotations {
+            if let Some(fn_name) = annotation.interpreter_test_name() {
+                let fn_qn = QualifiedName.new_function(struct_def.module_name, fn_name);
+                if program.functions.contains_key(fn_qn) {
+                    test_program.entry_points.push(fn_qn);
+                    locations.push(struct_def.name.location);
+                } else {
+                    report(
+                        "interpreter test function `${I.resolve(fn_name)}` not found in module `${I.resolve(struct_def.module_name)}`",
+                        Some(struct_def.name.location),
+                    );
+                }
+            }
+        }
+    }
+    InterpreterTests(test_program, locations)
+}
+
+pub fn run_interpreter_tests(program: Program, locations: Vec[Location]) {
+    let executable = Compiler.compile(program);
+    for (index, location) in locations.iter().enumerate() {
+        let entry = executable.entry_points[index];
+        match Interp.invoke(
+            executable,
+            entry.function,
+            [],
+            location,
+            InterpreterExtensions.new([]),
+        ) {
+            Ok(_) => {}
+            Err(e) => report(format_error(e), Some(e.location)),
+        }
+    }
+}
+
+}

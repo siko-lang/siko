@@ -5,7 +5,7 @@ import Siko.Driver.Util
 import Siko.Parser.Parser
 import Siko.Parser.Module
 import Siko.Resolver
-import Siko.Interpreter.InterpreterTestRunner
+import Siko.Interpreter2.InterpreterTestRunner as InterpreterTests
 import Siko.ClosureLowering.Lower as ClosureLowering
 import Siko.CoroutineLowering
 import Siko.ImplicitPropagation.Function as IP
@@ -74,16 +74,6 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
     let config = get_config();
     let core_passes: Vec[Pass] = [
         Pass(
-            name: "interpreter-tests",
-            label: "Running interpreter tests...",
-            run: |driver| {
-                if !config.lsp {
-                    run_interpreter_tests(driver.program);
-                }
-            },
-            dump: None,
-        ),
-        Pass(
             name: "lower-defer",
             label: "Lowering defers...",
             run: |driver| {
@@ -114,15 +104,15 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
             dump: Some(|driver| println(driver.program.format())),
         ),
         Pass(
-            name: "instance-resolver",
-            label: "Building instance resolver...",
-            run: |driver| { driver.program.instance_resolver = InstanceResolver.build(driver.program); },
-            dump: Some(|driver| println(driver.program.format())),
-        ),
-        Pass(
             name: "bound-expansion",
             label: "Bound expansion...",
             run: |driver| { expand_program(driver.program); },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "instance-resolver",
+            label: "Building instance resolver...",
+            run: |driver| { driver.program.instance_resolver = InstanceResolver.build(driver.program); },
             dump: Some(|driver| println(driver.program.format())),
         ),
         Pass(
@@ -197,6 +187,40 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
     core_passes + safety_passes
 }
 
+fn build_interpreter_test_passes(driver: Driver) -> Vec[Pass] {
+    let config = get_config();
+    [
+        Pass(
+            name: "interpreter-tests",
+            label: "Running interpreter tests...",
+            run: |driver| {
+                if !config.lsp {
+                    let tests = InterpreterTests.collect_interpreter_tests(driver.program);
+                    if !tests.is_empty() {
+                        let test_driver = Driver.new();
+                        test_driver.program = tests.program;
+                        let test_config = config.for_nested_compilation();
+                        with Siko.Config.current = test_config {
+                            test_driver.compile_interpreter_tests();
+                        }
+                        let failed = test_driver.has_error_diagnostic();
+                        for diagnostic in test_driver.get_diagnostics() {
+                            Siko.Driver.add_diagnostic(diagnostic);
+                        }
+                        if !failed {
+                            InterpreterTests.run_interpreter_tests(
+                                test_driver.program,
+                                tests.locations,
+                            );
+                        }
+                    }
+                }
+            },
+            dump: None,
+        ),
+    ]
+}
+
 fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
     [
             Pass(
@@ -264,10 +288,16 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
 }
 
 pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
-    build_parse_resolve_passes(driver) + build_post_resolve_check_passes(driver)
+    build_parse_resolve_passes(driver)
+        + build_interpreter_test_passes(driver)
+        + build_post_resolve_check_passes(driver)
 }
 
 pub fn build_macro_passes(driver: Driver) -> Vec[Pass] {
+    build_post_resolve_check_passes(driver) + build_lowering_passes(driver)
+}
+
+pub fn build_interpreter_test_program_passes(driver: Driver) -> Vec[Pass] {
     build_post_resolve_check_passes(driver) + build_lowering_passes(driver)
 }
 
