@@ -1,0 +1,133 @@
+module Siko.Resolver.Statistics {
+
+import Std.Time
+
+fn format_microseconds_as_millis(us: I64) -> String {
+    let ms = us / 1000;
+    let frac = (us % 1000).as_int().to_string();
+    while frac.len() < 3 {
+        frac = "0" + frac;
+    }
+    "${ms}.${frac}ms"
+}
+
+fn format_duration(total: Duration) -> String {
+    format_microseconds_as_millis(total.to_microseconds())
+}
+
+fn format_average_duration(total: Duration, count: Int) -> String {
+    if count == 0 {
+        return "0.000ms";
+    }
+    format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
+}
+
+fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
+    if enabled {
+        starts.push(Instant.now());
+    }
+}
+
+fn statistics_elapsed(enabled: Bool, starts: Vec[Instant]) -> Option[Duration] {
+    if !enabled {
+        return None;
+    }
+    starts.pop().map(|start| start.elapsed())
+}
+
+fn print_time_stat(
+    name: String,
+    count: Int,
+    total: Duration,
+    max_us: I64,
+) {
+    let actual_max = if count == 0 { 0 } else { max_us };
+    println(
+        "  ${name}: calls=${count}, total=${format_duration(total)}, "
+        + "avg=${format_average_duration(total, count)}, "
+        + "max=${format_microseconds_as_millis(actual_max)}"
+    );
+}
+
+pub struct Statistics {
+    enabled: Bool,
+    macro_program_compilations: Int,
+    macro_program_compilation_time: Duration,
+    macro_program_compilation_max_us: I64,
+    macro_program_compilation_starts: Vec[Instant],
+    macro_executions: Int,
+    macro_execution_time: Duration,
+    macro_execution_max_us: I64,
+    macro_execution_starts: Vec[Instant],
+
+    pub fn new(enabled: Bool) -> Statistics {
+        Statistics(
+            enabled: enabled,
+            macro_program_compilations: 0,
+            macro_program_compilation_time: Duration.zero(),
+            macro_program_compilation_max_us: 0,
+            macro_program_compilation_starts: Vec.new(1),
+            macro_executions: 0,
+            macro_execution_time: Duration.zero(),
+            macro_execution_max_us: 0,
+            macro_execution_starts: Vec.new(1),
+        )
+    }
+
+    pub fn macro_program_compilation_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.macro_program_compilation_starts);
+    }
+
+    pub fn macro_program_compilation_end(stats: Statistics) {
+        if let Some(elapsed) = statistics_elapsed(
+            stats.enabled,
+            stats.macro_program_compilation_starts,
+        ) {
+            let elapsed_us = elapsed.to_microseconds();
+            stats.macro_program_compilations += 1;
+            stats.macro_program_compilation_time += elapsed;
+            if elapsed_us > stats.macro_program_compilation_max_us {
+                stats.macro_program_compilation_max_us = elapsed_us;
+            }
+        }
+    }
+
+    pub fn macro_execution_start(stats: Statistics) {
+        statistics_start(stats.enabled, stats.macro_execution_starts);
+    }
+
+    pub fn macro_execution_end(stats: Statistics) {
+        if let Some(elapsed) = statistics_elapsed(
+            stats.enabled,
+            stats.macro_execution_starts,
+        ) {
+            let elapsed_us = elapsed.to_microseconds();
+            stats.macro_executions += 1;
+            stats.macro_execution_time += elapsed;
+            if elapsed_us > stats.macro_execution_max_us {
+                stats.macro_execution_max_us = elapsed_us;
+            }
+        }
+    }
+
+    pub fn dump(stats: Statistics) {
+        if !stats.enabled {
+            return;
+        }
+        println("Resolver statistics:");
+        print_time_stat(
+            "macro_program_compilation",
+            stats.macro_program_compilations,
+            stats.macro_program_compilation_time,
+            stats.macro_program_compilation_max_us,
+        );
+        print_time_stat(
+            "macro_execution",
+            stats.macro_executions,
+            stats.macro_execution_time,
+            stats.macro_execution_max_us,
+        );
+    }
+}
+
+}

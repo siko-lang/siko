@@ -9,12 +9,11 @@ import Siko.ClosureLowering.InferProfiles.Flow
 import Siko.ClosureLowering.Profile
 import Siko.ClosureLowering.Statistics
 import Siko.Config
-import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 
 // Concrete resolution. Profiles are generic summaries; this pass walks from
-// Main.main and computes concrete closure sets for reachable function
+// the program entry points and computes concrete closure sets for reachable function
 // instances. Closure identity is the closure creation site's lambda qname.
 
 @derive2(PartialEq, Eq, PartialOrd, Ord, Clone)
@@ -58,7 +57,7 @@ pub struct Resolver {
     pub closures: Vec[ClosureInstance],
     instance_ids: Map[InstanceKey, Int],
     pub instances: Vec[FnInstance],
-    pub main_instance: Int,
+    pub entry_instances: Vec[Int],
     changed: Bool,
 
     fn add_profile_mapping(r: Resolver, m: Map[TypeVar, Vec[Int]], v: TypeVar, root: Int) {
@@ -480,21 +479,20 @@ pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) 
         closures: Vec.new(),
         instance_ids: Map.new(),
         instances: Vec.new(),
-        main_instance: 0,
+        entry_instances: Vec.new(),
         changed: False,
     );
 
-    let main_base = B.get_main_entry_qn().base();
-    let main_qn = None;
-    for (q, _) in r.program.functions.iter() {
-        if q.base() == main_base {
-            main_qn = Some(q);
-        }
+    for entry_qname in r.program.entry_points {
+        let entry_profile = r.profiles
+            .get(entry_qname)
+            .expect("closure lowering: entry point has no profile");
+        let entry_inputs: Vec[Vec[Int]] = profile_boundary_vars(entry_profile)
+            .iter()
+            .map(|_| Vec.new())
+            .collect();
+        r.entry_instances.push(r.intern_instance(entry_qname, entry_inputs));
     }
-    let main_qn = main_qn.expect("closure lowering: Main.main not found");
-    let main_profile = r.profiles.get(main_qn.clone()).expect("closure lowering: Main.main has no profile");
-    let main_inputs: Vec[Vec[Int]] = profile_boundary_vars(main_profile).iter().map(|_| Vec.new()).collect();
-    r.main_instance = r.intern_instance(main_qn, main_inputs);
 
     let pass = 0;
     loop {
@@ -503,7 +501,7 @@ pub fn resolve(program: Program, profiles: Map[QualifiedName, FunctionProfile]) 
         r.changed = False;
         let visited: Set[Int] = Set.new();
         let queue: Vec[Int] = Vec.new();
-        queue.push(r.main_instance);
+        queue.extend(r.entry_instances);
         loop {
             let iid = match queue.pop() {
                 Some(i) => i,
@@ -544,7 +542,7 @@ fn format_var(v: TypeVar) -> String {
 pub fn reachable_instances(r: Resolver) -> Vec[Int] {
     let visited: Set[Int] = Set.new();
     let stack: Vec[Int] = Vec.new();
-    stack.push(r.main_instance);
+    stack.extend(r.entry_instances);
     loop {
         let iid = match stack.pop() {
             Some(i) => i,

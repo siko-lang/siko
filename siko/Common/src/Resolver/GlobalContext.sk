@@ -12,10 +12,15 @@ import Siko.AST.QualifiedName
 import Siko.AST.Traits
 import Siko.AST.Type
 import Siko.HIR.Program
+import Siko.Interpreter2.Compiler as Interpreter2Compiler
+import Siko.Interpreter2.IR
 import Siko.Instances.InstanceResolver
 import Siko.Interner as I
+import Siko.Driver
+import Siko.Config
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.ModuleResolver
+import Siko.Resolver.Statistics
 
 pub struct EffectInstanceInfo {
     pub effect_qname: QualifiedName,
@@ -108,7 +113,7 @@ pub struct GlobalResolverContext {
     effect_instance_infos: Map[QualifiedName, EffectInstanceInfo],
     macros: Map[QualifiedName, MacroDef],
     program_pieces: Map[I.String, ProgramPiece],
-    macro_programs: Map[I.String, Program],
+    macro_programs: Map[I.String, ExecutableProgram],
 
     pub fn new() -> GlobalResolverContext {
         GlobalResolverContext(
@@ -170,7 +175,8 @@ pub struct GlobalResolverContext {
         macro_module: I.String,
         dependencies: Set[I.String],
         module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
-    ) {
+        statistics: Statistics,
+    ) -> Bool {
         let program = Program.new();
         for module_name in ctx.module_names {
             if !dependencies.contains(module_name) {
@@ -187,7 +193,35 @@ pub struct GlobalResolverContext {
                 program.module_trait_method_map.insert(module_name, method_map);
             }
         }
-        ctx.macro_programs.insert(macro_module, program);
+        for macro_def in ctx.macros.values() {
+            if macro_def.module_name == macro_module {
+                for function in macro_def.functions {
+                    program.entry_points.push(function.qualified_name.unwrap());
+                }
+            }
+        }
+        if program.entry_points.is_empty() {
+            ctx.macro_programs.insert(macro_module, ExecutableProgram.empty());
+            return True;
+        }
+
+        statistics.macro_program_compilation_start();
+        defer statistics.macro_program_compilation_end();
+        let driver = Driver.new();
+        driver.program = program;
+        let macro_config = get_config().for_macro_compilation();
+        with Siko.Config.current = macro_config {
+            driver.compile_macro();
+        }
+        let failed = driver.has_error_diagnostic();
+        for diagnostic in driver.get_diagnostics() {
+            Siko.Driver.add_diagnostic(diagnostic);
+        }
+        if failed {
+            return False;
+        }
+        ctx.macro_programs.insert(macro_module, Interpreter2Compiler.compile(driver.program));
+        True
     }
 
     pub fn get_effect_instance_info(ctx: GlobalResolverContext, qname: QualifiedName) -> Option[EffectInstanceInfo] {
@@ -233,7 +267,7 @@ pub struct GlobalResolverContext {
     pub fn get_macro_program(
         ctx: GlobalResolverContext,
         provider: QualifiedName,
-    ) -> Option[Program] {
+    ) -> Option[ExecutableProgram] {
         ctx.macros
             .get(provider)
             .and_then(|macro_def| ctx.macro_programs.get(macro_def.module_name))

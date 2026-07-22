@@ -4,9 +4,8 @@ import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
 import Siko.Resolver.Macros.Bridge.Value
@@ -37,14 +36,11 @@ fn trait_method_def(
         .map(|arg| type_def(state, substitution.apply(arg.type_def)))
         .collect();
     let qname = B.get_macro_trait_method_def_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             make_string(I.resolve(short_name)),
             handle_value(B.get_macro_qualified_name_qn(), state.add_name(function_name)),
-            vec_value(extra_argument_types, named_type(B.get_macro_type_def_qn())),
-        ])),
-    )
+            vec_value(extra_argument_types),
+        ])))
 }
 
 pub fn trait_def(
@@ -66,14 +62,11 @@ pub fn trait_def(
         ))
         .collect();
     let qname = B.get_macro_trait_def_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             make_string(I.resolve(name.name())),
             handle_value(B.get_macro_qualified_name_qn(), state.add_name(name)),
-            vec_value(methods, named_type(B.get_macro_trait_method_def_qn())),
-        ])),
-    )
+            vec_value(methods),
+        ])))
 }
 
 fn macro_error(message: String) -> Value {
@@ -91,15 +84,11 @@ pub fn resolution_ok(
     name: QualifiedName,
     target: TypeDef,
 ) -> Value {
-    let trait_type = named_type(B.get_macro_trait_def_qn());
-    let error_type = named_type(B.get_macro_error_qn());
-    result_value(trait_type, error_type, True, trait_def(global_ctx, state, name, target))
+    result_value(True, trait_def(global_ctx, state, name, target))
 }
 
 pub fn resolution_error(message: String) -> Value {
-    let trait_type = named_type(B.get_macro_trait_def_qn());
-    let error_type = named_type(B.get_macro_error_qn());
-    result_value(trait_type, error_type, False, macro_error(message))
+    result_value(False, macro_error(message))
 }
 
 }

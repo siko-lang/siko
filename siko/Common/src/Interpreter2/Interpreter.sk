@@ -1,0 +1,413 @@
+module Siko.Interpreter2.Interpreter {
+
+import Siko.Constants.Builtins as B
+import Siko.Interpreter.Error
+import Siko.Interpreter2.Extensions
+import Siko.Interpreter2.IR
+import Siko.Interpreter2.Memory
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
+import Siko.Location
+
+struct Interpreter {
+    program: ExecutableProgram,
+    extensions: InterpreterExtensions,
+    call_stack: Vec[FrameInfo],
+}
+
+fn make_bool(value: Bool) -> Value {
+    let (variant_qname, tag) = if value {
+        (B.get_bool_true_qn(), B.get_bool_true_variant_index())
+    } else {
+        (B.get_bool_false_qn(), B.get_bool_false_variant_index())
+    };
+    Value(ValueKind.Variant(VariantBox(
+        enum_qname: B.get_bool_type_qn(),
+        variant_qname: variant_qname,
+        tag: tag,
+        items: Vec.new(),
+    )))
+}
+
+fn read_bool(value: Value) -> Bool {
+    match value.kind {
+        ValueKind.Variant(vbox) => vbox.tag == B.get_bool_true_variant_index(),
+        _ => unreachable(),
+    }
+}
+
+fn read_int(value: Value) -> Int {
+    match value.kind {
+        ValueKind.Int(value) => value,
+        _ => unreachable(),
+    }
+}
+
+fn read_float(value: Value) -> F64 {
+    match value.kind {
+        ValueKind.Float(value) => value,
+        _ => unreachable(),
+    }
+}
+
+fn registers(locals: Vec[Value], registers: Vec[Int]) -> Vec[Value] {
+    let values = Vec.new(registers.len());
+    for reg in registers {
+        values.push(locals[reg]);
+    }
+    values
+}
+
+fn read_ptr(value: Value, location: Location) -> Result[Value, InterpreterError] {
+    match value.kind {
+        ValueKind.Ptr(PtrValue.Slot(array, index)) => match array.slots[index] {
+            Some(value) => Ok(value),
+            None => Err(error(ErrorKind.UninitializedRead, location)),
+        },
+        ValueKind.Ptr(PtrValue.Field(sbox, index)) => Ok(sbox.fields[index]),
+        ValueKind.Ptr(PtrValue.Null) => Err(error(ErrorKind.NullDeref, location)),
+        _ => unreachable(),
+    }
+}
+
+fn write_ptr(pointer: Value, value: Value, location: Location) -> Result[(), InterpreterError] {
+    match pointer.kind {
+        ValueKind.Ptr(PtrValue.Slot(array, index)) => {
+            array.slots[index] = Some(value);
+            Ok(())
+        }
+        ValueKind.Ptr(PtrValue.Field(sbox, index)) => {
+            sbox.fields[index] = value;
+            Ok(())
+        }
+        ValueKind.Ptr(PtrValue.Null) => Err(error(ErrorKind.NullDeref, location)),
+        _ => unreachable(),
+    }
+}
+
+fn copy_ptr(
+    dest_value: Value,
+    src_value: Value,
+    src_index: Int,
+    dest_index: Int,
+    size: Int,
+) {
+    if size == 0 {
+        return;
+    }
+    let (dest, dest_base) = match dest_value.kind {
+        ValueKind.Ptr(PtrValue.Slot(array, index)) => (array, index),
+        _ => unreachable(),
+    };
+    let (src, src_base) = match src_value.kind {
+        ValueKind.Ptr(PtrValue.Slot(array, index)) => (array, index),
+        _ => unreachable(),
+    };
+    let buffer: Vec[Option[Value]] = Vec.new(size);
+    for index in 0..size {
+        buffer.push(src.slots[src_base + src_index + index]);
+    }
+    for index in 0..size {
+        dest.slots[dest_base + dest_index + index] = buffer[index];
+    }
+}
+
+fn execute_function(
+    interp: Interpreter,
+    function_id: Int,
+    args: Vec[Value],
+    call_location: Location,
+) -> Result[Value, InterpreterError] {
+    if interp.call_stack.len() >= 500 {
+        return Err(error(ErrorKind.StackOverflow, call_location));
+    }
+    let function = interp.program.functions[function_id];
+    let locals = Vec.with_value(function.local_count, Value.uninitialized());
+    for (index, arg) in args.iter().enumerate() {
+        locals[index] = arg;
+    }
+    interp.call_stack.push(FrameInfo(function.name, call_location));
+    let pc = 0;
+    while pc < function.code.len() {
+        let instruction_index = pc;
+        let instruction = function.code[pc];
+        pc += 1;
+        match instruction {
+            Instruction.ConstInt(dst, value) | Instruction.ConstChar(dst, value) => {
+                locals[dst] = Value(ValueKind.Int(value));
+            }
+            Instruction.ConstFloat(dst, value) => {
+                locals[dst] = Value(ValueKind.Float(value));
+            }
+            Instruction.ConstStringPtr(dst, constant) => {
+                locals[dst] = interp.program.constants[constant];
+            }
+            Instruction.Unit(dst) => { locals[dst] = Value.unit(); }
+            Instruction.Uninitialized(dst) => { locals[dst] = Value.uninitialized(); }
+            Instruction.Set(dst, src) => { locals[dst] = locals[src]; }
+            Instruction.CopyValueType(dst, src) => {
+                locals[dst] = copy_value_type(locals[src]);
+            }
+
+            Instruction.MakeStruct(dst, qname, fields) => {
+                locals[dst] = Value(ValueKind.Struct(StructBox(qname, registers(locals, fields))));
+            }
+            Instruction.ReadField(dst, receiver, index) => {
+                let sbox = match locals[receiver].kind {
+                    ValueKind.Struct(sbox) => sbox,
+                    _ => unreachable(),
+                };
+                locals[dst] = sbox.fields[index];
+            }
+            Instruction.WriteField(receiver, index, value) => {
+                let sbox = match locals[receiver].kind {
+                    ValueKind.Struct(sbox) => sbox,
+                    _ => unreachable(),
+                };
+                sbox.fields[index] = locals[value];
+            }
+            Instruction.FieldAddress(dst, receiver, index) => {
+                let sbox = match locals[receiver].kind {
+                    ValueKind.Struct(sbox) => sbox,
+                    _ => unreachable(),
+                };
+                locals[dst] = Value(ValueKind.Ptr(PtrValue.Field(sbox, index)));
+            }
+            Instruction.MakeVariant(dst, enum_qname, variant_qname, tag, items) => {
+                let items = registers(locals, items);
+                locals[dst] = Value(ValueKind.Variant(VariantBox(enum_qname, variant_qname, tag, items)));
+            }
+            Instruction.ReadVariant(dst, receiver, index) => {
+                let vbox = match locals[receiver].kind {
+                    ValueKind.Variant(vbox) => vbox,
+                    _ => unreachable(),
+                };
+                locals[dst] = vbox.items[index];
+            }
+            Instruction.ReadVariantDynamic(dst, receiver, index) => {
+                let vbox = match locals[receiver].kind {
+                    ValueKind.Variant(vbox) => vbox,
+                    _ => unreachable(),
+                };
+                locals[dst] = vbox.items[read_int(locals[index])];
+            }
+            Instruction.ReadTag(dst, receiver) => {
+                let tag = match locals[receiver].kind {
+                    ValueKind.Variant(vbox) => vbox.tag,
+                    _ => unreachable(),
+                };
+                locals[dst] = Value(ValueKind.Int(tag));
+            }
+
+            Instruction.FunctionRef(dst, function) => {
+                locals[dst] = Value(ValueKind.Function(function));
+            }
+            Instruction.Call(dst, callee, args) => {
+                let location = function.locations[instruction_index];
+                locals[dst] = execute_function(interp, callee, registers(locals, args), location)?;
+            }
+            Instruction.CallIndirect(dst, function_reg, args) => {
+                let location = function.locations[instruction_index];
+                let callee = match locals[function_reg].kind {
+                    ValueKind.Function(function) => function,
+                    _ => unreachable(),
+                };
+                locals[dst] = execute_function(interp, callee, registers(locals, args), location)?;
+            }
+            Instruction.Return(value) => {
+                interp.call_stack.pop();
+                return Ok(locals[value]);
+            }
+
+            Instruction.Jump(target) => { pc = target; }
+            Instruction.JumpIfFalse(condition, target) => {
+                if !read_bool(locals[condition]) { pc = target; }
+            }
+            Instruction.JumpIfTagNot(value, tag, target) => {
+                let actual = match locals[value].kind {
+                    ValueKind.Variant(vbox) => vbox.tag,
+                    _ => unreachable(),
+                };
+                if actual != tag { pc = target; }
+            }
+            Instruction.JumpIfIntNot(value, expected, target) => {
+                if read_int(locals[value]) != expected { pc = target; }
+            }
+            Instruction.JumpIfStringNot(value, expected, target) => {
+                if render_string(locals[value]) != expected { pc = target; }
+            }
+            Instruction.Switch(value, targets) => {
+                pc = targets[read_int(locals[value])];
+            }
+
+            Instruction.IntAdd(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) + read_int(locals[rhs])));
+            }
+            Instruction.IntSub(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) - read_int(locals[rhs])));
+            }
+            Instruction.IntMul(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) * read_int(locals[rhs])));
+            }
+            Instruction.IntDiv(dst, lhs, rhs) => {
+                let location = function.locations[instruction_index];
+                let divisor = read_int(locals[rhs]);
+                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, location)); }
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) / divisor));
+            }
+            Instruction.IntMod(dst, lhs, rhs) => {
+                let location = function.locations[instruction_index];
+                let divisor = read_int(locals[rhs]);
+                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, location)); }
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) % divisor));
+            }
+            Instruction.IntBitAnd(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]).band(read_int(locals[rhs]))));
+            }
+            Instruction.IntBitOr(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]).bor(read_int(locals[rhs]))));
+            }
+            Instruction.IntXor(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]).bxor(read_int(locals[rhs]))));
+            }
+            Instruction.IntShl(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]).shl(read_int(locals[rhs]))));
+            }
+            Instruction.IntShr(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]).shr(read_int(locals[rhs]))));
+            }
+            Instruction.IntEq(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) == read_int(locals[rhs]));
+            }
+            Instruction.IntNotEq(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) != read_int(locals[rhs]));
+            }
+            Instruction.IntLess(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) < read_int(locals[rhs]));
+            }
+            Instruction.IntGreater(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) > read_int(locals[rhs]));
+            }
+            Instruction.IntLessEq(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) <= read_int(locals[rhs]));
+            }
+            Instruction.IntGreaterEq(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_int(locals[lhs]) >= read_int(locals[rhs]));
+            }
+            Instruction.IntNeg(dst, value) => {
+                locals[dst] = Value(ValueKind.Int(0 - read_int(locals[value])));
+            }
+            Instruction.IntNot(dst, value) => {
+                locals[dst] = Value(ValueKind.Int(if read_int(locals[value]) == 0 { 1 } else { 0 }));
+            }
+            Instruction.IntBitNot(dst, value) => {
+                locals[dst] = Value(ValueKind.Int(read_int(locals[value]).not()));
+            }
+
+            Instruction.FloatAdd(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Float(read_float(locals[lhs]) + read_float(locals[rhs])));
+            }
+            Instruction.FloatSub(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Float(read_float(locals[lhs]) - read_float(locals[rhs])));
+            }
+            Instruction.FloatMul(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Float(read_float(locals[lhs]) * read_float(locals[rhs])));
+            }
+            Instruction.FloatDiv(dst, lhs, rhs) => {
+                locals[dst] = Value(ValueKind.Float(read_float(locals[lhs]) / read_float(locals[rhs])));
+            }
+            Instruction.FloatEq(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_float(locals[lhs]) == read_float(locals[rhs]));
+            }
+            Instruction.FloatLess(dst, lhs, rhs) => {
+                locals[dst] = make_bool(read_float(locals[lhs]) < read_float(locals[rhs]));
+            }
+            Instruction.FloatNeg(dst, value) => {
+                locals[dst] = Value(ValueKind.Float(0.0 - read_float(locals[value])));
+            }
+
+            Instruction.PtrAllocate(dst, count) => {
+                let count = count.map(|reg| read_int(locals[reg])).unwrap_or(1);
+                locals[dst] = Value(ValueKind.Ptr(PtrValue.Slot(ArrayBox.new(count), 0)));
+            }
+            Instruction.PtrNull(dst) => { locals[dst] = Value(ValueKind.Ptr(PtrValue.Null)); }
+            Instruction.PtrIsNull(dst, pointer) => {
+                let is_null = match locals[pointer].kind {
+                    ValueKind.Ptr(PtrValue.Null) => True,
+                    _ => False,
+                };
+                locals[dst] = make_bool(is_null);
+            }
+            Instruction.PtrOffset(dst, pointer, offset) => {
+                let (array, index) = match locals[pointer].kind {
+                    ValueKind.Ptr(PtrValue.Slot(array, index)) => (array, index),
+                    _ => unreachable(),
+                };
+                locals[dst] = Value(ValueKind.Ptr(PtrValue.Slot(array, index + read_int(locals[offset]))));
+            }
+            Instruction.PtrCopy(dest, src, src_index, dest_index, size) => {
+                copy_ptr(
+                    locals[dest],
+                    locals[src],
+                    read_int(locals[src_index]),
+                    read_int(locals[dest_index]),
+                    read_int(locals[size]),
+                );
+            }
+            Instruction.PtrRead(dst, pointer) => {
+                let location = function.locations[instruction_index];
+                locals[dst] = read_ptr(locals[pointer], location)?;
+            }
+            Instruction.PtrWrite(pointer, value) => {
+                let location = function.locations[instruction_index];
+                write_ptr(locals[pointer], locals[value], location)?;
+            }
+
+            Instruction.Panic(message) => {
+                let location = function.locations[instruction_index];
+                let message = render_string(locals[message]);
+                return Err(error(ErrorKind.Panic(message), location));
+            }
+            Instruction.MacroPrintln(dst, value) => {
+                println(render_string(locals[value]));
+                locals[dst] = Value.unit();
+            }
+            Instruction.ResolveTrait(dst, args) => {
+                locals[dst] = interp.extensions.call(0, registers(locals, args));
+            }
+            Instruction.ResolveFunction(dst, args) => {
+                locals[dst] = interp.extensions.call(1, registers(locals, args));
+            }
+            Instruction.ResolveVariant(dst, args) => {
+                locals[dst] = interp.extensions.call(2, registers(locals, args));
+            }
+            Instruction.ResolveType(dst, args) => {
+                locals[dst] = interp.extensions.call(3, registers(locals, args));
+            }
+            Instruction.Trap(message) => {
+                let location = function.locations[instruction_index];
+                return Err(error(ErrorKind.Internal(message), location));
+            }
+        }
+    }
+    unreachable()
+}
+
+pub fn invoke(
+    program: ExecutableProgram,
+    entry: Int,
+    args: Vec[Value],
+    location: Location,
+    extensions: InterpreterExtensions,
+) -> Result[Value, InterpreterError] {
+    let interp = Interpreter(program, extensions, Vec.new(500));
+    match execute_function(interp, entry, args, location) {
+        Ok(value) => Ok(value),
+        Err(error) => {
+            error.backtrace = interp.call_stack;
+            Err(error)
+        }
+    }
+}
+
+}

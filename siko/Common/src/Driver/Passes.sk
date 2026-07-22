@@ -30,9 +30,9 @@ import Siko.Package.Collector as PC
 import Siko.Test as T
 import Siko.Config
 
-pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
+fn build_parse_resolve_passes(driver: Driver) -> Vec[Pass] {
     let config = get_config();
-    let core_passes: Vec[Pass] = [
+    [
         Pass(
             name: "parse",
             label: "Parsing...",
@@ -67,6 +67,12 @@ pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
             },
             dump: Some(|driver| println(driver.program.format())),
         ),
+    ]
+}
+
+fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
+    let config = get_config();
+    let core_passes: Vec[Pass] = [
         Pass(
             name: "interpreter-tests",
             label: "Running interpreter tests...",
@@ -191,12 +197,8 @@ pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
     core_passes + safety_passes
 }
 
-pub fn build_common_passes(driver: Driver) -> Vec[Pass] {
-    let config = get_config();
-    let lowering_passes: Vec[Pass] = if config.check_only {
-        []
-    } else {
-        [
+fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
+    [
             Pass(
                 name: "lambda-lift",
                 label: "Lambda lifting...",
@@ -258,7 +260,22 @@ pub fn build_common_passes(driver: Driver) -> Vec[Pass] {
                 dump: Some(|driver| println(driver.program.format())),
                 run_sanity_check: True,
             ),
-        ]
+    ]
+}
+
+pub fn build_check_passes(driver: Driver) -> Vec[Pass] {
+    build_parse_resolve_passes(driver) + build_post_resolve_check_passes(driver)
+}
+
+pub fn build_macro_passes(driver: Driver) -> Vec[Pass] {
+    build_post_resolve_check_passes(driver) + build_lowering_passes(driver)
+}
+
+pub fn build_common_passes(driver: Driver) -> Vec[Pass] {
+    let lowering_passes = if get_config().check_only {
+        []
+    } else {
+        build_lowering_passes(driver)
     };
 
     build_check_passes(driver) + lowering_passes

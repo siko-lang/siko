@@ -4,16 +4,15 @@ import Siko.AST.Data as D
 import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Value
 
 fn is_optional(ty: TypeDef) -> Bool {
     match ty {
         TypeDef.Named(NamedInfo(name, args)) =>
-            name.resolved() == B.get_option_type_qn() && args.len() == 1,
+            name.resolved().base_name() == B.get_option_type_qn() && args.len() == 1,
         _ => False,
     }
 }
@@ -21,15 +20,12 @@ fn is_optional(ty: TypeDef) -> Bool {
 fn item_def(state: BridgeState, index: Int, item: D.ItemInfo) -> Value {
     let qname = B.get_macro_variant_item_def_qn();
     let name = item.name.map(|name| make_string(I.resolve(name.name)));
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             int_value(index),
-            option_value(named_type(B.get_string_type_qn()), name),
+            option_value(name),
             handle_value(B.get_macro_type_def_qn(), state.add_type(item.ty)),
             make_bool(is_optional(item.ty)),
-        ])),
-    )
+        ])))
 }
 
 pub fn variant_def(state: BridgeState, variant: D.VariantDef) -> Value {
@@ -39,18 +35,15 @@ pub fn variant_def(state: BridgeState, variant: D.VariantDef) -> Value {
         .enumerate()
         .map(|(index, item)| item_def(state, index, item))
         .collect();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             int_value(state.add_variant(variant)),
-            vec_value(items, named_type(B.get_macro_variant_item_def_qn())),
+            vec_value(items),
             handle_value(
                 B.get_macro_qualified_name_qn(),
                 state.add_name(variant.qualified_name.unwrap()),
             ),
             make_string(I.resolve(variant.name.name)),
-        ])),
-    )
+        ])))
 }
 
 fn macro_error(message: String) -> Value {
@@ -63,21 +56,11 @@ fn macro_error(message: String) -> Value {
 }
 
 pub fn resolution_ok(state: BridgeState, variant: D.VariantDef) -> Value {
-    result_value(
-        named_type(B.get_macro_variant_def_qn()),
-        named_type(B.get_macro_error_qn()),
-        True,
-        variant_def(state, variant),
-    )
+    result_value(True, variant_def(state, variant))
 }
 
 pub fn resolution_error(message: String) -> Value {
-    result_value(
-        named_type(B.get_macro_variant_def_qn()),
-        named_type(B.get_macro_error_qn()),
-        False,
-        macro_error(message),
-    )
+    result_value(False, macro_error(message))
 }
 
 }

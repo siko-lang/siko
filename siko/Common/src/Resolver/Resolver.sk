@@ -19,6 +19,7 @@ import Siko.Resolver.Autoderive.FromInt
 import Siko.Resolver.Autoderive.Json
 import Siko.Resolver.Macros.Runner
 import Siko.Resolver.Macros.Request
+import Siko.Resolver.Statistics
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.QualifiedName
@@ -36,6 +37,7 @@ import Siko.AST.Module as M
 import Siko.HIR.Program
 import Siko.Report
 import Siko.Constants.Builtins as B
+import Siko.Config
 import Siko.Utils.VarAllocator
 import Siko.Utils.LabelAllocator
 import Std.Map
@@ -45,11 +47,13 @@ import Siko.Interner as I
 pub struct Resolver {
     ctx: GlobalResolverContext,
     module_traits_map: Map[I.String, Set[QualifiedName]],
+    statistics: Statistics,
 
     pub fn new() -> Resolver {
         Resolver(
             GlobalResolverContext.new(),
             Map.new(),
+            Statistics.new(get_config().debug_resolver_stats),
         )
     }
 
@@ -79,6 +83,12 @@ pub struct Resolver {
     }
 
     pub fn resolve(resolver: Resolver, modules: Vec[M.Module], pkg_reachability: Map[String, Set[String]]) -> Result[Program, ResolveError] {
+        let result = resolver.resolve_inner(modules, pkg_reachability);
+        resolver.statistics.dump();
+        result
+    }
+
+    fn resolve_inner(resolver: Resolver, modules: Vec[M.Module], pkg_reachability: Map[String, Set[String]]) -> Result[Program, ResolveError] {
         //println("Resolving...");
         add_preludes(modules);
         check_trait_objects(modules);
@@ -123,7 +133,9 @@ pub struct Resolver {
                 resolver.process_external_derives(modules, module_name)?;
             }
 
-            resolver.process_macro_requests_for_group(modules, group, module_graph)?;
+            if !resolver.process_macro_requests_for_group(modules, group, module_graph)? {
+                return Ok(resolver.build_program());
+            }
 
             for module_name in group {
                 resolver.warn_unused_imports(modules, module_name);
@@ -140,22 +152,29 @@ pub struct Resolver {
         modules: Vec[M.Module],
         group: Vec[I.String],
         module_graph: ModuleGraph,
-    ) -> Result[(), ResolveError] {
+    ) -> Result[Bool, ResolveError] {
         let pending_macro_requests = collect_requests(resolver.ctx, modules, group)?;
         let in_group_macro_modules = resolver.requested_macro_modules(
             pending_macro_requests,
             group,
         );
         if !in_group_macro_modules.is_empty() {
-            resolver.build_macro_programs(
+            if !resolver.build_macro_programs(
                 in_group_macro_modules,
                 module_graph.dependency_closure(group),
-            );
+            ) {
+                return Ok(False);
+            }
         }
 
         let macro_requests = finalize_requests(resolver.ctx, pending_macro_requests);
         if !macro_requests.is_empty() {
-            run_macro_requests(resolver, resolver.ctx, macro_requests)?;
+            run_macro_requests(
+                resolver,
+                resolver.ctx,
+                macro_requests,
+                resolver.statistics,
+            )?;
         }
 
         let macro_modules = resolver.macro_modules(group);
@@ -164,12 +183,14 @@ pub struct Resolver {
             .filter(|module_name| !in_group_macro_modules.contains(module_name))
             .collect();
         if !remaining_macro_modules.is_empty() {
-            resolver.build_macro_programs(
+            if !resolver.build_macro_programs(
                 remaining_macro_modules,
                 module_graph.dependency_closure(group),
-            );
+            ) {
+                return Ok(False);
+            }
         }
-        Ok(())
+        Ok(True)
     }
 
     fn macro_modules(
@@ -204,15 +225,19 @@ pub struct Resolver {
         resolver: Resolver,
         macro_modules: Vec[I.String],
         dependencies: Set[I.String],
-    ) {
+    ) -> Bool {
         let module_trait_method_map = resolver.build_module_trait_method_map();
         for macro_module in macro_modules {
-            resolver.ctx.build_macro_program(
+            if !resolver.ctx.build_macro_program(
                 macro_module,
                 dependencies,
                 module_trait_method_map,
-            );
+                resolver.statistics,
+            ) {
+                return False;
+            }
         }
+        True
     }
 
     fn build_program(resolver: Resolver) -> Program {

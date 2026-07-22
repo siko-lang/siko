@@ -4,31 +4,27 @@ import Siko.AST.Data as D
 import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Value
 
 fn is_optional(ty: TypeDef) -> Bool {
     match ty {
         TypeDef.Named(NamedInfo(name, args)) =>
-            name.resolved() == B.get_option_type_qn() && args.len() == 1,
+            name.resolved().base_name() == B.get_option_type_qn() && args.len() == 1,
         _ => False,
     }
 }
 
 pub fn field_def(state: BridgeState, field: D.FieldDef) -> Value {
     let qname = B.get_macro_field_def_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             int_value(state.add_field(field)),
             make_string(I.resolve(field.name.name)),
             handle_value(B.get_macro_type_def_qn(), state.add_type(field.ty)),
             make_bool(is_optional(field.ty)),
-        ])),
-    )
+        ])))
 }
 
 }

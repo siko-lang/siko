@@ -3,12 +3,10 @@ module Siko.Resolver.Macros.Extensions {
 import Siko.AST.Identifier
 import Siko.AST.Name
 import Siko.AST.Type
-import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Error
-import Siko.Interpreter.Extensions
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Extensions
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Location
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
@@ -27,40 +25,24 @@ fn resolve_trait(
     application_location: Location,
     target: MacroTarget,
     args: Vec[Value],
-    call_location: Location,
-) -> Result[Value, InterpreterError] {
-    if args.len() != 2 {
-        return Err(error(
-            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_trait_builtin_qn().name()), 2, args.len()),
-            call_location,
-        ));
-    }
-    if !MacroInput.is_macro_context(args[0]) {
-        return Err(error(
-            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
-            call_location,
-        ));
-    }
-    let name = match render_string(args[1]) {
-        Some(name) => name,
-        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
-    };
+) -> Value {
+    let name = render_string(args[1]);
     // This name is produced dynamically by interpreted macro code, so unlike
     // the fixed macro vocabulary it cannot come from the builtin name cache.
     let ident = Identifier.new(I.intern(name), application_location);
     let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
     let item = match module_resolver.resolve(ident) {
         Ok(item) => item,
-        Err(_) => return Ok(MacroTraits.resolution_error("cannot resolve `${name}` as a trait")),
+        Err(_) => return MacroTraits.resolution_error("cannot resolve `${name}` as a trait"),
     };
     if !item.kind.is_trait() {
-        return Ok(MacroTraits.resolution_error("`${name}` does not name a trait"));
+        return MacroTraits.resolution_error("`${name}` does not name a trait");
     }
     let target_type = match MacroInput.target_type(global_ctx, target) {
         Some(ty) => ty,
-        None => return Ok(MacroTraits.resolution_error("macro target type is unavailable")),
+        None => return MacroTraits.resolution_error("macro target type is unavailable"),
     };
-    Ok(MacroTraits.resolution_ok(global_ctx, state, item.qualified_name, target_type))
+    MacroTraits.resolution_ok(global_ctx, state, item.qualified_name, target_type)
 }
 
 fn resolve_function(
@@ -69,36 +51,20 @@ fn resolve_function(
     module_name: I.String,
     application_location: Location,
     args: Vec[Value],
-    call_location: Location,
-) -> Result[Value, InterpreterError] {
-    if args.len() != 2 {
-        return Err(error(
-            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_function_builtin_qn().name()), 2, args.len()),
-            call_location,
-        ));
-    }
-    if !MacroInput.is_macro_context(args[0]) {
-        return Err(error(
-            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
-            call_location,
-        ));
-    }
-    let name = match render_string(args[1]) {
-        Some(name) => name,
-        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
-    };
+) -> Value {
+    let name = render_string(args[1]);
     // Function names are produced dynamically by interpreted macro code and
     // therefore cannot be supplied by the fixed builtin name cache.
     let ident = Identifier.new(I.intern(name), application_location);
     let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
     let item = match module_resolver.resolve(ident) {
         Ok(item) => item,
-        Err(_) => return Ok(MacroFunctions.resolution_error("cannot resolve `${name}` as a function")),
+        Err(_) => return MacroFunctions.resolution_error("cannot resolve `${name}` as a function"),
     };
     if !item.kind.is_function() {
-        return Ok(MacroFunctions.resolution_error("`${name}` does not name a function"));
+        return MacroFunctions.resolution_error("`${name}` does not name a function");
     }
-    Ok(MacroFunctions.resolution_ok(state, item.qualified_name))
+    MacroFunctions.resolution_ok(state, item.qualified_name)
 }
 
 fn resolve_variant(
@@ -107,39 +73,23 @@ fn resolve_variant(
     module_name: I.String,
     application_location: Location,
     args: Vec[Value],
-    call_location: Location,
-) -> Result[Value, InterpreterError] {
-    if args.len() != 2 {
-        return Err(error(
-            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_variant_builtin_qn().name()), 2, args.len()),
-            call_location,
-        ));
-    }
-    if !MacroInput.is_macro_context(args[0]) {
-        return Err(error(
-            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
-            call_location,
-        ));
-    }
-    let name = match render_string(args[1]) {
-        Some(name) => name,
-        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
-    };
+) -> Value {
+    let name = render_string(args[1]);
     // Variant names are supplied dynamically by interpreted macro code.
     let ident = Identifier.new(I.intern(name), application_location);
     let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
     let item = match module_resolver.resolve(ident) {
         Ok(item) => item,
-        Err(_) => return Ok(MacroVariants.resolution_error("cannot resolve `${name}` as a variant")),
+        Err(_) => return MacroVariants.resolution_error("cannot resolve `${name}` as a variant"),
     };
     if !item.kind.is_variant() {
-        return Ok(MacroVariants.resolution_error("`${name}` does not name a variant"));
+        return MacroVariants.resolution_error("`${name}` does not name a variant");
     }
     let variant = match global_ctx.get_variant(item.qualified_name) {
         Some(variant) => variant,
-        None => return Ok(MacroVariants.resolution_error("resolved variant `${name}` is unavailable")),
+        None => return MacroVariants.resolution_error("resolved variant `${name}` is unavailable"),
     };
-    Ok(MacroVariants.resolution_ok(state, variant))
+    MacroVariants.resolution_ok(state, variant)
 }
 
 fn resolve_type(
@@ -148,39 +98,23 @@ fn resolve_type(
     module_name: I.String,
     application_location: Location,
     args: Vec[Value],
-    call_location: Location,
-) -> Result[Value, InterpreterError] {
-    if args.len() != 2 {
-        return Err(error(
-            ErrorKind.WrongArgCount(I.resolve(B.get_macro_resolve_type_builtin_qn().name()), 2, args.len()),
-            call_location,
-        ));
-    }
-    if !MacroInput.is_macro_context(args[0]) {
-        return Err(error(
-            ErrorKind.TypeMismatch(I.resolve(B.get_macro_context_qn().name()), describe(args[0])),
-            call_location,
-        ));
-    }
-    let name = match render_string(args[1]) {
-        Some(name) => name,
-        None => return Err(error(ErrorKind.TypeMismatch("String", describe(args[1])), call_location)),
-    };
+) -> Value {
+    let name = render_string(args[1]);
     // Type names are supplied dynamically by interpreted macro code.
     let ident = Identifier.new(I.intern(name), application_location);
     let module_resolver = global_ctx.get_module_resolver(module_name).unwrap();
     let item = match module_resolver.resolve_type_name(ident) {
         Ok(item) => item,
-        Err(_) => return Ok(MacroTypes.resolution_error("cannot resolve `${name}` as a type")),
+        Err(_) => return MacroTypes.resolution_error("cannot resolve `${name}` as a type"),
     };
     if !item.kind.is_type() {
-        return Ok(MacroTypes.resolution_error("`${name}` does not name a type"));
+        return MacroTypes.resolution_error("`${name}` does not name a type");
     }
     if item.kind.get_type_arg_count() != 0 {
-        return Ok(MacroTypes.resolution_error("`${name}` requires type arguments"));
+        return MacroTypes.resolution_error("`${name}` requires type arguments");
     }
     let ty = TypeDef.Named(NamedInfo(Name.inner(item.qualified_name), Vec.new()));
-    Ok(MacroTypes.resolution_ok(state, ty))
+    MacroTypes.resolution_ok(state, ty)
 }
 
 pub fn build(
@@ -190,20 +124,20 @@ pub fn build(
     application_location: Location,
     target: MacroTarget,
 ) -> InterpreterExtensions {
-    let extensions = InterpreterExtensions.new();
-    extensions.insert(B.get_macro_resolve_trait_builtin_qn(), |args, call_location| {
-        resolve_trait(global_ctx, state, module_name, application_location, target, args, call_location)
-    });
-    extensions.insert(B.get_macro_resolve_function_builtin_qn(), |args, call_location| {
-        resolve_function(global_ctx, state, module_name, application_location, args, call_location)
-    });
-    extensions.insert(B.get_macro_resolve_variant_builtin_qn(), |args, call_location| {
-        resolve_variant(global_ctx, state, module_name, application_location, args, call_location)
-    });
-    extensions.insert(B.get_macro_resolve_type_builtin_qn(), |args, call_location| {
-        resolve_type(global_ctx, state, module_name, application_location, args, call_location)
-    });
-    extensions
+    InterpreterExtensions.new([
+        |args| {
+            resolve_trait(global_ctx, state, module_name, application_location, target, args)
+        },
+        |args| {
+            resolve_function(global_ctx, state, module_name, application_location, args)
+        },
+        |args| {
+            resolve_variant(global_ctx, state, module_name, application_location, args)
+        },
+        |args| {
+            resolve_type(global_ctx, state, module_name, application_location, args)
+        },
+    ])
 }
 
 }

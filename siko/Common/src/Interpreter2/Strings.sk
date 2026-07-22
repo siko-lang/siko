@@ -1,0 +1,97 @@
+module Siko.Interpreter2.Strings {
+
+import Siko.Constants.Builtins as B
+import Siko.Interpreter2.Memory
+import Siko.Interpreter2.Value
+import Std.StringBuilder
+
+pub fn make_string_literal_ptr(s: String) -> Value {
+    let len = s.len();
+    let bytes = s.as_slice();
+    let array = ArrayBox.new(len);
+    for i in 0..len {
+        array.slots[i] = Some(Value(ValueKind.Int(bytes[i].as_int())));
+    }
+    Value(ValueKind.Ptr(PtrValue.Slot(array, 0)))
+}
+
+pub fn make_string(s: String) -> Value {
+    let len = s.len();
+    let bytes = s.as_slice();
+    let array = ArrayBox.new(len);
+    for i in 0..len {
+        array.slots[i] = Some(Value(ValueKind.Int(bytes[i].as_int())));
+    }
+    let data = Value(ValueKind.Ptr(PtrValue.Slot(array, 0)));
+    let len_value = Value(ValueKind.Int(len));
+    let string_qn = B.get_string_type_qn();
+    Value(ValueKind.Struct(StructBox(
+        qname: string_qn,
+        fields: [data, len_value],
+    )))
+}
+
+pub fn render_string(value: Value) -> String {
+    let sbox = match value.kind {
+        ValueKind.Struct(sbox) => sbox,
+        _ => unreachable(),
+    };
+    let len = match sbox.fields[1].kind {
+        ValueKind.Int(n) => n,
+        _ => unreachable(),
+    };
+    if len == 0 {
+        return "";
+    }
+    let (array, start) = match sbox.fields[0].kind {
+        ValueKind.Ptr(PtrValue.Slot(array, start)) => (array, start),
+        _ => unreachable(),
+    };
+    let out = StringBuilder.new(len);
+    for i in 0..len {
+        let byte = match array.slots[start + i] {
+            Some(Value(ValueKind.Int(b))) => b,
+            _ => unreachable(),
+        };
+        out.push(String.from_byte(byte.as_u8()));
+    }
+    out.to_string()
+}
+
+// Macro-result decoding is an external boundary and deliberately retains a
+// checked conversion so a malformed entry-point ABI can still be diagnosed.
+pub fn try_render_string(value: Value) -> Option[String] {
+    let sbox = match value.kind {
+        ValueKind.Struct(sbox) => sbox,
+        _ => return None,
+    };
+    if sbox.qname.base_name() != B.get_string_type_qn() || sbox.fields.len() != 2 {
+        return None;
+    }
+    let len = match sbox.fields[1].kind {
+        ValueKind.Int(n) => n,
+        _ => return None,
+    };
+    if len == 0 {
+        return Some("");
+    }
+    let (array, start) = match sbox.fields[0].kind {
+        ValueKind.Ptr(PtrValue.Slot(array, start)) => (array, start),
+        _ => return None,
+    };
+    let out = StringBuilder.new(len);
+    for i in 0..len {
+        let index = start + i;
+        if index < 0 || index >= array.slots.len() {
+            return None;
+        }
+        let byte = match array.slots[index] {
+            Some(Value(ValueKind.Int(b))) => b,
+            _ => return None,
+        };
+        out.push(String.from_byte(byte.as_u8()));
+    }
+    Some(out.to_string())
+}
+
+}

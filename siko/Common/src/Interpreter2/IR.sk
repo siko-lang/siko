@@ -1,0 +1,116 @@
+module Siko.Interpreter2.IR {
+
+import Siko.AST.QualifiedName
+import Siko.Interpreter2.Value
+import Siko.Location
+
+pub struct ExecutableProgram {
+    pub functions: Vec[ExecutableFunction],
+    pub entry_points: Vec[EntryPoint],
+    pub constants: Vec[Value],
+
+    pub fn empty() -> ExecutableProgram {
+        ExecutableProgram(Vec.new(), Vec.new(), Vec.new())
+    }
+}
+
+pub struct EntryPoint {
+    pub name: QualifiedName,
+    pub function: Int,
+}
+
+pub struct ExecutableFunction {
+    pub name: String,
+    pub arg_count: Int,
+    pub local_count: Int,
+    pub code: Vec[Instruction],
+    // Kept out of the instruction stream so ordinary execution does not pull
+    // source locations through the hot instruction cache.
+    pub locations: Vec[Location],
+}
+
+pub enum Instruction {
+    ConstInt(dst: Int, value: Int),
+    ConstFloat(dst: Int, value: F64),
+    ConstStringPtr(dst: Int, constant: Int),
+    ConstChar(dst: Int, value: Int),
+    Unit(dst: Int),
+    Uninitialized(dst: Int),
+    Set(dst: Int, src: Int),
+    CopyValueType(dst: Int, src: Int),
+
+    MakeStruct(dst: Int, qname: QualifiedName, fields: Vec[Int]),
+    ReadField(dst: Int, receiver: Int, index: Int),
+    WriteField(receiver: Int, index: Int, value: Int),
+    FieldAddress(dst: Int, receiver: Int, index: Int),
+
+    MakeVariant(
+        dst: Int,
+        enum_qname: QualifiedName,
+        variant_qname: QualifiedName,
+        tag: Int,
+        items: Vec[Int],
+    ),
+    ReadVariant(dst: Int, receiver: Int, index: Int),
+    ReadVariantDynamic(dst: Int, receiver: Int, index: Int),
+    ReadTag(dst: Int, receiver: Int),
+
+    FunctionRef(dst: Int, function: Int),
+    Call(dst: Int, function: Int, args: Vec[Int]),
+    CallIndirect(dst: Int, function: Int, args: Vec[Int]),
+    Return(value: Int),
+
+    Jump(target: Int),
+    JumpIfFalse(condition: Int, target: Int),
+    JumpIfTagNot(value: Int, tag: Int, target: Int),
+    JumpIfIntNot(value: Int, expected: Int, target: Int),
+    JumpIfStringNot(value: Int, expected: String, target: Int),
+    Switch(value: Int, targets: Vec[Int]),
+
+    IntAdd(dst: Int, lhs: Int, rhs: Int),
+    IntSub(dst: Int, lhs: Int, rhs: Int),
+    IntMul(dst: Int, lhs: Int, rhs: Int),
+    IntDiv(dst: Int, lhs: Int, rhs: Int),
+    IntMod(dst: Int, lhs: Int, rhs: Int),
+    IntBitAnd(dst: Int, lhs: Int, rhs: Int),
+    IntBitOr(dst: Int, lhs: Int, rhs: Int),
+    IntXor(dst: Int, lhs: Int, rhs: Int),
+    IntShl(dst: Int, lhs: Int, rhs: Int),
+    IntShr(dst: Int, lhs: Int, rhs: Int),
+    IntEq(dst: Int, lhs: Int, rhs: Int),
+    IntNotEq(dst: Int, lhs: Int, rhs: Int),
+    IntLess(dst: Int, lhs: Int, rhs: Int),
+    IntGreater(dst: Int, lhs: Int, rhs: Int),
+    IntLessEq(dst: Int, lhs: Int, rhs: Int),
+    IntGreaterEq(dst: Int, lhs: Int, rhs: Int),
+    IntNeg(dst: Int, value: Int),
+    IntNot(dst: Int, value: Int),
+    IntBitNot(dst: Int, value: Int),
+
+    FloatAdd(dst: Int, lhs: Int, rhs: Int),
+    FloatSub(dst: Int, lhs: Int, rhs: Int),
+    FloatMul(dst: Int, lhs: Int, rhs: Int),
+    FloatDiv(dst: Int, lhs: Int, rhs: Int),
+    FloatEq(dst: Int, lhs: Int, rhs: Int),
+    FloatLess(dst: Int, lhs: Int, rhs: Int),
+    FloatNeg(dst: Int, value: Int),
+
+    PtrAllocate(dst: Int, count: Option[Int]),
+    PtrNull(dst: Int),
+    PtrIsNull(dst: Int, pointer: Int),
+    PtrOffset(dst: Int, pointer: Int, offset: Int),
+    PtrCopy(dest: Int, src: Int, src_index: Int, dest_index: Int, size: Int),
+    PtrRead(dst: Int, pointer: Int),
+    PtrWrite(pointer: Int, value: Int),
+
+    Panic(message: Int),
+    MacroPrintln(dst: Int, value: Int),
+    ResolveTrait(dst: Int, args: Vec[Int]),
+    ResolveFunction(dst: Int, args: Vec[Int]),
+    ResolveVariant(dst: Int, args: Vec[Int]),
+    ResolveType(dst: Int, args: Vec[Int]),
+
+    Trap(message: String),
+}
+
+}

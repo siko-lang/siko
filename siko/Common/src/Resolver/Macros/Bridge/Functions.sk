@@ -2,33 +2,26 @@ module Siko.Resolver.Macros.Bridge.Functions {
 
 import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Value
 
 pub fn resolution_ok(state: BridgeState, name: QualifiedName) -> Value {
-    let name_type = named_type(B.get_macro_qualified_name_qn());
-    let error_type = named_type(B.get_macro_error_qn());
     result_value(
-        name_type,
-        error_type,
         True,
         handle_value(B.get_macro_qualified_name_qn(), state.add_name(name)),
     )
 }
 
 pub fn resolution_error(message: String) -> Value {
-    let name_type = named_type(B.get_macro_qualified_name_qn());
-    let error_type = named_type(B.get_macro_error_qn());
     let error = variant_value(
         B.get_macro_error_qn(),
         B.get_macro_error_not_supported_qn(),
         0,
         [make_string(message)],
     );
-    result_value(name_type, error_type, False, error)
+    result_value(False, error)
 }
 
 }

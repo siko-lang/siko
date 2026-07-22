@@ -1,0 +1,83 @@
+module Siko.Interpreter2.Value {
+
+import Siko.AST.QualifiedName
+import Siko.Constants.Builtins as B
+import Siko.Interpreter2.Memory
+
+pub struct Value {
+    pub kind: ValueKind,
+
+    pub fn unit() -> Value {
+        Value(ValueKind.Unit)
+    }
+
+    pub fn uninitialized() -> Value {
+        Value(ValueKind.Uninitialized)
+    }
+}
+
+pub enum ValueKind {
+    Int(Int),
+    Float(F64),
+    Struct(StructBox),
+    Variant(VariantBox),
+    Ptr(PtrValue),
+    Function(Int),
+    Unit,
+    Uninitialized,
+}
+
+pub struct StructBox {
+    // Kept only for the compiler bridge. VM field access is always indexed.
+    pub qname: QualifiedName,
+    pub fields: Vec[Value],
+}
+
+pub struct VariantBox {
+    // Kept only for the compiler bridge. VM branching uses `tag` directly.
+    pub enum_qname: QualifiedName,
+    pub variant_qname: QualifiedName,
+    pub tag: Int,
+    pub items: Vec[Value],
+}
+
+pub fn copy_value_type(value: Value) -> Value {
+    match value.kind {
+        ValueKind.Struct(sbox) => {
+            let fields = Vec.new(sbox.fields.len());
+            for field in sbox.fields {
+                fields.push(field);
+            }
+            Value(ValueKind.Struct(StructBox(sbox.qname, fields)))
+        }
+        ValueKind.Variant(vbox) => {
+            let items = Vec.new(vbox.items.len());
+            for item in vbox.items {
+                items.push(item);
+            }
+            Value(ValueKind.Variant(VariantBox(
+                vbox.enum_qname,
+                vbox.variant_qname,
+                vbox.tag,
+                items,
+            )))
+        }
+        _ => unreachable(),
+    }
+}
+
+pub fn make_bool(value: Bool) -> Value {
+    let (variant_qname, tag) = if value {
+        (B.get_bool_true_qn(), B.get_bool_true_variant_index())
+    } else {
+        (B.get_bool_false_qn(), B.get_bool_false_variant_index())
+    };
+    Value(ValueKind.Variant(VariantBox(
+        enum_qname: B.get_bool_type_qn(),
+        variant_qname: variant_qname,
+        tag: tag,
+        items: Vec.new(),
+    )))
+}
+
+}

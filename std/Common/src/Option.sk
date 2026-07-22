@@ -1,7 +1,7 @@
 @prelude
 module Std.Option {
 
-@derive2(PartialEq, Eq, PartialOrd, Ord, Clone)
+@derive2(Eq, PartialOrd, Ord)
 pub enum Option[T] {
     Some(T),
     None
@@ -85,6 +85,25 @@ pub enum Option[T] {
 
     pub fn iter(o: Option[T]) -> OptionIterator[T] {
         OptionIterator(o)
+    }
+}
+
+instance[T: PartialEq[T]] PartialEq[Option[T]] {
+    fn eq(a: Option[T], b: Option[T]) -> Bool {
+        match (a, b) {
+            (Some(a), Some(b)) => a == b,
+            (None, None) => True,
+            _ => False,
+        }
+    }
+}
+
+instance[T: Clone[T]] Clone[Option[T]] {
+    fn clone(o: Option[T]) -> Option[T] {
+        match o {
+            Some(value) => Some(value.clone()),
+            None => None,
+        }
     }
 }
 

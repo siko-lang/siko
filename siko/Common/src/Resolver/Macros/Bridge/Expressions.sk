@@ -6,8 +6,8 @@ import Siko.AST.QualifiedName
 import Siko.AST.Statement as S
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Value
-import Siko.Interpreter.Strings
+import Siko.Interpreter2.Value
+import Siko.Interpreter2.Strings
 import Siko.Location
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
@@ -43,10 +43,10 @@ pub fn decode_expr(
         None => return Err("invalid builder expression"),
     };
     let variant = match fields[0].kind {
-        ValueKind.Variant(vbox) if vbox.enum_qname == B.get_macro_function_expr_kind_qn() => vbox,
+        ValueKind.Variant(vbox) if vbox.enum_qname.base_name() == B.get_macro_function_expr_kind_qn() => vbox,
         _ => return Err("invalid builder expression kind"),
     };
-    let kind = if variant.variant_qname == B.get_macro_function_expr_variable_qn() {
+    let kind = if variant.variant_qname.base_name() == B.get_macro_function_expr_variable_qn() {
         if variant.items.len() != 1 {
             return Err("variable expression must contain one handle");
         }
@@ -56,14 +56,14 @@ pub fn decode_expr(
             None => return Err("expression references a variable not allocated by this function builder"),
         };
         E.ExprKind.Var(variable)
-    } else if variant.variant_qname == B.get_macro_function_expr_field_access_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_field_access_qn() {
         if variant.items.len() != 2 {
             return Err("field expression must contain a receiver and field handle");
         }
         let receiver = decode_expr(global_ctx, state, variables, var_allocator, variant.items[0], location)?;
         let field = reflected_field(state, variant.items[1])?;
         E.ExprKind.FieldAccess(receiver, field.name, None)
-    } else if variant.variant_qname == B.get_macro_function_expr_call_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_call_qn() {
         if variant.items.len() != 2 {
             return Err("call expression must contain a function and arguments");
         }
@@ -81,7 +81,7 @@ pub fn decode_expr(
             kind: call_kind(global_ctx, function),
             args: Result.collect(decoded_args)?,
         ))
-    } else if variant.variant_qname == B.get_macro_function_expr_tuple_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_tuple_qn() {
         if variant.items.len() != 1 {
             return Err("tuple expression must contain one expression Vec");
         }
@@ -94,7 +94,7 @@ pub fn decode_expr(
             .map(|item| decode_expr(global_ctx, state, variables, var_allocator, item, location))
             .collect();
         E.ExprKind.Tuple(Result.collect(decoded)?)
-    } else if variant.variant_qname == B.get_macro_function_expr_if_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_if_qn() {
         if variant.items.len() != 3 {
             return Err("if expression must contain condition, then, and else values");
         }
@@ -103,7 +103,7 @@ pub fn decode_expr(
             decode_expr(global_ctx, state, variables, var_allocator, variant.items[1], location)?,
             Some(decode_expr(global_ctx, state, variables, var_allocator, variant.items[2], location)?),
         )
-    } else if variant.variant_qname == B.get_macro_function_expr_match_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_match_qn() {
         if variant.items.len() != 2 {
             return Err("match expression must contain a value and arm Vec");
         }
@@ -123,7 +123,7 @@ pub fn decode_expr(
             decoded_arms.push(E.MatchArm(pattern, body));
         }
         E.ExprKind.Match(E.MatchInfo(scrutinee, decoded_arms))
-    } else if variant.variant_qname == B.get_macro_function_expr_sequence_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_sequence_qn() {
         if variant.items.len() != 1 {
             return Err("sequence expression must contain one expression Vec");
         }
@@ -145,16 +145,16 @@ pub fn decode_expr(
             statements.push(S.Statement.TrailingExpr(last));
             E.ExprKind.Block(E.BlockInfo(statements))
         }
-    } else if variant.variant_qname == B.get_macro_function_expr_string_literal_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_string_literal_qn() {
         if variant.items.len() != 1 {
             return Err("string literal expression must contain one String");
         }
-        let value = match render_string(variant.items[0]) {
+        let value = match try_render_string(variant.items[0]) {
             Some(value) => value,
             None => return Err("string literal expression payload is not a String"),
         };
         E.ExprKind.StringLiteral(value)
-    } else if variant.variant_qname == B.get_macro_function_expr_integer_literal_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_integer_literal_qn() {
         if variant.items.len() != 1 {
             return Err("integer literal expression must contain one Int");
         }
@@ -163,14 +163,14 @@ pub fn decode_expr(
             _ => return Err("integer literal expression payload is not an Int"),
         };
         E.ExprKind.IntLiteral(I.intern(value.to_string()), Some(value))
-    } else if variant.variant_qname == B.get_macro_function_expr_return_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_return_qn() {
         if variant.items.len() != 1 {
             return Err("return expression must contain one expression");
         }
         E.ExprKind.Return(decode_expr(
             global_ctx, state, variables, var_allocator, variant.items[0], location,
         )?)
-    } else if variant.variant_qname == B.get_macro_function_expr_let_qn() {
+    } else if variant.variant_qname.base_name() == B.get_macro_function_expr_let_qn() {
         if variant.items.len() != 4 {
             return Err("let expression must contain a variable, type, value, and body");
         }

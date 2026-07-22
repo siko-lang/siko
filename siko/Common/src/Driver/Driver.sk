@@ -6,6 +6,7 @@ import Siko.Errors
 import Siko.Diagnostics
 import Std.Sys.Process as Sys
 import Siko.Config
+import Siko.Driver.Passes
 import Siko.HIR.Program
 import Siko.Package.Collector as PC
 import Siko.SanityCheck
@@ -42,7 +43,7 @@ pub struct Driver {
         )
     }
 
-    fn has_error_diagnostic(d: Driver) -> Bool {
+    pub fn has_error_diagnostic(d: Driver) -> Bool {
         for di in d.diagnostics {
             if di.severity.is_error() {
                 return True;
@@ -77,6 +78,13 @@ pub struct Driver {
         with current = d {
             d.pass = pass;
             d.run_passes(passes);
+        }
+    }
+
+    pub fn compile_macro(d: Driver) {
+        with current = d {
+            d.pass = None;
+            d.run_passes(Passes.build_macro_passes(d));
         }
     }
 

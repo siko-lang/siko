@@ -7,9 +7,8 @@ import Siko.AST.QualifiedName
 import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Types
-import Siko.Interpreter.Value
+import Siko.Interpreter2.Strings
+import Siko.Interpreter2.Value
 import Siko.Resolver.Macros.Bridge.Value
 import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Bridge.Fields as MacroFields
@@ -44,15 +43,12 @@ fn struct_def(global_ctx: GlobalResolverContext, state: BridgeState, name: Quali
     };
     let fields = def.fields.iter().map(|field| MacroFields.field_def(state, field)).collect();
     let qname = B.get_macro_struct_def_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             type_def(state, self_type),
-            vec_value(type_params, named_type(B.get_macro_type_parameter_qn())),
-            vec_value(fields, named_type(B.get_macro_field_def_qn())),
+            vec_value(type_params),
+            vec_value(fields),
             qualified_name(state, name),
-        ])),
-    )
+        ])))
 }
 
 fn enum_def(global_ctx: GlobalResolverContext, state: BridgeState, name: QualifiedName) -> Value {
@@ -68,14 +64,11 @@ fn enum_def(global_ctx: GlobalResolverContext, state: BridgeState, name: Qualifi
     };
     let variants = def.variants.iter().map(|variant| MacroVariants.variant_def(state, variant)).collect();
     let qname = B.get_macro_enum_def_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             type_def(state, self_type),
-            vec_value(type_params, named_type(B.get_macro_type_parameter_qn())),
-            vec_value(variants, named_type(B.get_macro_variant_def_qn())),
-        ])),
-    )
+            vec_value(type_params),
+            vec_value(variants),
+        ])))
 }
 fn instance_header(
     global_ctx: GlobalResolverContext,
@@ -84,12 +77,9 @@ fn instance_header(
     target: TypeDef,
 ) -> Value {
     let qname = B.get_macro_instance_header_qn();
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname, [
             MacroTraits.trait_def(global_ctx, state, trait_name, target),
-        ])),
-    )
+        ])))
 }
 
 pub fn target_type(
@@ -176,7 +166,7 @@ fn macro_arg(arg: MacroArg) -> Value {
             B.get_macro_arg_qn(),
             B.get_macro_arg_integer_qn(),
             2,
-            [Value(int_type(), ValueKind.Int(value))],
+            [Value(ValueKind.Int(value))],
         ),
         MacroArg.Symbol(symbol) => variant_value(
             B.get_macro_arg_qn(),
@@ -195,29 +185,20 @@ pub fn macro_context(
     args: Vec[MacroArg],
 ) -> Value {
     let qname = B.get_macro_context_qn();
-    let header_type = named_type(B.get_macro_instance_header_qn());
     let header = match external_trait {
-        Some(trait_name) => option_value(header_type, Some(instance_header(
+        Some(trait_name) => option_value(Some(instance_header(
             global_ctx,
             state,
             trait_name,
             target_type(global_ctx, target).unwrap(),
         ))),
-        None => option_value(header_type, None),
+        None => option_value(None),
     };
-    let arg_type = named_type(B.get_macro_arg_qn());
-    let args = vec_value(args.iter().map(|arg| macro_arg(arg)).collect(), arg_type);
-    Value(
-        named_type(qname),
-        ValueKind.Struct(StructBox(qname, [macro_target(global_ctx, state, target), header, args])),
-    )
-}
-
-pub fn is_macro_context(value: Value) -> Bool {
-    match value.kind {
-        ValueKind.Struct(sbox) => sbox.qname == B.get_macro_context_qn() && sbox.fields.len() == 3,
-        _ => False,
-    }
+    let args = vec_value(args.iter().map(|arg| macro_arg(arg)).collect());
+    Value(ValueKind.Struct(StructBox(
+        qname,
+        [macro_target(global_ctx, state, target), header, args],
+    )))
 }
 
 }

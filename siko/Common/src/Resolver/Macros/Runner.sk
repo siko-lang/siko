@@ -1,9 +1,9 @@
 module Siko.Resolver.Macros.Runner {
 
-import Siko.Instances.InstanceResolver
 import Siko.Constants.Builtins as B
-import Siko.Interpreter.Interpreter as Interp
-import Siko.Interpreter.Cache
+import Siko.Interner as I
+import Siko.Interpreter.Error
+import Siko.Interpreter2.Interpreter as Interp
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
@@ -12,14 +12,14 @@ import Siko.Resolver.Macros.Bridge.Input as MacroInput
 import Siko.Resolver.Macros.Bridge.State
 import Siko.Resolver.Macros.Extensions as MacroExtensions
 import Siko.Resolver.Macros.Request
+import Siko.Resolver.Statistics
 
 fn invoke_request(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
     request: MacroRequest,
+    statistics: Statistics,
 ) -> Result[(), ResolveError] {
-    request.program.instance_resolver = InstanceResolver.build(request.program);
-    let cache = InterpreterCache.new();
     let entry = match request.target {
         MacroTarget.Struct(_) => match request.invocation {
             MacroInvocation.Attached => B.get_macro_derive_struct_name(),
@@ -35,7 +35,7 @@ fn invoke_request(
     // the SCC is registered during process_methods before requests are run.
     let macro_def = global_ctx.get_macro(request.provider).unwrap();
     let entry_function = macro_def.functions.iter().find(|function| function.name.name() == entry);
-    let entry_qname = match entry_function {
+    let source_entry_qname = match entry_function {
         Some(function) => function.qualified_name.unwrap(),
         None => return Err(ResolveError.MacroEntryPointNotFound(
             request.provider,
@@ -43,6 +43,21 @@ fn invoke_request(
             request.location,
         )),
     };
+    let entry_point = request.program.entry_points
+        .iter()
+        .find(|entry_point| entry_point.name.base_name() == source_entry_qname)
+        .unwrap();
+    let entry_function = request.program.functions[entry_point.function];
+    if entry_function.arg_count != 1 {
+        return Err(ResolveError.MacroExecutionFailed(error(
+            ErrorKind.WrongArgCount(
+                I.resolve(source_entry_qname.name()),
+                entry_function.arg_count,
+                1,
+            ),
+            request.location,
+        )));
+    }
     let (external_trait, expected) = match request.invocation {
         MacroInvocation.Attached => (None, Bridge.MacroOutput.InstanceDef),
         MacroInvocation.External(instance_def) => (
@@ -59,14 +74,16 @@ fn invoke_request(
         request.location,
         request.target,
     );
-    let value = match Interp.invoke_with_extensions_and_cache(
+    statistics.macro_execution_start();
+    let execution_result = Interp.invoke(
         request.program,
-        entry_qname,
+        entry_point.function,
         [context],
         request.location,
         extensions,
-        cache,
-    ) {
+    );
+    statistics.macro_execution_end();
+    let value = match execution_result {
         Ok(value) => value,
         Err(error) => return Err(ResolveError.MacroExecutionFailed(error)),
     };
@@ -88,7 +105,7 @@ fn invoke_request(
             request.location,
         )),
         Bridge.MacroCallResult.InvalidResult(message) => Err(ResolveError.InvalidMacroResult(
-            entry_qname,
+            entry_point.name,
             message,
             request.location,
         )),
@@ -99,9 +116,10 @@ pub fn run_macro_requests(
     resolver: Resolver,
     global_ctx: GlobalResolverContext,
     requests: Vec[MacroRequest],
+    statistics: Statistics,
 ) -> Result[(), ResolveError] {
     for request in requests {
-        invoke_request(resolver, global_ctx, request)?;
+        invoke_request(resolver, global_ctx, request, statistics)?;
     }
     Ok(())
 }
