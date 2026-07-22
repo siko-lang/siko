@@ -1,0 +1,282 @@
+module Std.Encoding.BinaryCodec {
+
+import Std.Encoding.Binary
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+import Std.Vec
+
+// Binary is deliberately schema-driven. Fixed-width numbers follow the byte
+// order configured on the encoder or decoder. Strings and vectors start with
+// a non-negative Int length, while sum types use a one-byte tag.
+pub trait Binary[T] {
+    fn encode[W: IO.Writer[W]](
+        value: T,
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError]
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[T, DecodeError]
+}
+
+instance Binary[()] {
+    fn encode[W: IO.Writer[W]](
+        value: (),
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        Ok(())
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[(), DecodeError] {
+        Ok(())
+    }
+}
+
+instance Binary[Bool] {
+    fn encode[W: IO.Writer[W]](
+        value: Bool,
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        encoder.write_u8(if value { 1 } else { 0 })
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Bool, DecodeError] {
+        let value = decoder.read_u8()?;
+        if value == 0 {
+            Ok(False)
+        } else if value == 1 {
+            Ok(True)
+        } else {
+            Err(DecodeError.InvalidBool(value))
+        }
+    }
+}
+
+instance Binary[U8] {
+    fn encode[W: IO.Writer[W]](value: U8, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_u8(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[U8, DecodeError] {
+        decoder.read_u8()
+    }
+}
+
+instance Binary[I8] {
+    fn encode[W: IO.Writer[W]](value: I8, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_i8(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[I8, DecodeError] {
+        decoder.read_i8()
+    }
+}
+
+instance Binary[U16] {
+    fn encode[W: IO.Writer[W]](value: U16, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_u16(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[U16, DecodeError] {
+        decoder.read_u16()
+    }
+}
+
+instance Binary[I16] {
+    fn encode[W: IO.Writer[W]](value: I16, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_i16(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[I16, DecodeError] {
+        decoder.read_i16()
+    }
+}
+
+instance Binary[U32] {
+    fn encode[W: IO.Writer[W]](value: U32, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_u32(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[U32, DecodeError] {
+        decoder.read_u32()
+    }
+}
+
+instance Binary[I32] {
+    fn encode[W: IO.Writer[W]](value: I32, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_i32(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[I32, DecodeError] {
+        decoder.read_i32()
+    }
+}
+
+instance Binary[U64] {
+    fn encode[W: IO.Writer[W]](value: U64, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_u64(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[U64, DecodeError] {
+        decoder.read_u64()
+    }
+}
+
+instance Binary[I64] {
+    fn encode[W: IO.Writer[W]](value: I64, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_i64(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[I64, DecodeError] {
+        decoder.read_i64()
+    }
+}
+
+instance Binary[Int] {
+    fn encode[W: IO.Writer[W]](value: Int, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_int(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[Int, DecodeError] {
+        decoder.read_int()
+    }
+}
+
+instance Binary[F32] {
+    fn encode[W: IO.Writer[W]](value: F32, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_f32(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[F32, DecodeError] {
+        decoder.read_f32()
+    }
+}
+
+instance Binary[F64] {
+    fn encode[W: IO.Writer[W]](value: F64, encoder: Encoder[W]) -> Result[(), EncodeError] {
+        encoder.write_f64(value)
+    }
+
+    fn decode[R: IO.Reader[R]](decoder: Decoder[R]) -> Result[F64, DecodeError] {
+        decoder.read_f64()
+    }
+}
+
+fn decode_length[R: IO.Reader[R]](
+    decoder: Decoder[R],
+) -> Result[Int, DecodeError] {
+    let length = decoder.read_int()?;
+    if length < 0 {
+        Err(DecodeError.InvalidLength(length))
+    } else {
+        Ok(length)
+    }
+}
+
+instance Binary[String] {
+    fn encode[W: IO.Writer[W]](
+        value: String,
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        encoder.write_int(value.len())?;
+        encoder.write_bytes(value.as_slice())
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[String, DecodeError] {
+        let length = decode_length(decoder)?;
+        let bytes = decoder.read_bytes(length)?;
+        Ok(String.from_slice(bytes.slice()))
+    }
+}
+
+instance[T: Binary[T]] Binary[Vec[T]] {
+    fn encode[W: IO.Writer[W]](
+        values: Vec[T],
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        encoder.write_int(values.len())?;
+        for value in values {
+            value.encode(encoder)?;
+        }
+        Ok(())
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Vec[T], DecodeError] {
+        let length = decode_length(decoder)?;
+        let values = Vec.new(length);
+        for _ in 0..length {
+            values.push(T.decode(decoder)?);
+        }
+        Ok(values)
+    }
+}
+
+instance[T: Binary[T]] Binary[Option[T]] {
+    fn encode[W: IO.Writer[W]](
+        value: Option[T],
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        match value {
+            None => encoder.write_u8(0),
+            Some(item) => {
+                encoder.write_u8(1)?;
+                item.encode(encoder)
+            }
+        }
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Option[T], DecodeError] {
+        let tag = decoder.read_u8()?;
+        if tag == 0 {
+            Ok(None)
+        } else if tag == 1 {
+            Ok(Some(T.decode(decoder)?))
+        } else {
+            Err(DecodeError.InvalidTag(tag))
+        }
+    }
+}
+
+instance[T, E: Binary[T], Binary[E]] Binary[Result[T, E]] {
+    fn encode[W: IO.Writer[W]](
+        value: Result[T, E],
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        match value {
+            Ok(item) => {
+                encoder.write_u8(0)?;
+                item.encode(encoder)
+            }
+            Err(error) => {
+                encoder.write_u8(1)?;
+                error.encode(encoder)
+            }
+        }
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Result[T, E], DecodeError] {
+        let tag = decoder.read_u8()?;
+        if tag == 0 {
+            Ok(Ok(T.decode(decoder)?))
+        } else if tag == 1 {
+            Ok(Err(E.decode(decoder)?))
+        } else {
+            Err(DecodeError.InvalidTag(tag))
+        }
+    }
+}
+
+
+}

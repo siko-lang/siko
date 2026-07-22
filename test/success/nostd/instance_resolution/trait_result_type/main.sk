@@ -1,0 +1,55 @@
+module Main {
+
+trait Reader[R] {
+    fn read(reader: R)
+}
+
+struct MemoryReader {}
+
+instance Reader[MemoryReader] {
+    fn read(reader: MemoryReader) {}
+}
+
+struct Decoder[R] {
+    reader: R
+}
+
+struct Item {}
+
+struct Wrapper[T] {
+    value: T
+}
+
+enum Either[A, B] {
+    Left(A),
+    Right(B),
+}
+
+trait Binary[T] {
+    fn decode[R: Reader[R]](decoder: Decoder[R]) -> T
+}
+
+instance Binary[Item] {
+    fn decode[R: Reader[R]](decoder: Decoder[R]) -> Item {
+        decoder.reader.read();
+        Item()
+    }
+}
+
+instance[T: Binary[T]] Binary[Wrapper[T]] {
+    fn decode[R: Reader[R]](decoder: Decoder[R]) -> Wrapper[T] {
+        Wrapper(T.decode(decoder))
+    }
+}
+
+instance[A, B: Binary[A], Binary[B]] Binary[Either[A, B]] {
+    fn decode[R: Reader[R]](decoder: Decoder[R]) -> Either[A, B] {
+        Left(A.decode(decoder))
+    }
+}
+
+fn main() {
+    let value: Either[Wrapper[Item], Item] = decode(Decoder(MemoryReader()));
+}
+
+}

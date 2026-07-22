@@ -355,9 +355,9 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
 pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorphizer) -> FunctionCallInfo {
     mono.statistics.process_type_associated_call_start();
     defer mono.statistics.process_type_associated_call_end();
+    let concrete_result_ty = mono.current_expr_ty.apply(mono.sub);
     let spec_args: Vec[Expr] = info.args.specialize(mono);
     let arg_types: Vec[TypeDef] = info.args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
-    let concrete_result_ty = mono.current_expr_ty.apply(mono.sub);
 
     let concrete_type = info.type_def.specialize(mono);
     let func = mono.source.functions.get(info.fn_name).unwrap();
@@ -444,30 +444,54 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         }
     };
 
-    let remaining_witnesses: Vec[ResolvedWitness] = {
-        let i = info.witnesses.witnesses.iter();
-        i.next();
-        let witnesses = Vec.new();
-        for w in i {
-            match mono.resolve_witness(w) {
-                Some(resolved) => witnesses.push(resolved),
-                None => {
-                    return FunctionCallInfo(
-                        qname: info.fn_name,
-                        kind: FunctionKind.UserDefined,
-                        args: spec_args,
-                    );
-                }
-            }
-        }
-        witnesses
-    };
-
     let final_callee_def = mono
         .source
         .functions
         .get(final_callee)
         .unwrap();
+
+    let callee_witnesses: Vec[ResolvedWitness] = if final_callee == info.fn_name {
+        match mono.resolve_witnesses(info.witnesses.witnesses) {
+            Some(witnesses) => witnesses,
+            None => {
+                return FunctionCallInfo(
+                    qname: info.fn_name,
+                    kind: FunctionKind.UserDefined,
+                    args: spec_args,
+                );
+            }
+        }
+    } else {
+        let children = resolved_witness.children;
+        let method_bounds = final_callee_def.type_arg_defs
+            .map(|method_tad| method_tad.bounds.clone())
+            .unwrap_or_else(|| Vec.new());
+        let witnesses: Vec[ResolvedWitness] = Vec.new();
+        let child_idx = 0;
+        let next_forward = 1;
+        for bound in method_bounds {
+            match bound.origin {
+                BoundOrigin.InstanceContext => {
+                    witnesses.push(children[child_idx]);
+                    child_idx = child_idx + 1;
+                }
+                BoundOrigin.MethodOwn => {
+                    match mono.resolve_witness(info.witnesses.witnesses[next_forward]) {
+                        Some(witness) => witnesses.push(witness),
+                        None => {
+                            return FunctionCallInfo(
+                                qname: info.fn_name,
+                                kind: FunctionKind.UserDefined,
+                                args: spec_args,
+                            );
+                        }
+                    }
+                    next_forward = next_forward + 1;
+                }
+            }
+        }
+        witnesses
+    };
     let callee_mono_ctx = if final_callee_def.is_extern() {
         MonoContext.new()
     } else if final_callee_def.is_c_callback() {
@@ -480,11 +504,11 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         mono,
         final_callee,
         callee_type_args,
-        remaining_witnesses,
+        callee_witnesses,
         callee_mono_ctx,
     );
     if !mono.fn_done.contains(mono_callee) {
-        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, remaining_witnesses, callee_mono_ctx));
+        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, callee_witnesses, callee_mono_ctx));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,

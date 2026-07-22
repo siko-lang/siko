@@ -1,0 +1,157 @@
+module Std.Encoding.BinaryTest {
+
+import Std.Encoding.Binary
+import Std.IO.Memory as Memory
+import Std.IO.Writer as IO
+import Std.Slice
+
+struct ZeroWriter {}
+
+instance IO.Writer[ZeroWriter] {
+    fn write(writer: ZeroWriter, bytes: Slice[U8]) -> Result[Int, Error] {
+        Ok(0)
+    }
+}
+
+
+@test
+fn test_default_little_endian_layout() {
+    let output = Memory.Writer.new();
+    let encoder = Encoder.new(output);
+    assert(encoder.byte_order() == ByteOrder.LittleEndian);
+
+    encoder.write_u16(0x1234).unwrap();
+    encoder.write_u32(0x12345678).unwrap();
+    encoder.write_u64(0x0102030405060708).unwrap();
+
+    assert(output.bytes() == [
+        0x34, 0x12,
+        0x78, 0x56, 0x34, 0x12,
+        0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+    ]);
+    assert(encoder.position() == 14);
+}
+
+@test
+fn test_big_endian_layout() {
+    let output = Memory.Writer.new();
+    let encoder = Encoder.new(output, ByteOrder.BigEndian);
+    assert(encoder.byte_order() == ByteOrder.BigEndian);
+
+    encoder.write_u16(0x1234).unwrap();
+    encoder.write_u32(0x12345678).unwrap();
+    encoder.write_u64(0x0102030405060708).unwrap();
+
+    assert(output.bytes() == [
+        0x12, 0x34,
+        0x12, 0x34, 0x56, 0x78,
+        0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+    ]);
+    assert(encoder.position() == 14);
+}
+
+@test
+fn test_decoder_byte_order() {
+    let little_input = Memory.Reader.new([
+        0x34, 0x12,
+        0x78, 0x56, 0x34, 0x12,
+    ]);
+    let little = Decoder.new(little_input);
+    assert(little.byte_order() == ByteOrder.LittleEndian);
+    assert(little.read_u16().unwrap() == 0x1234);
+    assert(little.read_u32().unwrap() == 0x12345678);
+    assert(little.position() == 6);
+
+    let big_input = Memory.Reader.new([
+        0x12, 0x34,
+        0x12, 0x34, 0x56, 0x78,
+    ]);
+    let big = Decoder.new(big_input, ByteOrder.BigEndian);
+    assert(big.byte_order() == ByteOrder.BigEndian);
+    assert(big.read_u16().unwrap() == 0x1234);
+    assert(big.read_u32().unwrap() == 0x12345678);
+    assert(big.position() == 6);
+}
+
+@test
+fn test_numeric_roundtrip_with_short_io() {
+    let output = Memory.Writer.new(1);
+    let encoder = Encoder.new(output, ByteOrder.BigEndian);
+    encoder.write_u8(0xfe).unwrap();
+    encoder.write_i8(-2).unwrap();
+    encoder.write_u16(0xfedc).unwrap();
+    encoder.write_i16(-1234).unwrap();
+    encoder.write_u32(0xfedcba98).unwrap();
+    encoder.write_i32(-12345678).unwrap();
+    encoder.write_u64(0xfedcba9876543210).unwrap();
+    encoder.write_i64(-1234567890).unwrap();
+    encoder.write_int(-987654321).unwrap();
+    encoder.write_f32(1.5).unwrap();
+    encoder.write_f64(-7.25).unwrap();
+
+    let input = Memory.Reader.new(output.bytes(), 1);
+    let decoder = Decoder.new(input, ByteOrder.BigEndian);
+    assert(decoder.read_u8().unwrap() == 0xfe);
+    assert(decoder.read_i8().unwrap() == -2);
+    assert(decoder.read_u16().unwrap() == 0xfedc);
+    assert(decoder.read_i16().unwrap() == -1234);
+    assert(decoder.read_u32().unwrap() == 0xfedcba98);
+    assert(decoder.read_i32().unwrap() == -12345678);
+    assert(decoder.read_u64().unwrap() == 0xfedcba9876543210);
+    assert(decoder.read_i64().unwrap() == -1234567890);
+    assert(decoder.read_int().unwrap() == -987654321);
+    assert(decoder.read_f32().unwrap() == 1.5);
+    assert(decoder.read_f64().unwrap() == -7.25);
+    assert(decoder.position() == output.len());
+}
+
+@test
+fn test_raw_bytes() {
+    let output = Memory.Writer.new(2);
+    let encoder = Encoder.new(output);
+    let bytes: Vec[U8] = [1, 2, 3, 4];
+    encoder.write_bytes(bytes.slice()).unwrap();
+    assert(encoder.position() == 4);
+    assert(output.bytes() == bytes);
+
+    let input = Memory.Reader.new(output.bytes(), 2);
+    let decoder = Decoder.new(input);
+    assert(decoder.read_bytes(3).unwrap() == [1, 2, 3]);
+    assert(decoder.position() == 3);
+    assert(decoder.read_u8().unwrap() == 4);
+    assert(decoder.position() == 4);
+}
+
+@test
+fn test_unexpected_eof_reports_consumed_bytes() {
+    let input = Memory.Reader.new([1], 1);
+    let decoder = Decoder.new(input);
+    match decoder.read_u32() {
+        Err(DecodeError.UnexpectedEof(needed, read)) => {
+            assert(needed == 4);
+            assert(read == 1);
+        }
+        _ => assert(False),
+    }
+    assert(decoder.position() == 1);
+}
+
+@test
+fn test_invalid_counts() {
+    let encoder = Encoder.new(ZeroWriter());
+    match encoder.write_u16(1) {
+        Err(EncodeError.InvalidWriteCount(count)) => assert(count == 0),
+        _ => assert(False),
+    }
+    assert(encoder.position() == 0);
+
+    let decoder = Decoder.new(Memory.Reader.new([1]));
+    match decoder.read_bytes(-1) {
+        Err(DecodeError.InvalidByteCount(count)) => assert(count == -1),
+        _ => assert(False),
+    }
+    assert(decoder.position() == 0);
+}
+
+
+}

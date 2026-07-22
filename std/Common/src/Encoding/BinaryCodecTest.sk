@@ -1,0 +1,108 @@
+module Std.Encoding.BinaryCodecTest {
+
+import Std.Encoding.Binary
+import Std.Encoding.BinaryCodec
+import Std.IO.Memory as Memory
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+
+@derive(PartialEq, Eq)
+struct Point {
+    x: I32,
+    y: I32,
+}
+
+instance Binary[Point] {
+    fn encode[W: IO.Writer[W]](
+        value: Point,
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        value.x.encode(encoder)?;
+        value.y.encode(encoder)
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Point, DecodeError] {
+        Ok(Point(I32.decode(decoder)?, I32.decode(decoder)?))
+    }
+}
+
+@test
+fn test_binary_trait_layout() {
+    let output = Memory.Writer.new();
+    let encoder = Encoder.new(output);
+    let values: Vec[U16] = [0x1234, 0xabcd];
+    values.encode(encoder).unwrap();
+
+    assert(output.bytes() == [
+        0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x34, 0x12,
+        0xcd, 0xab,
+    ]);
+}
+
+@test
+fn test_binary_trait_nested_roundtrip_with_short_io() {
+    let original: Result[Vec[Option[String]], Bool] = Ok([
+        Some("alpha"),
+        None,
+        Some("beta"),
+    ]);
+    let output = Memory.Writer.new(1);
+    let encoder = Encoder.new(output, ByteOrder.BigEndian);
+    original.encode(encoder).unwrap();
+
+    let input = Memory.Reader.new(output.bytes(), 1);
+    let decoder = Decoder.new(input, ByteOrder.BigEndian);
+    let decoded: Result[Result[Vec[Option[String]], Bool], DecodeError] = decode(decoder);
+    match decoded.unwrap() {
+        Ok(values) => assert(values == [Some("alpha"), None, Some("beta")]),
+        Err(_) => assert(False),
+    }
+    assert(decoder.position() == output.len());
+}
+
+@test
+fn test_manual_binary_instance_roundtrip() {
+    let output = Memory.Writer.new();
+    let encoder = Encoder.new(output);
+    let point = Point(-12, 34);
+    point.encode(encoder).unwrap();
+
+    let decoder = Decoder.new(Memory.Reader.new(output.bytes()));
+    let decoded: Result[Point, DecodeError] = decode(decoder);
+    assert(decoded.unwrap() == point);
+}
+
+@test
+fn test_binary_trait_rejects_invalid_values() {
+    let bool_result: Result[Bool, DecodeError] = decode(
+        Decoder.new(Memory.Reader.new([2])),
+    );
+    match bool_result {
+        Err(DecodeError.InvalidBool(value)) => assert(value == 2),
+        _ => assert(False),
+    }
+
+    let option_result: Result[Option[Int], DecodeError] = decode(
+        Decoder.new(Memory.Reader.new([3])),
+    );
+    match option_result {
+        Err(DecodeError.InvalidTag(tag)) => assert(tag == 3),
+        _ => assert(False),
+    }
+
+    let output = Memory.Writer.new();
+    let encoder = Encoder.new(output);
+    encoder.write_int(-1).unwrap();
+    let string_result: Result[String, DecodeError] = decode(
+        Decoder.new(Memory.Reader.new(output.bytes())),
+    );
+    match string_result {
+        Err(DecodeError.InvalidLength(length)) => assert(length == -1),
+        _ => assert(False),
+    }
+}
+
+}

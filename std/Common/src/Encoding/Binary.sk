@@ -1,0 +1,393 @@
+module Std.Encoding.Binary {
+
+import Std.Array
+import Std.Intrinsics
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+import Std.Slice
+import Std.Vec
+
+@derive(Clone, PartialEq, Eq)
+pub enum ByteOrder {
+    LittleEndian,
+    BigEndian,
+}
+
+pub enum EncodeError {
+    Io(Error),
+    InvalidWriteCount(Int),
+}
+
+instance Into[Error, EncodeError] {
+    fn into(error: Error) -> EncodeError {
+        EncodeError.Io(error)
+    }
+}
+
+instance ToString[EncodeError] {
+    fn to_string(error: EncodeError) -> String {
+        match error {
+            EncodeError.Io(error) => "binary encoder I/O error: ${error}",
+            EncodeError.InvalidWriteCount(count) =>
+                "binary writer returned an invalid byte count: ${count}",
+        }
+    }
+}
+
+instance Error[EncodeError] {
+    fn message(error: EncodeError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: EncodeError) -> Option[Error] {
+        match error {
+            EncodeError.Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+pub enum DecodeError {
+    Io(Error),
+    UnexpectedEof(Int, Int),
+    InvalidReadCount(Int),
+    InvalidByteCount(Int),
+    InvalidBool(U8),
+    InvalidTag(U8),
+    InvalidLength(Int),
+}
+
+instance Into[Error, DecodeError] {
+    fn into(error: Error) -> DecodeError {
+        DecodeError.Io(error)
+    }
+}
+
+instance ToString[DecodeError] {
+    fn to_string(error: DecodeError) -> String {
+        match error {
+            DecodeError.Io(error) => "binary decoder I/O error: ${error}",
+            DecodeError.UnexpectedEof(needed, read) =>
+                "binary decoder needed ${needed} bytes but reached EOF after ${read}",
+            DecodeError.InvalidReadCount(count) =>
+                "binary reader returned an invalid byte count: ${count}",
+            DecodeError.InvalidByteCount(count) =>
+                "invalid binary byte count: ${count}",
+            DecodeError.InvalidBool(value) =>
+                "invalid binary boolean value: ${value}",
+            DecodeError.InvalidTag(tag) =>
+                "invalid binary tag: ${tag}",
+            DecodeError.InvalidLength(length) =>
+                "invalid binary length: ${length}",
+        }
+    }
+}
+
+instance Error[DecodeError] {
+    fn message(error: DecodeError) -> String {
+        error.to_string()
+    }
+
+    fn source(error: DecodeError) -> Option[Error] {
+        match error {
+            DecodeError.Io(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+pub struct Encoder[W] {
+    writer: W,
+    byte_order: ByteOrder,
+    position: Int,
+
+    pub fn new[W](
+        writer: W,
+        byte_order: ByteOrder = ByteOrder.LittleEndian,
+    ) -> Encoder[W] {
+        Encoder(writer, byte_order, 0)
+    }
+
+    pub fn byte_order(encoder: Encoder[W]) -> ByteOrder {
+        encoder.byte_order
+    }
+
+    pub fn position(encoder: Encoder[W]) -> Int {
+        encoder.position
+    }
+
+    pub fn inner(encoder: Encoder[W]) -> W {
+        encoder.writer
+    }
+
+    pub fn write_bytes[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        bytes: Slice[U8],
+    ) -> Result[(), EncodeError] {
+        encoder.write_all(bytes)
+    }
+
+    pub fn write_u8[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: U8,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 1)
+    }
+
+    pub fn write_i8[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: I8,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 1)
+    }
+
+    pub fn write_u16[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: U16,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 2)
+    }
+
+    pub fn write_i16[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: I16,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 2)
+    }
+
+    pub fn write_u32[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: U32,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 4)
+    }
+
+    pub fn write_i32[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: I32,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 4)
+    }
+
+    pub fn write_u64[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: U64,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value, 8)
+    }
+
+    pub fn write_i64[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: I64,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_int().as_u64(), 8)
+    }
+
+    pub fn write_int[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: Int,
+    ) -> Result[(), EncodeError] {
+        encoder.write_unsigned(value.as_u64(), 8)
+    }
+
+    @safe
+    pub fn write_f32[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: F32,
+    ) -> Result[(), EncodeError] {
+        let bits: I32 = transmute(value);
+        encoder.write_i32(bits)
+    }
+
+    @safe
+    pub fn write_f64[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: F64,
+    ) -> Result[(), EncodeError] {
+        let bits: I64 = transmute(value);
+        encoder.write_i64(bits)
+    }
+
+    @safe
+    fn write_unsigned[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        value: U64,
+        width: Int,
+    ) -> Result[(), EncodeError] {
+        let buffer: [U8; 8] = uninitialized();
+        let bytes = Slice.from_raw(Std.Array.as_ptr(&buffer), width);
+        for index in 0..width {
+            let byte_index = match encoder.byte_order {
+                ByteOrder.LittleEndian => index,
+                ByteOrder.BigEndian => width - index - 1,
+            };
+            let shift = (byte_index * 8).as_u64();
+            bytes[index] = (value >> shift).as_int().as_u8();
+        }
+        encoder.write_all(bytes)
+    }
+
+    fn write_all[W: IO.Writer[W]](
+        encoder: Encoder[W],
+        bytes: Slice[U8],
+    ) -> Result[(), EncodeError] {
+        let offset = 0;
+        while offset < bytes.len() {
+            let count = encoder.writer.write(bytes.sub(offset, bytes.len()))?;
+            if count <= 0 || count > bytes.len() - offset {
+                return Err(EncodeError.InvalidWriteCount(count));
+            }
+            offset = offset + count;
+            encoder.position = encoder.position + count;
+        }
+        Ok(())
+    }
+}
+
+pub struct Decoder[R] {
+    reader: R,
+    byte_order: ByteOrder,
+    position: Int,
+
+    pub fn new[R](
+        reader: R,
+        byte_order: ByteOrder = ByteOrder.LittleEndian,
+    ) -> Decoder[R] {
+        Decoder(reader, byte_order, 0)
+    }
+
+    pub fn byte_order(decoder: Decoder[R]) -> ByteOrder {
+        decoder.byte_order
+    }
+
+    pub fn position(decoder: Decoder[R]) -> Int {
+        decoder.position
+    }
+
+    pub fn inner(decoder: Decoder[R]) -> R {
+        decoder.reader
+    }
+
+    pub fn read_bytes[R: IO.Reader[R]](
+        decoder: Decoder[R],
+        count: Int,
+    ) -> Result[Vec[U8], DecodeError] {
+        if count < 0 {
+            return Err(DecodeError.InvalidByteCount(count));
+        }
+        let bytes = Vec.with_value(count, 0);
+        decoder.read_exact(bytes.slice())?;
+        Ok(bytes)
+    }
+
+    pub fn read_u8[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[U8, DecodeError] {
+        Ok(decoder.read_unsigned(1)?.as_int().as_u8())
+    }
+
+    pub fn read_i8[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[I8, DecodeError] {
+        Ok(decoder.read_unsigned(1)?.as_int().as_i8())
+    }
+
+    pub fn read_u16[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[U16, DecodeError] {
+        Ok(decoder.read_unsigned(2)?.as_int().as_u16())
+    }
+
+    pub fn read_i16[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[I16, DecodeError] {
+        Ok(decoder.read_unsigned(2)?.as_int().as_i16())
+    }
+
+    pub fn read_u32[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[U32, DecodeError] {
+        Ok(decoder.read_unsigned(4)?.as_int().as_u32())
+    }
+
+    pub fn read_i32[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[I32, DecodeError] {
+        Ok(decoder.read_unsigned(4)?.as_int().as_i32())
+    }
+
+    pub fn read_u64[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[U64, DecodeError] {
+        decoder.read_unsigned(8)
+    }
+
+    pub fn read_i64[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[I64, DecodeError] {
+        Ok(decoder.read_unsigned(8)?.as_int().as_i64())
+    }
+
+    pub fn read_int[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[Int, DecodeError] {
+        Ok(decoder.read_unsigned(8)?.as_int())
+    }
+
+    @safe
+    pub fn read_f32[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[F32, DecodeError] {
+        let bits = decoder.read_i32()?;
+        Ok(transmute(bits))
+    }
+
+    @safe
+    pub fn read_f64[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[F64, DecodeError] {
+        let bits = decoder.read_i64()?;
+        Ok(transmute(bits))
+    }
+
+    @safe
+    fn read_unsigned[R: IO.Reader[R]](
+        decoder: Decoder[R],
+        width: Int,
+    ) -> Result[U64, DecodeError] {
+        let buffer: [U8; 8] = uninitialized();
+        let bytes = Slice.from_raw(Std.Array.as_ptr(&buffer), width);
+        decoder.read_exact(bytes)?;
+        let value: U64 = 0;
+        for index in 0..width {
+            let byte_index = match decoder.byte_order {
+                ByteOrder.LittleEndian => index,
+                ByteOrder.BigEndian => width - index - 1,
+            };
+            let shift = (byte_index * 8).as_u64();
+            value = value | (bytes[index].as_int().as_u64() << shift);
+        }
+        Ok(value)
+    }
+
+    fn read_exact[R: IO.Reader[R]](
+        decoder: Decoder[R],
+        bytes: Slice[U8],
+    ) -> Result[(), DecodeError] {
+        let offset = 0;
+        while offset < bytes.len() {
+            let count = decoder.reader.read(bytes.sub(offset, bytes.len()))?;
+            if count < 0 || count > bytes.len() - offset {
+                return Err(DecodeError.InvalidReadCount(count));
+            }
+            if count == 0 {
+                return Err(DecodeError.UnexpectedEof(bytes.len(), offset));
+            }
+            offset = offset + count;
+            decoder.position = decoder.position + count;
+        }
+        Ok(())
+    }
+}
+
+}
