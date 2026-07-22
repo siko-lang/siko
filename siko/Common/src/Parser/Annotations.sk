@@ -2,7 +2,6 @@ module Siko.Parser.Annotations {
 
 import Siko.AST.Annotations
 import Siko.AST.Expr
-import Siko.AST.Name
 import Siko.Interner as I
 import Siko.Parser.Parser
 import Siko.Parser.Token
@@ -20,23 +19,6 @@ instance AnnotationParser[Parser] {
             match parser.peek() {
                 TokenKind.VarIdentifier(name) => {
                     match I.resolve(name) {
-                        "derive" => {
-                            if allow_derives == False {
-                                return Err(ParseError.new("derives are not allowed here", parser.cur_pos()));
-                            }
-                            parser.advance();
-                            parser.expect(TokenKind.LParen)?;
-                            loop {
-                                let ident = parser.parse_dotted_name()?;
-                                annotations.push(Annotation.Derive(DeriveAnnotation(Name.Unresolved(ident))));
-                                if parser.peek() == TokenKind.Comma {
-                                    parser.advance();
-                                } else {
-                                    break;
-                                }
-                            }
-                            parser.expect(TokenKind.RParen)?;
-                        }
                         "derive2" => {
                             if allow_derives == False {
                                 return Err(ParseError.new("derives are not allowed here", parser.cur_pos()));

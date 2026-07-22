@@ -1,14 +1,8 @@
 module Siko.AST.Annotations {
 
-import Siko.AST.Name
 import Siko.AST.Expr as E
 import Siko.Interner as I
 import Siko.AST.Macros
-
-@derive2(Clone, PartialEq, Eq)
-pub struct DeriveAnnotation {
-    pub trait_name: Name,
-}
 
 @derive2(Clone, PartialEq, Eq)
 pub enum OpKind {
@@ -18,7 +12,6 @@ pub enum OpKind {
 
 @derive2(Clone, PartialEq, Eq)
 pub enum Annotation {
-    Derive(DeriveAnnotation),
     ExternC,
     Rename(I.String),
     Prelude,
@@ -37,16 +30,9 @@ pub enum Annotation {
     // pointers through integers, where closure flow is uninferable).
     ClosureAlias,
     // @interpreter_test(foo) on a struct: compile function `foo` (resolved in
-    // the annotating module) through lowering and execute it with Interpreter2.
+    // the annotating module) through lowering and execute it with Interpreter.
     InterpreterTest(I.String),
     Derive2(AttachedMacroApplication),
-
-    pub fn has_derive(a: Annotation, trait_name: Name) -> Bool {
-        match a {
-            Annotation.Derive(d) => d.trait_name == trait_name,
-            _ => False,
-        }
-    }
 
     pub fn is_extern(a: Annotation) -> Bool {
         match a {

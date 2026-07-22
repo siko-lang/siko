@@ -8,15 +8,6 @@ import Siko.Resolver.Module
 import Siko.Resolver.Import
 import Siko.Resolver.TypeResolver
 import Siko.Resolver.TraitObjectCheck
-import Siko.Resolver.Autoderive.PartialEq
-import Siko.Resolver.Autoderive.Eq
-import Siko.Resolver.Autoderive.PartialOrd
-import Siko.Resolver.Autoderive.Ord
-import Siko.Resolver.Autoderive.Clone
-import Siko.Resolver.Autoderive.Map
-import Siko.Resolver.Autoderive.Fold
-import Siko.Resolver.Autoderive.FromInt
-import Siko.Resolver.Autoderive.Json
 import Siko.Resolver.Macros.Runner
 import Siko.Resolver.Macros.Request
 import Siko.Resolver.Statistics
@@ -127,10 +118,6 @@ pub struct Resolver {
 
             for module_name in group {
                 resolver.process_methods(modules, module_name)?;
-            }
-
-            for module_name in group {
-                resolver.process_external_derives(modules, module_name)?;
             }
 
             if !resolver.process_macro_requests_for_group(modules, group, module_graph)? {
@@ -391,7 +378,7 @@ pub struct Resolver {
                     resolver.process_trait(module_name, module_def, trait_def)?;
                 }
                 M.ModuleItem.Instance(instance_def) => {
-                    if instance_def.external_derived_instance_info.is_none() && instance_def.macro_derive_info.is_none() {
+                    if instance_def.macro_derive_info.is_none() {
                         resolver.process_instance(module_name, module_def, instance_def)?;
                     }
                 }
@@ -437,30 +424,8 @@ pub struct Resolver {
                     resolver.process_global(module_name, module_def, global_def)?;
                 }
                 M.ModuleItem.Instance(instance_def) => {
-                    if instance_def.external_derived_instance_info.is_none() && instance_def.macro_derive_info.is_none() {
+                    if instance_def.macro_derive_info.is_none() {
                         resolver.process_instance_methods(module_name, instance_def)?;
-                    }
-                }
-                _ => {}
-            }
-        }
-        Ok(())
-    }
-
-    fn process_external_derives(
-        resolver: Resolver,
-        modules: Vec[M.Module],
-        module_name: I.String,
-    ) -> Result[(), ResolveError] {
-        let module_def = modules
-            .iter()
-            .find(|m| m.name.name() == module_name)
-            .unwrap();
-        for item in module_def.items {
-            match item {
-                M.ModuleItem.Instance(instance_def) => {
-                    if instance_def.external_derived_instance_info.is_some() {
-                        resolver.process_external_instance(module_name, module_def, instance_def)?;
                     }
                 }
                 _ => {}
@@ -521,7 +486,6 @@ pub struct Resolver {
                 .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
         resolver.ctx.insert_struct(module_name, qualified_name, resolved_struct_def);
-        resolver.process_struct_derives(module_name, resolved_struct_def)?;
         Ok(())
     }
 
@@ -573,7 +537,6 @@ pub struct Resolver {
                 .names
                 .insert(method.name.name(), QualifiedName.new_method(qualified_name.name(), method.name.name()));
         }
-        resolver.process_derives(module_name, resolved_enum_def)?;
         resolver.ctx.insert_enum(module_name, qualified_name, resolved_enum_def);
         Ok(())
     }
@@ -604,44 +567,7 @@ pub struct Resolver {
         Ok(())
     }
 
-    fn process_struct_derives(resolver: Resolver, module_name: I.String, resolved_struct_def: StructDef) -> Result[(), ResolveError] {
-        for derived in [
-            derive_partialeq_struct(resolved_struct_def, module_name),
-            derive_eq_struct(resolved_struct_def, module_name),
-            derive_partialord_struct(resolved_struct_def, module_name),
-            derive_ord_struct(resolved_struct_def, module_name),
-            derive_clone_struct(resolved_struct_def, module_name),
-            derive_json_serialize_struct(resolved_struct_def, module_name),
-            derive_json_deserialize_struct(resolved_struct_def, module_name),
-        ]
-        {
-            if let Some(derived) = derived {
-                resolver.register_derived_instance(module_name, derived)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn process_derives(resolver: Resolver, module_name: I.String, resolved_enum_def: EnumDef) -> Result[(), ResolveError] {
-        for derived in [
-            derive_partialeq_enum(resolved_enum_def, module_name),
-            derive_eq_enum(resolved_enum_def, module_name),
-            derive_partialord_enum(resolved_enum_def, module_name),
-            derive_ord_enum(resolved_enum_def, module_name),
-            derive_clone_enum(resolved_enum_def, module_name),
-            derive_from_int_enum(resolved_enum_def, module_name),
-            derive_json_serialize_enum(resolved_enum_def, module_name),
-            derive_json_deserialize_enum(resolved_enum_def, module_name),
-        ]
-        {
-            if let Some(derived) = derived {
-                resolver.register_derived_instance(module_name, derived)?;
-            }
-        }
-        Ok(())
-    }
-
-    pub fn register_derived_instance(
+    pub fn register_macro_attached_instance(
         resolver: Resolver,
         module_name: I.String,
         instance_def: InstanceDef,
@@ -749,43 +675,6 @@ pub struct Resolver {
         Ok(())
     }
 
-    fn process_external_instance(
-        resolver: Resolver,
-        module_name: I.String,
-        module_def: M.Module,
-        instance_def: InstanceDef,
-    ) -> Result[(), ResolveError] {
-        let module_resolver = resolver.ctx.get_module_resolver(module_name).unwrap();
-        let type_resolver = TypeResolver.new(module_resolver);
-        let ctx = ResolverContext.new(type_resolver, resolver.ctx);
-        let resolved_instance_def = instance_def.resolve(ctx)?;
-
-        Ok(if let Some(name) = instance_def.name {
-            let qualified_name = QualifiedName.new_named_instance(module_def.name.name(), name.name());
-            resolver.derive_instance_methods(
-                resolved_instance_def,
-                qualified_name,
-                module_name,
-            )?;
-            resolved_instance_def.qualified_name = Some(qualified_name);
-            resolver.ctx.insert_named_instance(module_name, qualified_name, resolved_instance_def);
-            resolver.ctx.insert_instance(module_name, qualified_name, resolved_instance_def);
-        } else {
-            let synth_ident = resolved_instance_def.synth_name()?;
-            let trait_name = resolved_instance_def.subject.try_trait_name()?;
-            let synth_qname = QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone());
-            resolver.derive_instance_methods(
-                resolved_instance_def,
-                synth_qname,
-                module_name,
-            )?;
-            resolved_instance_def.name = Some(synth_ident);
-            resolved_instance_def.qualified_name = Some(synth_qname);
-            resolver.ctx.push_canonical_instance(module_name, resolved_instance_def);
-            resolver.ctx.insert_instance(module_name, synth_qname, resolved_instance_def);
-        })
-    }
-
     fn process_instance_methods(
         resolver: Resolver,
         module_name: I.String,
@@ -824,156 +713,6 @@ pub struct Resolver {
             resolved_method.qualified_name = Some(method_qn);
             resolver.process_function_args(module_name, method_qn, method, False)?;
             resolver.ctx.insert_function(module_name, method_qn, resolved_method);
-        }
-        Ok(())
-    }
-
-    fn derive_instance_methods(
-        resolver: Resolver,
-        resolved_instance_def: InstanceDef,
-        parent_qn: QualifiedName,
-        module_name: I.String,
-    ) -> Result[(), ResolveError] {
-        let type_qname = resolved_instance_def.args[0].name();
-        let self_type = resolved_instance_def.args[0];
-        let type_arg_defs = resolved_instance_def.type_arg_defs;
-        let trait_name_qn = resolved_instance_def.subject.try_trait_name()?.resolved();
-        let external_info = resolved_instance_def
-            .external_derived_instance_info
-
-            .unwrap();
-
-
-        let type_data = if let Some(e) = resolver.ctx.get_enum(type_qname) {
-            TypeData.Enum(e)
-        } else if let Some(s) = resolver.ctx.get_struct(type_qname) {
-            TypeData.Struct(s)
-        } else {
-            return Ok(());
-        };
-
-        let maybe_method = match external_info.params {
-            None => match trait_name_qn {
-                s if s == B.get_trait_partial_eq_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_partialeq_method(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_partialeq_struct_method(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                s if s == B.get_trait_partial_ord_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_partialord_method(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_partialord_struct_method(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                s if s == B.get_trait_ord_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_ord_method(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_ord_struct_method(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                s if s == B.get_trait_clone_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_clone_method_enum(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_clone_method_struct(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                s if s == B.get_trait_from_int_qn() => match type_data {
-                    TypeData.Enum(e) => Some(build_from_int_method(
-                        e, parent_qn, self_type, module_name,
-                    )),
-                    _ => None,
-                },
-                s if s == B.get_trait_json_serialize_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_json_serialize_method_enum(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_json_serialize_method_struct(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                s if s == B.get_trait_json_deserialize_qn() => Some(match type_data {
-                    TypeData.Enum(e) => build_json_deserialize_method_enum(
-                        e, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                    TypeData.Struct(s) => build_json_deserialize_method_struct(
-                        s, parent_qn, type_arg_defs, self_type, module_name,
-                    ),
-                }),
-                _ => None,
-            }
-            Some(params) => {
-                let trait_qname = resolved_instance_def.subject.try_trait_name()?.resolved();
-                let trait_def = if let Some(trait_def) = resolver.ctx.get_trait(trait_qname) {
-                    trait_def
-                } else {
-                    return Ok(());
-                };
-                let mode = params.mode;
-                let body_strategy = params.body;
-                let loc = resolved_instance_def.location;
-                let (short_ident, fn_qname) = match params.fn_name {
-                    FnName.Inferred => {
-                        if trait_def.method_map.names.len() != 1 {
-                            return Ok(());
-                        }
-                        let (short, qname) = trait_def.method_map.names.iter().next().unwrap();
-                        (Identifier.new(short, loc), qname)
-                    }
-                    FnName.Explicit(var) => {
-                        let short = var.name();
-                        let qname = if let Some(qname) = trait_def.method_map.names.get(short) {
-                            qname
-                        } else {
-                            return Ok(());
-                        };
-                        (Identifier.new(short, loc), qname)
-                    }
-                };
-                let extra_args: Vec[FunctionArg] = {
-                    match resolver.ctx.get_function(fn_qname) {
-                        None => [],
-                        Some(m) => {
-                            m.args.iter().skip(1).collect()
-                        }
-                    }
-                };
-                Some(match mode {
-                    ExternalDeriveMode.Map => match type_data {
-                        TypeData.Enum(e) => build_map_method(
-                            e, parent_qn, type_arg_defs, self_type,
-                            fn_qname, short_ident, module_name, extra_args, body_strategy,
-                        ),
-                        TypeData.Struct(s) => build_map_method_struct(
-                            s, parent_qn, type_arg_defs, self_type,
-                            fn_qname, short_ident, module_name, extra_args, body_strategy,
-                        ),
-                    }
-                    ExternalDeriveMode.Fold => match type_data {
-                        TypeData.Enum(e) => build_fold_method(
-                            e, parent_qn, type_arg_defs,
-                            fn_qname, short_ident, module_name, extra_args, body_strategy,
-                        ),
-                        TypeData.Struct(s) => build_fold_method_struct(
-                            s, parent_qn, type_arg_defs,
-                            fn_qname, short_ident, module_name, extra_args, body_strategy,
-                        ),
-                    }
-                })
-            }
-        };
-
-        if let Some((method, short_name)) = maybe_method {
-            resolved_instance_def.method_names.push(short_name);
-            resolver.ctx.insert_function(module_name, method.qualified_name.unwrap(), method);
         }
         Ok(())
     }
@@ -1268,11 +1007,6 @@ pub struct Resolver {
         }
         Ok(default_value_names)
     }
-}
-
-enum TypeData {
-    Enum(EnumDef),
-     Struct(StructDef),
 }
 
 fn add_preludes(modules: Vec[M.Module]) {

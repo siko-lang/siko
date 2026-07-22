@@ -52,63 +52,15 @@ instance InstancesParser[Parser] {
         let methods = Vec.new();
         let type_assignments = Vec.new();
         let macro_derive_info = None;
-        let external_derive_instance_info = if parser.peek() == TokenKind.Assign {
+        if parser.peek() == TokenKind.Assign {
             parser.advance();
             let loc = parser.cur_pos();
             let auto_name = parser.expect_var_ident()?;
             match I.resolve(auto_name.name) {
                 "auto2" => {
                     macro_derive_info = Some(parser.parse_external_macro()?);
-                    None
                 }
-                "auto" => {
-                    let params = if parser.peek() == TokenKind.LParen {
-                        parser.advance();
-                        let mode_ident = parser.expect_type_ident()?;
-                        let mode = match I.resolve(mode_ident.name) {
-                            "Map" => ExternalDeriveMode.Map,
-                            "Fold" => ExternalDeriveMode.Fold,
-                            _ => return Err(ParseError.new("expected Map or Fold", parser.cur_pos())),
-                        };
-                        let (fn_name, body) = if parser.peek() == TokenKind.Comma {
-                            parser.advance();
-                            match parser.peek() {
-                                TokenKind.Assign => {
-                                    parser.advance();
-                                    (FnName.Inferred, BodyStrategy.Identity)
-                                }
-                                TokenKind.Bang => {
-                                    parser.advance();
-                                    (FnName.Inferred, BodyStrategy.Unreachable)
-                                }
-                                _ => {
-                                    let var_ident = parser.expect_var_ident()?;
-                                    let fn_name = FnName.Explicit(Name.Unresolved(var_ident));
-                                    let body = if parser.peek() == TokenKind.Comma {
-                                        parser.advance();
-                                        match parser.peek() {
-                                            TokenKind.Assign => { parser.advance(); BodyStrategy.Identity }
-                                            TokenKind.Bang => { parser.advance(); BodyStrategy.Unreachable }
-                                            _ => return Err(ParseError.new("expected = or !", parser.cur_pos())),
-                                        }
-                                    } else {
-                                        BodyStrategy.Generate
-                                    };
-                                    (fn_name, body)
-                                }
-                            }
-                        } else {
-                            (FnName.Inferred, BodyStrategy.Generate)
-                        };
-                        let params = ExternalDeriveParams(mode, fn_name, body);
-                        parser.expect(TokenKind.RParen)?;
-                        Some(params)
-                    } else {
-                        None
-                    };
-                    Some(ExternalDerivedInstanceInfo(params))
-                }
-                _ => return Err(ParseError.new("expected auto or auto2", loc)),
+                _ => return Err(ParseError.new("expected auto2", loc)),
             }
         } else {
             parser.expect(TokenKind.LBrace)?;
@@ -135,8 +87,7 @@ instance InstancesParser[Parser] {
                 }
             }
             parser.expect(TokenKind.RBrace)?;
-            None
-        };
+        }
         Ok(InstanceDef(
             annotations: annotations,
             public: public,
@@ -150,7 +101,6 @@ instance InstancesParser[Parser] {
             module_name: I.intern(""),
             method_names: Vec.new(),
             location: instance_location,
-            external_derived_instance_info: external_derive_instance_info,
             macro_derive_info: macro_derive_info,
         ))
     }
