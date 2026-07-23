@@ -1,6 +1,7 @@
 module Siko.Interpreter.Interpreter {
 
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
 import Siko.Interpreter.Error
 import Siko.Interpreter.Extensions
 import Siko.Interpreter.IR
@@ -11,19 +12,21 @@ import Siko.Location
 
 struct Interpreter {
     program: ExecutableProgram,
+    constants: Vec[Value],
     extensions: InterpreterExtensions,
     call_stack: Vec[FrameInfo],
+    location: Location,
 }
 
 fn make_bool(value: Bool) -> Value {
-    let (variant_qname, tag) = if value {
-        (B.get_bool_true_qn(), B.get_bool_true_variant_index())
+    let (variant_name, tag) = if value {
+        (B.get_bool_true_qn().base_name().name(), B.get_bool_true_variant_index())
     } else {
-        (B.get_bool_false_qn(), B.get_bool_false_variant_index())
+        (B.get_bool_false_qn().base_name().name(), B.get_bool_false_variant_index())
     };
     Value(ValueKind.Variant(VariantBox(
-        enum_qname: B.get_bool_type_qn(),
-        variant_qname: variant_qname,
+        enum_name: B.get_bool_type_qn().base_name().name(),
+        variant_name: variant_name,
         tag: tag,
         items: Vec.new(),
     )))
@@ -116,20 +119,18 @@ fn execute_function(
     interp: Interpreter,
     function_id: Int,
     args: Vec[Value],
-    call_location: Location,
 ) -> Result[Value, InterpreterError] {
     if interp.call_stack.len() >= 500 {
-        return Err(error(ErrorKind.StackOverflow, call_location));
+        return Err(error(ErrorKind.StackOverflow, interp.location));
     }
     let function = interp.program.functions[function_id];
     let locals = Vec.with_value(function.local_count, Value.uninitialized());
     for (index, arg) in args.iter().enumerate() {
         locals[index] = arg;
     }
-    interp.call_stack.push(FrameInfo(function.name, call_location));
+    interp.call_stack.push(FrameInfo(function.name));
     let pc = 0;
     while pc < function.code.len() {
-        let instruction_index = pc;
         let instruction = function.code[pc];
         pc += 1;
         match instruction {
@@ -140,7 +141,7 @@ fn execute_function(
                 locals[dst] = Value(ValueKind.Float(value));
             }
             Instruction.ConstStringPtr(dst, constant) => {
-                locals[dst] = interp.program.constants[constant];
+                locals[dst] = interp.constants[constant];
             }
             Instruction.Unit(dst) => { locals[dst] = Value.unit(); }
             Instruction.Uninitialized(dst) => { locals[dst] = Value.uninitialized(); }
@@ -149,8 +150,8 @@ fn execute_function(
                 locals[dst] = copy_value_type(locals[src]);
             }
 
-            Instruction.MakeStruct(dst, qname, fields) => {
-                locals[dst] = Value(ValueKind.Struct(StructBox(qname, registers(locals, fields))));
+            Instruction.MakeStruct(dst, type_name, fields) => {
+                locals[dst] = Value(ValueKind.Struct(StructBox(type_name, registers(locals, fields))));
             }
             Instruction.ReadField(dst, receiver, index) => {
                 let sbox = match locals[receiver].kind {
@@ -173,9 +174,9 @@ fn execute_function(
                 };
                 locals[dst] = Value(ValueKind.Ptr(PtrValue.Field(sbox, index)));
             }
-            Instruction.MakeVariant(dst, enum_qname, variant_qname, tag, items) => {
+            Instruction.MakeVariant(dst, enum_name, variant_name, tag, items) => {
                 let items = registers(locals, items);
-                locals[dst] = Value(ValueKind.Variant(VariantBox(enum_qname, variant_qname, tag, items)));
+                locals[dst] = Value(ValueKind.Variant(VariantBox(enum_name, variant_name, tag, items)));
             }
             Instruction.ReadVariant(dst, receiver, index) => {
                 let vbox = match locals[receiver].kind {
@@ -203,16 +204,14 @@ fn execute_function(
                 locals[dst] = Value(ValueKind.Function(function));
             }
             Instruction.Call(dst, callee, args) => {
-                let location = function.locations[instruction_index];
-                locals[dst] = execute_function(interp, callee, registers(locals, args), location)?;
+                locals[dst] = execute_function(interp, callee, registers(locals, args))?;
             }
             Instruction.CallIndirect(dst, function_reg, args) => {
-                let location = function.locations[instruction_index];
                 let callee = match locals[function_reg].kind {
                     ValueKind.Function(function) => function,
                     _ => unreachable(),
                 };
-                locals[dst] = execute_function(interp, callee, registers(locals, args), location)?;
+                locals[dst] = execute_function(interp, callee, registers(locals, args))?;
             }
             Instruction.Return(value) => {
                 interp.call_stack.pop();
@@ -234,7 +233,7 @@ fn execute_function(
                 if read_int(locals[value]) != expected { pc = target; }
             }
             Instruction.JumpIfStringNot(value, expected, target) => {
-                if render_string(locals[value]) != expected { pc = target; }
+                if render_string(locals[value]) != I.resolve(expected) { pc = target; }
             }
             Instruction.Switch(value, targets) => {
                 pc = targets[read_int(locals[value])];
@@ -250,15 +249,13 @@ fn execute_function(
                 locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) * read_int(locals[rhs])));
             }
             Instruction.IntDiv(dst, lhs, rhs) => {
-                let location = function.locations[instruction_index];
                 let divisor = read_int(locals[rhs]);
-                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, location)); }
+                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, interp.location)); }
                 locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) / divisor));
             }
             Instruction.IntMod(dst, lhs, rhs) => {
-                let location = function.locations[instruction_index];
                 let divisor = read_int(locals[rhs]);
-                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, location)); }
+                if divisor == 0 { return Err(error(ErrorKind.DivisionByZero, interp.location)); }
                 locals[dst] = Value(ValueKind.Int(read_int(locals[lhs]) % divisor));
             }
             Instruction.IntBitAnd(dst, lhs, rhs) => {
@@ -355,18 +352,15 @@ fn execute_function(
                 );
             }
             Instruction.PtrRead(dst, pointer) => {
-                let location = function.locations[instruction_index];
-                locals[dst] = read_ptr(locals[pointer], location)?;
+                locals[dst] = read_ptr(locals[pointer], interp.location)?;
             }
             Instruction.PtrWrite(pointer, value) => {
-                let location = function.locations[instruction_index];
-                write_ptr(locals[pointer], locals[value], location)?;
+                write_ptr(locals[pointer], locals[value], interp.location)?;
             }
 
             Instruction.Panic(message) => {
-                let location = function.locations[instruction_index];
-                let message = render_string(locals[message]);
-                return Err(error(ErrorKind.Panic(message), location));
+                let message = I.intern(render_string(locals[message]));
+                return Err(error(ErrorKind.Panic(message), interp.location));
             }
             Instruction.MacroPrintln(dst, value) => {
                 println(render_string(locals[value]));
@@ -385,8 +379,7 @@ fn execute_function(
                 locals[dst] = interp.extensions.call(3, registers(locals, args));
             }
             Instruction.Trap(message) => {
-                let location = function.locations[instruction_index];
-                return Err(error(ErrorKind.Internal(message), location));
+                return Err(error(ErrorKind.Internal(message), interp.location));
             }
         }
     }
@@ -400,8 +393,12 @@ pub fn invoke(
     location: Location,
     extensions: InterpreterExtensions,
 ) -> Result[Value, InterpreterError] {
-    let interp = Interpreter(program, extensions, Vec.new(500));
-    match execute_function(interp, entry, args, location) {
+    let constants = program.constants
+        .iter()
+        .map(|value| make_string_literal_ptr(value))
+        .collect();
+    let interp = Interpreter(program, constants, extensions, Vec.new(500), location);
+    match execute_function(interp, entry, args) {
         Ok(value) => Ok(value),
         Err(error) => {
             error.backtrace = interp.call_stack;

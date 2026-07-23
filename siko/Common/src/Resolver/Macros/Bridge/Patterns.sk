@@ -27,16 +27,20 @@ pub fn decode_pattern(
         None => return Err("invalid builder pattern"),
     };
     let variant = match fields[0].kind {
-        ValueKind.Variant(vbox) if vbox.enum_qname.base_name() == B.get_macro_function_pattern_kind_qn() => vbox,
+        ValueKind.Variant(vbox)
+            if vbox.enum_name
+                == B.get_macro_function_pattern_kind_qn().base_name().name() => vbox,
         _ => return Err("invalid builder pattern kind"),
     };
-    let kind = if variant.variant_qname.base_name() == B.get_macro_function_pattern_binding_qn() {
+    let kind = if variant.variant_name
+        == B.get_macro_function_pattern_binding_qn().base_name().name() {
         if variant.items.len() != 1 {
             return Err("binding pattern must contain one variable");
         }
         let id = variable_id(variant.items[0])?;
         P.PatternKind.Binding(get_or_allocate(variables, var_allocator, id))
-    } else if variant.variant_qname.base_name() == B.get_macro_function_pattern_tuple_qn() {
+    } else if variant.variant_name
+        == B.get_macro_function_pattern_tuple_qn().base_name().name() {
         if variant.items.len() != 1 {
             return Err("tuple pattern must contain one pattern Vec");
         }
@@ -49,7 +53,8 @@ pub fn decode_pattern(
             .map(|item| decode_pattern(state, variables, var_allocator, item, location))
             .collect();
         P.PatternKind.Tuple(Result.collect(decoded)?)
-    } else if variant.variant_qname.base_name() == B.get_macro_function_pattern_variant_qn() {
+    } else if variant.variant_name
+        == B.get_macro_function_pattern_variant_qn().base_name().name() {
         if variant.items.len() != 2 {
             return Err("variant pattern must contain a variant and pattern Vec");
         }
@@ -71,7 +76,8 @@ pub fn decode_pattern(
             named_args: Vec.new(),
             has_rest: False,
         ))
-    } else if variant.variant_qname.base_name() == B.get_macro_function_pattern_integer_qn() {
+    } else if variant.variant_name
+        == B.get_macro_function_pattern_integer_qn().base_name().name() {
         if variant.items.len() != 1 {
             return Err("integer pattern must contain one Int");
         }
@@ -80,12 +86,14 @@ pub fn decode_pattern(
             _ => return Err("integer pattern payload is not an Int"),
         };
         P.PatternKind.IntLiteral(I.intern("${value}"), Some(value))
-    } else if variant.variant_qname.base_name() == B.get_macro_function_pattern_wildcard_qn() {
+    } else if variant.variant_name
+        == B.get_macro_function_pattern_wildcard_qn().base_name().name() {
         if !variant.items.is_empty() {
             return Err("wildcard pattern must not contain values");
         }
         P.PatternKind.Wildcard
-    } else if variant.variant_qname.base_name() == B.get_macro_function_pattern_string_literal_qn() {
+    } else if variant.variant_name
+        == B.get_macro_function_pattern_string_literal_qn().base_name().name() {
         if variant.items.len() != 1 {
             return Err("string pattern must contain one String");
         }

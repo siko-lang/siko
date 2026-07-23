@@ -43,7 +43,7 @@ fn struct_def(global_ctx: GlobalResolverContext, state: BridgeState, name: Quali
     };
     let fields = def.fields.iter().map(|field| MacroFields.field_def(state, field)).collect();
     let qname = B.get_macro_struct_def_qn();
-    Value(ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname.base_name().name(), [
             type_def(state, self_type),
             vec_value(type_params),
             vec_value(fields),
@@ -64,7 +64,7 @@ fn enum_def(global_ctx: GlobalResolverContext, state: BridgeState, name: Qualifi
     };
     let variants = def.variants.iter().map(|variant| MacroVariants.variant_def(state, variant)).collect();
     let qname = B.get_macro_enum_def_qn();
-    Value(ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname.base_name().name(), [
             type_def(state, self_type),
             vec_value(type_params),
             vec_value(variants),
@@ -77,7 +77,7 @@ fn instance_header(
     target: TypeDef,
 ) -> Value {
     let qname = B.get_macro_instance_header_qn();
-    Value(ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname.base_name().name(), [
             MacroTraits.trait_def(global_ctx, state, trait_name, target),
         ])))
 }
@@ -196,7 +196,7 @@ pub fn macro_context(
     };
     let args = vec_value(args.iter().map(|arg| macro_arg(arg)).collect());
     Value(ValueKind.Struct(StructBox(
-        qname,
+        qname.base_name().name(),
         [macro_target(global_ctx, state, target), header, args],
     )))
 }

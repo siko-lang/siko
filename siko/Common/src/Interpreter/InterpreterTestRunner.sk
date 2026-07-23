@@ -43,12 +43,11 @@ pub fn collect_interpreter_tests(program: Program) -> InterpreterTests {
 }
 
 pub fn run_interpreter_tests(program: Program, locations: Vec[Location]) {
-    let executable = Compiler.compile(program);
+    let compiled = Compiler.compile(program);
     for (index, location) in locations.iter().enumerate() {
-        let entry = executable.entry_points[index];
         match Interp.invoke(
-            executable,
-            entry.function,
+            compiled.executable,
+            compiled.entry_points[index],
             [],
             location,
             InterpreterExtensions.new([]),

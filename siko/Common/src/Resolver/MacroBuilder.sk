@@ -1,0 +1,167 @@
+module Siko.Resolver.MacroBuilder {
+
+import Siko.AST.Module as M
+import Siko.AST.QualifiedName
+import Siko.Config
+import Siko.Constants.Builtins as B
+import Siko.Driver
+import Siko.HIR.Program
+import Siko.Interner as I
+import Siko.Interpreter.Compiler as IC
+import Siko.Interpreter.IR
+import Siko.Resolver.GlobalContext
+import Siko.Resolver.Macros.Cache as MacroCache
+import Siko.Resolver.Macros.Launcher
+import Siko.Resolver.Statistics
+import Std.Map
+import Std.Set
+
+pub struct MacroBuilder {
+    ctx: GlobalResolverContext,
+
+    pub fn new(ctx: GlobalResolverContext) -> MacroBuilder {
+        MacroBuilder(ctx)
+    }
+
+    pub fn build(
+        builder: MacroBuilder,
+        macro_module: I.String,
+        dependencies: Set[I.String],
+        modules: Vec[M.Module],
+        module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+        statistics: Statistics,
+    ) -> Bool {
+        if let Some(macro_program) = MacroCache.load(
+            macro_module,
+            dependencies,
+            modules,
+        ) {
+            statistics.macro_cache_hit();
+            builder.ctx.insert_macro_program(macro_module, macro_program);
+            return True;
+        }
+        statistics.macro_cache_miss();
+
+        let program = builder.program(dependencies, module_trait_method_map);
+        for macro_def in builder.ctx.get_macros_in_module(macro_module) {
+            for function in macro_def.functions {
+                program.entry_points.push(function.qualified_name.unwrap());
+            }
+        }
+        if program.entry_points.is_empty() {
+            builder.ctx.insert_macro_program(
+                macro_module,
+                MacroProgram(
+                    ExecutableProgram.empty(),
+                    builder.empty_launchers(macro_module),
+                ),
+            );
+            return True;
+        }
+
+        statistics.macro_program_compilation_start();
+        defer statistics.macro_program_compilation_end();
+        let driver = Driver.new();
+        // Compiler passes mutate their input. Keep nested macro compilation
+        // isolated from the resolver's shared program pieces so cache hits and
+        // misses have identical effects on the outer compilation.
+        driver.program = program.deep_clone();
+        let macro_config = get_config().for_nested_compilation();
+        with Siko.Config.current = macro_config {
+            driver.compile_macro();
+        }
+        let failed = driver.has_error_diagnostic();
+        for diagnostic in driver.get_diagnostics() {
+            Siko.Driver.add_diagnostic(diagnostic);
+        }
+        if failed {
+            return False;
+        }
+
+        let compiled = IC.compile(driver.program);
+        let launchers = builder.launchers(
+            macro_module,
+            driver.program.entry_points,
+            compiled.entry_points,
+        );
+        let macro_program = MacroProgram(compiled.executable, launchers);
+        MacroCache.store(
+            macro_module,
+            dependencies,
+            modules,
+            macro_program,
+        );
+        builder.ctx.insert_macro_program(macro_module, macro_program);
+        True
+    }
+
+    fn program(
+        builder: MacroBuilder,
+        dependencies: Set[I.String],
+        module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
+    ) -> Program {
+        let program = Program.new();
+        for module_name in builder.ctx.get_module_names() {
+            if !dependencies.contains(module_name) {
+                continue;
+            }
+            let piece = builder.ctx.get_program_piece(module_name).unwrap();
+            piece.add_to_program(program);
+            program.module_names.push(module_name);
+            program.module_instance_imports.insert(
+                module_name,
+                piece.instance_imports(),
+            );
+            if let Some(method_map) = module_trait_method_map.get(module_name) {
+                program.module_trait_method_map.insert(module_name, method_map);
+            }
+        }
+        program
+    }
+
+    fn empty_launchers(
+        builder: MacroBuilder,
+        macro_module: I.String,
+    ) -> Map[I.String, MacroLauncher] {
+        let launchers = Map.new();
+        for macro_def in builder.ctx.get_macros_in_module(macro_module) {
+            launchers.insert(
+                macro_def.qualified_name.unwrap().name(),
+                MacroLauncher.empty(),
+            );
+        }
+        launchers
+    }
+
+    fn launchers(
+        builder: MacroBuilder,
+        macro_module: I.String,
+        entry_names: Vec[QualifiedName],
+        entry_points: Vec[Int],
+    ) -> Map[I.String, MacroLauncher] {
+        let launchers = builder.empty_launchers(macro_module);
+        for (index, entry_name) in entry_names.iter().enumerate() {
+            let (provider, name) = match entry_name.base() {
+                BaseName.Method(provider, name) => (provider, name),
+                _ => continue,
+            };
+            let launcher = match launchers.get(provider) {
+                Some(launcher) => launcher,
+                None => continue,
+            };
+            let entry_point = entry_points[index];
+            if name == B.get_macro_derive_struct_name() {
+                launcher.derive_struct = Some(entry_point);
+            } else if name == B.get_macro_derive_enum_name() {
+                launcher.derive_enum = Some(entry_point);
+            } else if name == B.get_macro_external_derive_struct_name() {
+                launcher.external_derive_struct = Some(entry_point);
+            } else if name == B.get_macro_external_derive_enum_name() {
+                launcher.external_derive_enum = Some(entry_point);
+            }
+        }
+        launchers
+    }
+}
+
+}

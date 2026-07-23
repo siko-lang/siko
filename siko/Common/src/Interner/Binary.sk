@@ -1,0 +1,25 @@
+module Siko.Interner.Binary {
+
+import Siko.Interner as I
+import Std.Encoding.Binary
+import Std.Encoding.BinaryCodec
+import Std.IO.Reader as IO
+import Std.IO.Writer as IO
+
+instance Binary[I.String] {
+    fn encode[W: IO.Writer[W]](
+        value: I.String,
+        encoder: Encoder[W],
+    ) -> Result[(), EncodeError] {
+        I.resolve(value).encode(encoder)
+    }
+
+    fn decode[R: IO.Reader[R]](
+        decoder: Decoder[R],
+    ) -> Result[I.String, DecodeError] {
+        let value: String = decode(decoder)?;
+        Ok(I.intern(value))
+    }
+}
+
+}

@@ -24,20 +24,20 @@ pub enum MacroCallResult {
 }
 
 fn decode_error(value: Value) -> MacroCallResult {
-    let error_enum = B.get_macro_error_qn();
-    let not_supported = B.get_macro_error_not_supported_qn();
+    let error_enum = B.get_macro_error_qn().base_name().name();
+    let not_supported = B.get_macro_error_not_supported_qn().base_name().name();
     let error = match value.kind {
         ValueKind.Variant(vbox)
-            if vbox.enum_qname.base_name() == error_enum
-                && vbox.variant_qname.base_name() == not_supported => vbox,
-        _ => return MacroCallResult.InvalidResult("expected ${I.resolve(error_enum.name())}"),
+            if vbox.enum_name == error_enum
+                && vbox.variant_name == not_supported => vbox,
+        _ => return MacroCallResult.InvalidResult("expected ${I.resolve(error_enum)}"),
     };
     if error.items.len() != 1 {
-        return MacroCallResult.InvalidResult("${I.resolve(not_supported.name())} must contain one String");
+        return MacroCallResult.InvalidResult("${I.resolve(not_supported)} must contain one String");
     }
     match try_render_string(error.items[0]) {
         Some(message) => MacroCallResult.NotSupported(message),
-        None => MacroCallResult.InvalidResult("${I.resolve(not_supported.name())} payload is not a String"),
+        None => MacroCallResult.InvalidResult("${I.resolve(not_supported)} payload is not a String"),
     }
 }
 
@@ -56,7 +56,7 @@ pub fn decode_result(
     if result.items.len() != 1 {
         return MacroCallResult.InvalidResult("macro Result variant must contain one value");
     }
-    if result.variant_qname.base_name() == B.get_result_ok_qn() {
+    if result.variant_name == B.get_result_ok_qn().base_name().name() {
         match output {
             MacroOutput.InstanceDef => match decode_instance(
                 global_ctx,
@@ -78,7 +78,7 @@ pub fn decode_result(
                 Err(message) => MacroCallResult.InvalidResult(message),
             },
         }
-    } else if result.variant_qname.base_name() == B.get_result_err_qn() {
+    } else if result.variant_name == B.get_result_err_qn().base_name().name() {
         decode_error(result.items[0])
     } else {
         MacroCallResult.InvalidResult("macro entry point returned an unknown Result variant")

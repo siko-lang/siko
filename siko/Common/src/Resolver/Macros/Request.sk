@@ -12,6 +12,7 @@ import Siko.Location
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
+import Siko.Resolver.Macros.Launcher
 import Siko.Resolver.TypeResolver
 
 pub enum MacroTarget {
@@ -28,6 +29,7 @@ pub enum MacroInvocation {
 pub struct MacroRequest {
     pub provider: QualifiedName,
     pub program: ExecutableProgram,
+    pub launcher: MacroLauncher,
     pub target: MacroTarget,
     pub invocation: MacroInvocation,
     pub args: Vec[MacroArg],
@@ -165,15 +167,23 @@ pub fn finalize_requests(
 ) -> Vec[MacroRequest] {
     pending
         .iter()
-        .map(|request| MacroRequest(
-            provider: request.provider,
-            program: global_ctx.get_macro_program(request.provider).unwrap(),
-            target: request.target,
-            invocation: request.invocation,
-            args: request.args,
-            module_name: request.module_name,
-            location: request.location,
-        ))
+        .map(|request| {
+            let macro_program = global_ctx
+                .get_macro_program(request.provider)
+                .unwrap();
+            MacroRequest(
+                provider: request.provider,
+                program: macro_program.executable,
+                launcher: macro_program.launchers
+                    .get(request.provider.name())
+                    .unwrap(),
+                target: request.target,
+                invocation: request.invocation,
+                args: request.args,
+                module_name: request.module_name,
+                location: request.location,
+            )
+        })
         .collect()
 }
 

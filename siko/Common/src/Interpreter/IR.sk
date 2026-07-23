@@ -1,34 +1,29 @@
 module Siko.Interpreter.IR {
 
-import Siko.AST.QualifiedName
-import Siko.Interpreter.Value
-import Siko.Location
+import Siko.Interner as I
+import Std.Encoding.Binary
+import Std.Encoding.BinaryCodec
+import Std.Macro.Derive.Binary
 
+@derive(Binary)
 pub struct ExecutableProgram {
     pub functions: Vec[ExecutableFunction],
-    pub entry_points: Vec[EntryPoint],
-    pub constants: Vec[Value],
+    pub constants: Vec[I.String],
 
     pub fn empty() -> ExecutableProgram {
-        ExecutableProgram(Vec.new(), Vec.new(), Vec.new())
+        ExecutableProgram(Vec.new(), Vec.new())
     }
 }
 
-pub struct EntryPoint {
-    pub name: QualifiedName,
-    pub function: Int,
-}
-
+@derive(Binary)
 pub struct ExecutableFunction {
-    pub name: String,
+    pub name: I.String,
     pub arg_count: Int,
     pub local_count: Int,
     pub code: Vec[Instruction],
-    // Kept out of the instruction stream so ordinary execution does not pull
-    // source locations through the hot instruction cache.
-    pub locations: Vec[Location],
 }
 
+@derive(Binary)
 pub enum Instruction {
     ConstInt(dst: Int, value: Int),
     ConstFloat(dst: Int, value: F64),
@@ -39,15 +34,15 @@ pub enum Instruction {
     Set(dst: Int, src: Int),
     CopyValueType(dst: Int, src: Int),
 
-    MakeStruct(dst: Int, qname: QualifiedName, fields: Vec[Int]),
+    MakeStruct(dst: Int, type_name: I.String, fields: Vec[Int]),
     ReadField(dst: Int, receiver: Int, index: Int),
     WriteField(receiver: Int, index: Int, value: Int),
     FieldAddress(dst: Int, receiver: Int, index: Int),
 
     MakeVariant(
         dst: Int,
-        enum_qname: QualifiedName,
-        variant_qname: QualifiedName,
+        enum_name: I.String,
+        variant_name: I.String,
         tag: Int,
         items: Vec[Int],
     ),
@@ -64,7 +59,7 @@ pub enum Instruction {
     JumpIfFalse(condition: Int, target: Int),
     JumpIfTagNot(value: Int, tag: Int, target: Int),
     JumpIfIntNot(value: Int, expected: Int, target: Int),
-    JumpIfStringNot(value: Int, expected: String, target: Int),
+    JumpIfStringNot(value: Int, expected: I.String, target: Int),
     Switch(value: Int, targets: Vec[Int]),
 
     IntAdd(dst: Int, lhs: Int, rhs: Int),
@@ -110,7 +105,7 @@ pub enum Instruction {
     ResolveVariant(dst: Int, args: Vec[Int]),
     ResolveType(dst: Int, args: Vec[Int]),
 
-    Trap(message: String),
+    Trap(message: I.String),
 }
 
 }

@@ -1,7 +1,7 @@
 module Siko.Resolver.Macros.Runner {
 
+import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
-import Siko.Interner as I
 import Siko.Interpreter.Error
 import Siko.Interpreter.Interpreter as Interp
 import Siko.Resolver
@@ -20,38 +20,43 @@ fn invoke_request(
     request: MacroRequest,
     statistics: Statistics,
 ) -> Result[(), ResolveError] {
-    let entry = match request.target {
+    let (entry_name, entry_point) = match request.target {
         MacroTarget.Struct(_) => match request.invocation {
-            MacroInvocation.Attached => B.get_macro_derive_struct_name(),
-            MacroInvocation.External(_) => B.get_macro_external_derive_struct_name(),
+            MacroInvocation.Attached => (
+                B.get_macro_derive_struct_name(),
+                request.launcher.derive_struct,
+            ),
+            MacroInvocation.External(_) => (
+                B.get_macro_external_derive_struct_name(),
+                request.launcher.external_derive_struct,
+            ),
         },
         MacroTarget.Enum(_) => match request.invocation {
-            MacroInvocation.Attached => B.get_macro_derive_enum_name(),
-            MacroInvocation.External(_) => B.get_macro_external_derive_enum_name(),
+            MacroInvocation.Attached => (
+                B.get_macro_derive_enum_name(),
+                request.launcher.derive_enum,
+            ),
+            MacroInvocation.External(_) => (
+                B.get_macro_external_derive_enum_name(),
+                request.launcher.external_derive_enum,
+            ),
         },
         MacroTarget.Invalid => return Err(ResolveError.InvalidMacroTarget(request.location)),
     };
-    // Provider resolution only succeeds for a macro item, and every macro in
-    // the SCC is registered during process_methods before requests are run.
-    let macro_def = global_ctx.get_macro(request.provider).unwrap();
-    let entry_function = macro_def.functions.iter().find(|function| function.name.name() == entry);
-    let source_entry_qname = match entry_function {
-        Some(function) => function.qualified_name.unwrap(),
+    let entry_point = match entry_point {
+        Some(entry_point) => entry_point,
         None => return Err(ResolveError.MacroEntryPointNotFound(
             request.provider,
-            entry,
+            entry_name,
             request.location,
         )),
     };
-    let entry_point = request.program.entry_points
-        .iter()
-        .find(|entry_point| entry_point.name.base_name() == source_entry_qname)
-        .unwrap();
-    let entry_function = request.program.functions[entry_point.function];
+    let entry_qname = QualifiedName.new_method(request.provider.name(), entry_name);
+    let entry_function = request.program.functions[entry_point];
     if entry_function.arg_count != 1 {
         return Err(ResolveError.MacroExecutionFailed(error(
             ErrorKind.WrongArgCount(
-                I.resolve(source_entry_qname.name()),
+                entry_qname.name(),
                 entry_function.arg_count,
                 1,
             ),
@@ -77,7 +82,7 @@ fn invoke_request(
     statistics.macro_execution_start();
     let execution_result = Interp.invoke(
         request.program,
-        entry_point.function,
+        entry_point,
         [context],
         request.location,
         extensions,
@@ -105,7 +110,7 @@ fn invoke_request(
             request.location,
         )),
         Bridge.MacroCallResult.InvalidResult(message) => Err(ResolveError.InvalidMacroResult(
-            entry_point.name,
+            entry_qname,
             message,
             request.location,
         )),

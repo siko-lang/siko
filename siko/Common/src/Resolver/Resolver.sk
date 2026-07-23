@@ -3,6 +3,7 @@ module Siko.Resolver {
 import Siko.Resolver.ModuleItem
 import Siko.Resolver.ModuleResolver
 import Siko.Resolver.GlobalContext
+import Siko.Resolver.MacroBuilder
 import Siko.Resolver.Error
 import Siko.Resolver.Module
 import Siko.Resolver.Import
@@ -149,6 +150,7 @@ pub struct Resolver {
             if !resolver.build_macro_programs(
                 in_group_macro_modules,
                 module_graph.dependency_closure(group),
+                modules,
             ) {
                 return Ok(False);
             }
@@ -173,6 +175,7 @@ pub struct Resolver {
             if !resolver.build_macro_programs(
                 remaining_macro_modules,
                 module_graph.dependency_closure(group),
+                modules,
             ) {
                 return Ok(False);
             }
@@ -212,12 +215,15 @@ pub struct Resolver {
         resolver: Resolver,
         macro_modules: Vec[I.String],
         dependencies: Set[I.String],
+        modules: Vec[M.Module],
     ) -> Bool {
         let module_trait_method_map = resolver.build_module_trait_method_map();
+        let macro_builder = MacroBuilder.new(resolver.ctx);
         for macro_module in macro_modules {
-            if !resolver.ctx.build_macro_program(
+            if !macro_builder.build(
                 macro_module,
                 dependencies,
+                modules,
                 module_trait_method_map,
                 resolver.statistics,
             ) {

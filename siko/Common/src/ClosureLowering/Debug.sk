@@ -43,9 +43,16 @@ pub fn dump_instantiated_functions(program: Program) {
 
 pub fn dump_profiles(profiles: Map[QualifiedName, FunctionProfile]) {
     println("=== ClosureLowering: profiles ===");
+    let ordered: Map[String, String] = Map.new();
     for (qname, profile) in profiles.iter() {
+        ordered.insert(
+            I.resolve(qname.name()),
+            format_profile(qname, profile),
+        );
+    }
+    for profile in ordered.values() {
         println("");
-        println(format_profile(qname, profile));
+        println(profile);
     }
 }
 

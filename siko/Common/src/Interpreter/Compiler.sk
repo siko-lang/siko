@@ -11,13 +11,19 @@ import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Interpreter.IR
-import Siko.Interpreter.Strings
-import Siko.Interpreter.Value
-import Siko.Location
 
 struct GotoPatch {
     instruction: Int,
-    label: String,
+    label: I.String,
+}
+
+fn trap(message: String) -> Instruction {
+    Instruction.Trap(I.intern(message))
+}
+
+pub struct CompilationResult {
+    pub executable: ExecutableProgram,
+    pub entry_points: Vec[Int],
 }
 
 struct FunctionCompiler {
@@ -26,19 +32,18 @@ struct FunctionCompiler {
     variables: Map[VariableName, Int],
     next_register: Int,
     code: Vec[Instruction],
-    locations: Vec[Location],
-    string_constants: Map[String, Int],
-    constants: Vec[Value],
+    string_constants: Map[I.String, Int],
+    constants: Vec[I.String],
     break_patches: Vec[Vec[Int]],
     continue_targets: Vec[Int],
-    labels: Map[String, Int],
+    labels: Map[I.String, Int],
     gotos: Vec[GotoPatch],
 
     fn new(
         program: Program,
         function_ids: Map[QualifiedName, Int],
-        string_constants: Map[String, Int],
-        constants: Vec[Value],
+        string_constants: Map[I.String, Int],
+        constants: Vec[I.String],
     ) -> FunctionCompiler {
         FunctionCompiler(
             program: program,
@@ -46,7 +51,6 @@ struct FunctionCompiler {
             variables: Map.new(),
             next_register: 0,
             code: Vec.new(),
-            locations: Vec.new(),
             string_constants: string_constants,
             constants: constants,
             break_patches: Vec.new(),
@@ -77,10 +81,9 @@ struct FunctionCompiler {
         c.variables.get(name).unwrap()
     }
 
-    fn emit(c: FunctionCompiler, instruction: Instruction, location: Location) -> Int {
+    fn emit(c: FunctionCompiler, instruction: Instruction) -> Int {
         let index = c.code.len();
         c.code.push(instruction);
-        c.locations.push(location);
         index
     }
 
@@ -96,18 +99,19 @@ struct FunctionCompiler {
         c.code[index] = instruction;
     }
 
-    fn unit(c: FunctionCompiler, location: Location) -> Int {
+    fn unit(c: FunctionCompiler) -> Int {
         let dst = c.register();
-        c.emit(Instruction.Unit(dst), location);
+        c.emit(Instruction.Unit(dst));
         dst
     }
 
     fn string_constant(c: FunctionCompiler, value: String) -> Int {
+        let value = I.intern(value);
         match c.string_constants.get(value) {
             Some(index) => index,
             None => {
                 let index = c.constants.len();
-                c.constants.push(make_string_literal_ptr(value));
+                c.constants.push(value);
                 c.string_constants.insert(value, index);
                 index
             }
@@ -139,20 +143,20 @@ struct FunctionCompiler {
         }
     }
 
-    fn set(c: FunctionCompiler, dst: Int, src: Int, ty: Option[TypeDef], location: Location) {
+    fn set(c: FunctionCompiler, dst: Int, src: Int, ty: Option[TypeDef]) {
         if c.is_value_type(ty) {
-            c.emit(Instruction.CopyValueType(dst, src), location);
+            c.emit(Instruction.CopyValueType(dst, src));
         } else {
-            c.emit(Instruction.Set(dst, src), location);
+            c.emit(Instruction.Set(dst, src));
         }
     }
 
-    fn copied(c: FunctionCompiler, src: Int, ty: Option[TypeDef], location: Location) -> Int {
+    fn copied(c: FunctionCompiler, src: Int, ty: Option[TypeDef]) -> Int {
         if !c.is_value_type(ty) {
             return src;
         }
         let dst = c.register();
-        c.emit(Instruction.CopyValueType(dst, src), location);
+        c.emit(Instruction.CopyValueType(dst, src));
         dst
     }
 
@@ -160,160 +164,156 @@ struct FunctionCompiler {
         let lowered = Vec.new(exprs.len());
         for expr in exprs {
             let ty = expr.ty;
-            let location = expr.location.clone();
             let value = c.lower_expr(expr);
-            lowered.push(c.copied(value, ty, location));
+            lowered.push(c.copied(value, ty));
         }
         lowered
     }
 
     fn lower_expr(c: FunctionCompiler, expr: Expr) -> Int {
-        let location = expr.location;
         let ty = expr.ty;
         match expr.kind {
             ExprKind.IntLiteral(text, value) => {
                 let value = value.unwrap_or_else(|| parse_int_literal(I.resolve(text)));
                 let dst = c.register();
-                c.emit(Instruction.ConstInt(dst, value), location);
+                c.emit(Instruction.ConstInt(dst, value));
                 dst
             }
             ExprKind.FloatLiteral(text) => {
                 let dst = c.register();
-                c.emit(Instruction.ConstFloat(dst, parse_float_literal(text)), location);
+                c.emit(Instruction.ConstFloat(dst, parse_float_literal(text)));
                 dst
             }
             ExprKind.StringLiteral(value) => {
                 let dst = c.register();
                 let constant = c.string_constant(value);
-                c.emit(Instruction.ConstStringPtr(dst, constant), location);
+                c.emit(Instruction.ConstStringPtr(dst, constant));
                 dst
             }
             ExprKind.CharLiteral(value) => {
                 let dst = c.register();
-                c.emit(Instruction.ConstChar(dst, value.as_int()), location);
+                c.emit(Instruction.ConstChar(dst, value.as_int()));
                 dst
             }
             ExprKind.Var(name) => c.variable(name),
             ExprKind.Paren(inner) | ExprKind.Transmute(inner) => c.lower_expr(inner),
-            ExprKind.Block(BlockInfo(stmts)) => c.lower_block(stmts, location),
+            ExprKind.Block(BlockInfo(stmts)) => c.lower_block(stmts),
             ExprKind.Return(inner) => {
                 let value = c.lower_expr(inner);
-                c.emit(Instruction.Return(value), location.clone());
-                c.unit(location)
+                c.emit(Instruction.Return(value));
+                c.unit()
             }
             ExprKind.Break => {
-                let jump = c.emit(Instruction.Jump(-1), location.clone());
+                let jump = c.emit(Instruction.Jump(-1));
                 c.break_patches.last().unwrap().push(jump);
-                c.unit(location)
+                c.unit()
             }
             ExprKind.Continue => {
                 let target = c.continue_targets.last().unwrap();
-                c.emit(Instruction.Jump(target), location.clone());
-                c.unit(location)
+                c.emit(Instruction.Jump(target));
+                c.unit()
             }
             ExprKind.If(condition, then_branch, else_branch) => {
                 let condition = c.lower_expr(condition);
                 let dst = c.register();
-                let else_jump = c.emit(Instruction.JumpIfFalse(condition, -1), location.clone());
+                let else_jump = c.emit(Instruction.JumpIfFalse(condition, -1));
                 let then_value = c.lower_expr(then_branch);
-                c.emit(Instruction.Set(dst, then_value), location.clone());
-                let end_jump = c.emit(Instruction.Jump(-1), location.clone());
+                c.emit(Instruction.Set(dst, then_value));
+                let end_jump = c.emit(Instruction.Jump(-1));
                 c.patch_jump(else_jump, c.code.len());
                 let else_value = match else_branch {
                     Some(branch) => c.lower_expr(branch),
-                    None => c.unit(location.clone()),
+                    None => c.unit(),
                 };
-                c.emit(Instruction.Set(dst, else_value), location.clone());
+                c.emit(Instruction.Set(dst, else_value));
                 c.patch_jump(end_jump, c.code.len());
                 dst
             }
-            ExprKind.Match(MatchInfo(scrutinee, arms)) => c.lower_match(scrutinee, arms, location),
+            ExprKind.Match(MatchInfo(scrutinee, arms)) => c.lower_match(scrutinee, arms),
             ExprKind.FieldAccess(receiver, _, field_index) => {
                 let receiver = c.lower_expr(receiver);
                 let dst = c.register();
-                c.emit(Instruction.ReadField(dst, receiver, field_index.unwrap()), location.clone());
-                c.copied(dst, ty, location)
+                c.emit(Instruction.ReadField(dst, receiver, field_index.unwrap()));
+                c.copied(dst, ty)
             }
-            ExprKind.FunctionCall(info) => c.lower_function_call(info, location),
+            ExprKind.FunctionCall(info) => c.lower_function_call(info),
             ExprKind.FunctionPtr(info) => {
                 let dst = c.register();
-                c.emit(Instruction.FunctionRef(dst, c.function_ids.get(info.name).unwrap()), location);
+                c.emit(Instruction.FunctionRef(dst, c.function_ids.get(info.name).unwrap()));
                 dst
             }
             ExprKind.FunctionPtrCall(callee, args) | ExprKind.DynamicCall(callee, args) => {
                 let callee = c.lower_expr(callee);
                 let args = c.lower_exprs(args);
                 let dst = c.register();
-                c.emit(Instruction.CallIndirect(dst, callee, args), location);
+                c.emit(Instruction.CallIndirect(dst, callee, args));
                 dst
             }
             ExprKind.Deref(pointer) => {
                 let pointer = c.lower_expr(pointer);
                 let dst = c.register();
-                c.emit(Instruction.PtrRead(dst, pointer), location.clone());
-                c.copied(dst, ty, location)
+                c.emit(Instruction.PtrRead(dst, pointer));
+                c.copied(dst, ty)
             }
-            ExprKind.AddrOf(inner) => c.lower_address(inner, location),
+            ExprKind.AddrOf(inner) => c.lower_address(inner),
             ExprKind.EnumTag(inner) | ExprKind.Discriminator(inner) => {
                 let value = c.lower_expr(inner);
                 let dst = c.register();
-                c.emit(Instruction.ReadTag(dst, value), location);
+                c.emit(Instruction.ReadTag(dst, value));
                 dst
             }
             ExprKind.ReadVariant(receiver, index) => {
                 let receiver = c.lower_expr(receiver);
                 let index = c.lower_expr(index);
                 let dst = c.register();
-                c.emit(Instruction.ReadVariantDynamic(dst, receiver, index), location.clone());
-                c.copied(dst, ty, location)
+                c.emit(Instruction.ReadVariantDynamic(dst, receiver, index));
+                c.copied(dst, ty)
             }
-            ExprKind.Switch(value, arms) => c.lower_switch(value, arms, location),
+            ExprKind.Switch(value, arms) => c.lower_switch(value, arms),
             ExprKind.Goto(label) => {
-                let instruction = c.emit(Instruction.Jump(-1), location.clone());
-                c.gotos.push(GotoPatch(instruction, label));
-                c.unit(location)
+                let instruction = c.emit(Instruction.Jump(-1));
+                c.gotos.push(GotoPatch(instruction, I.intern(label)));
+                c.unit()
             }
             ExprKind.Label(label) => {
-                c.labels.insert(label, c.code.len());
-                c.unit(location)
+                c.labels.insert(I.intern(label), c.code.len());
+                c.unit()
             }
             ExprKind.BinaryOp(op, lhs, rhs) => {
                 let lhs = c.lower_expr(lhs);
                 let rhs = c.lower_expr(rhs);
-                c.lower_binary(op, is_float_type(ty), lhs, rhs, location)
+                c.lower_binary(op, is_float_type(ty), lhs, rhs)
             }
             ExprKind.UnaryOp(op, value) => {
                 let value = c.lower_expr(value);
-                c.lower_unary(op, is_float_type(ty), value, location)
+                c.lower_unary(op, is_float_type(ty), value)
             }
             kind => {
                 let dst = c.register();
-                c.emit(Instruction.Trap("unexpected post-lowering expression"), location);
+                c.emit(trap("unexpected post-lowering expression"));
                 dst
             }
         }
     }
 
-    fn lower_block(c: FunctionCompiler, stmts: Vec[S.Statement], location: Location) -> Int {
+    fn lower_block(c: FunctionCompiler, stmts: Vec[S.Statement]) -> Int {
         let result: Option[Int] = None;
         for stmt in stmts {
             match stmt {
                 S.Statement.Let(S.LetInfo(name, declared_ty, rhs)) => {
                     let ty = rhs.ty.or(declared_ty);
-                    let value_location = rhs.location.clone();
                     let value = c.lower_expr(rhs);
                     let dst = c.define_variable(name);
-                    c.set(dst, value, ty, value_location);
+                    c.set(dst, value, ty);
                 }
                 S.Statement.Declare(S.DeclareInfo(name, _)) => {
                     let dst = c.define_variable(name);
-                    c.emit(Instruction.Uninitialized(dst), location.clone());
+                    c.emit(Instruction.Uninitialized(dst));
                 }
                 S.Statement.Assign(lhs, rhs) => {
                     let ty = rhs.ty;
-                    let value_location = rhs.location.clone();
                     let value = c.lower_expr(rhs);
-                    c.lower_assignment(lhs, value, ty, value_location);
+                    c.lower_assignment(lhs, value, ty);
                 }
                 S.Statement.Expr(expr) => { c.lower_expr(expr); }
                 S.Statement.TrailingExpr(expr) => { result = Some(c.lower_expr(expr)); }
@@ -321,8 +321,8 @@ struct FunctionCompiler {
                     let start = c.code.len();
                     c.break_patches.push(Vec.new());
                     c.continue_targets.push(start);
-                    c.lower_block(body, location.clone());
-                    c.emit(Instruction.Jump(start), location.clone());
+                    c.lower_block(body);
+                    c.emit(Instruction.Jump(start));
                     let end = c.code.len();
                     for patch in c.break_patches.pop().unwrap() {
                         c.patch_jump(patch, end);
@@ -330,11 +330,11 @@ struct FunctionCompiler {
                     c.continue_targets.pop();
                 }
                 _ => {
-                    c.emit(Instruction.Trap("unexpected post-lowering statement"), location.clone());
+                    c.emit(trap("unexpected post-lowering statement"));
                 }
             }
         }
-        result.unwrap_or_else(|| c.unit(location))
+        result.unwrap_or_else(|| c.unit())
     }
 
     fn lower_assignment(
@@ -342,47 +342,45 @@ struct FunctionCompiler {
         lhs: Expr,
         value: Int,
         value_ty: Option[TypeDef],
-        value_location: Location,
     ) {
-        let location = lhs.location;
         match lhs.kind {
             ExprKind.Var(name) => {
                 let dst = c.variable(name);
-                c.set(dst, value, value_ty, value_location);
+                c.set(dst, value, value_ty);
             }
-            ExprKind.Paren(inner) => c.lower_assignment(inner, value, value_ty, value_location),
+            ExprKind.Paren(inner) => c.lower_assignment(inner, value, value_ty),
             ExprKind.FieldAccess(receiver, _, index) => {
                 let receiver = c.lower_expr(receiver);
-                let value = c.copied(value, value_ty, value_location);
-                c.emit(Instruction.WriteField(receiver, index.unwrap(), value), location);
+                let value = c.copied(value, value_ty);
+                c.emit(Instruction.WriteField(receiver, index.unwrap(), value));
             }
             ExprKind.Deref(pointer) => {
                 let pointer = c.lower_expr(pointer);
-                let value = c.copied(value, value_ty, value_location);
-                c.emit(Instruction.PtrWrite(pointer, value), location);
+                let value = c.copied(value, value_ty);
+                c.emit(Instruction.PtrWrite(pointer, value));
             }
-            _ => { c.emit(Instruction.Trap("unexpected assignment target"), location); }
+            _ => { c.emit(trap("unexpected assignment target")); }
         }
     }
 
-    fn lower_address(c: FunctionCompiler, inner: Expr, location: Location) -> Int {
+    fn lower_address(c: FunctionCompiler, inner: Expr) -> Int {
         match inner.kind {
             ExprKind.FieldAccess(receiver, _, index) => {
                 let receiver = c.lower_expr(receiver);
                 let dst = c.register();
-                c.emit(Instruction.FieldAddress(dst, receiver, index.unwrap()), location);
+                c.emit(Instruction.FieldAddress(dst, receiver, index.unwrap()));
                 dst
             }
             ExprKind.Deref(pointer) => c.lower_expr(pointer),
             _ => {
                 let dst = c.register();
-                c.emit(Instruction.Trap("unexpected address-of target"), location);
+                c.emit(trap("unexpected address-of target"));
                 dst
             }
         }
     }
 
-    fn lower_match(c: FunctionCompiler, scrutinee: Expr, arms: Vec[MatchArm], location: Location) -> Int {
+    fn lower_match(c: FunctionCompiler, scrutinee: Expr, arms: Vec[MatchArm]) -> Int {
         let value = c.lower_expr(scrutinee);
         let dst = c.register();
         let end_jumps: Vec[Int] = Vec.new(arms.len());
@@ -390,14 +388,14 @@ struct FunctionCompiler {
             let failures: Vec[Int] = Vec.new();
             c.lower_pattern(arm.pattern, value, failures);
             let arm_value = c.lower_expr(arm.body);
-            c.emit(Instruction.Set(dst, arm_value), location.clone());
-            end_jumps.push(c.emit(Instruction.Jump(-1), location.clone()));
+            c.emit(Instruction.Set(dst, arm_value));
+            end_jumps.push(c.emit(Instruction.Jump(-1)));
             let next = c.code.len();
             for failure in failures {
                 c.patch_jump(failure, next);
             }
         }
-        c.emit(Instruction.Trap("non-exhaustive lowered match"), location.clone());
+        c.emit(trap("non-exhaustive lowered match"));
         let end = c.code.len();
         for jump in end_jumps {
             c.patch_jump(jump, end);
@@ -406,30 +404,29 @@ struct FunctionCompiler {
     }
 
     fn lower_pattern(c: FunctionCompiler, pattern: Pattern, value: Int, failures: Vec[Int]) {
-        let location = pattern.location;
         let ty = pattern.ty;
         match pattern.kind {
             PatternKind.Wildcard => {}
             PatternKind.Binding(name) => {
                 let dst = c.define_variable(name);
-                c.set(dst, value, ty, location);
+                c.set(dst, value, ty);
             }
             PatternKind.Typed(inner, _) => c.lower_pattern(inner, value, failures),
             PatternKind.Named(info) => {
                 let qname = info.name.resolved();
                 match variant_info(c.program, qname) {
                     Some((_, _, tag)) => {
-                        failures.push(c.emit(Instruction.JumpIfTagNot(value, tag, -1), location.clone()));
+                        failures.push(c.emit(Instruction.JumpIfTagNot(value, tag, -1)));
                         for (index, subpattern) in info.args.iter().enumerate() {
                             let item = c.register();
-                            c.emit(Instruction.ReadVariant(item, value, index), location.clone());
+                            c.emit(Instruction.ReadVariant(item, value, index));
                             c.lower_pattern(subpattern, item, failures);
                         }
                     }
                     None => {
                         for (index, subpattern) in info.args.iter().enumerate() {
                             let field = c.register();
-                            c.emit(Instruction.ReadField(field, value, index), location.clone());
+                            c.emit(Instruction.ReadField(field, value, index));
                             c.lower_pattern(subpattern, field, failures);
                         }
                     }
@@ -437,13 +434,13 @@ struct FunctionCompiler {
             }
             PatternKind.IntLiteral(text, cached) => {
                 let expected = cached.unwrap_or_else(|| parse_int_literal(I.resolve(text)));
-                failures.push(c.emit(Instruction.JumpIfIntNot(value, expected, -1), location));
+                failures.push(c.emit(Instruction.JumpIfIntNot(value, expected, -1)));
             }
             PatternKind.CharLiteral(expected) => {
-                failures.push(c.emit(Instruction.JumpIfIntNot(value, expected.as_int(), -1), location));
+                failures.push(c.emit(Instruction.JumpIfIntNot(value, expected.as_int(), -1)));
             }
             PatternKind.StringLiteral(expected) => {
-                failures.push(c.emit(Instruction.JumpIfStringNot(value, I.resolve(expected), -1), location));
+                failures.push(c.emit(Instruction.JumpIfStringNot(value, expected, -1)));
             }
             PatternKind.Guard(inner, guard, result) => {
                 c.lower_pattern(inner, value, failures);
@@ -454,23 +451,23 @@ struct FunctionCompiler {
                     }
                     None => c.lower_expr(guard),
                 };
-                failures.push(c.emit(Instruction.JumpIfFalse(condition, -1), location));
+                failures.push(c.emit(Instruction.JumpIfFalse(condition, -1)));
             }
             PatternKind.Tuple(_) => unreachable(),
         }
     }
 
-    fn lower_switch(c: FunctionCompiler, value: Expr, arms: Vec[Expr], location: Location) -> Int {
+    fn lower_switch(c: FunctionCompiler, value: Expr, arms: Vec[Expr]) -> Int {
         let value = c.lower_expr(value);
         let dst = c.register();
-        let switch_index = c.emit(Instruction.Switch(value, Vec.new()), location.clone());
+        let switch_index = c.emit(Instruction.Switch(value, Vec.new()));
         let targets: Vec[Int] = Vec.new(arms.len());
         let end_jumps: Vec[Int] = Vec.new(arms.len());
         for arm in arms {
             targets.push(c.code.len());
             let arm_value = c.lower_expr(arm);
-            c.emit(Instruction.Set(dst, arm_value), location.clone());
-            end_jumps.push(c.emit(Instruction.Jump(-1), location.clone()));
+            c.emit(Instruction.Set(dst, arm_value));
+            end_jumps.push(c.emit(Instruction.Jump(-1)));
         }
         c.code[switch_index] = Instruction.Switch(value, targets);
         let end = c.code.len();
@@ -480,111 +477,121 @@ struct FunctionCompiler {
         dst
     }
 
-    fn lower_function_call(c: FunctionCompiler, info: FunctionCallInfo, location: Location) -> Int {
+    fn lower_function_call(c: FunctionCompiler, info: FunctionCallInfo) -> Int {
         let args = c.lower_exprs(info.args);
         let dst = c.register();
         match info.kind {
             FunctionKind.StructCtor => {
-                c.emit(Instruction.MakeStruct(dst, info.qname, args), location);
+                c.emit(Instruction.MakeStruct(
+                    dst,
+                    info.qname.base_name().name(),
+                    args,
+                ));
             }
             FunctionKind.VariantCtor => {
                 let (enum_qname, variant_qname, tag) = variant_info(c.program, info.qname).unwrap();
-                c.emit(Instruction.MakeVariant(dst, enum_qname, variant_qname, tag, args), location);
+                c.emit(Instruction.MakeVariant(
+                    dst,
+                    enum_qname.base_name().name(),
+                    variant_qname.base_name().name(),
+                    tag,
+                    args,
+                ));
             }
-            _ => c.lower_call(dst, info.qname, args, location),
+            _ => c.lower_call(dst, info.qname, args),
         }
         dst
     }
 
-    fn lower_call(c: FunctionCompiler, dst: Int, qname: QualifiedName, args: Vec[Int], location: Location) {
+    fn lower_call(c: FunctionCompiler, dst: Int, qname: QualifiedName, args: Vec[Int]) {
         let base = qname.base_name();
         if base == B.get_macro_debug_println_qn() {
-            c.emit(Instruction.MacroPrintln(dst, args.last().unwrap()), location);
+            c.emit(Instruction.MacroPrintln(dst, args.last().unwrap()));
             return;
         }
         if base == B.get_util_panic_qn() {
-            c.emit(Instruction.Panic(args.last().unwrap()), location);
+            c.emit(Instruction.Panic(args.last().unwrap()));
             return;
         }
         if base == B.get_macro_resolve_trait_builtin_qn() {
-            c.emit(Instruction.ResolveTrait(dst, args), location);
+            c.emit(Instruction.ResolveTrait(dst, args));
             return;
         }
         if base == B.get_macro_resolve_function_builtin_qn() {
-            c.emit(Instruction.ResolveFunction(dst, args), location);
+            c.emit(Instruction.ResolveFunction(dst, args));
             return;
         }
         if base == B.get_macro_resolve_variant_builtin_qn() {
-            c.emit(Instruction.ResolveVariant(dst, args), location);
+            c.emit(Instruction.ResolveVariant(dst, args));
             return;
         }
         if base == B.get_macro_resolve_type_builtin_qn() {
-            c.emit(Instruction.ResolveType(dst, args), location);
+            c.emit(Instruction.ResolveType(dst, args));
             return;
         }
         if let BaseName.Function(module_name, function_name) = base.base() {
             if module_name == B.get_ptr_module_name() {
-                c.lower_ptr_call(dst, function_name, args, location);
+                c.lower_ptr_call(dst, function_name, args);
                 return;
             }
         }
         let fdef = c.program.functions.get(qname).unwrap();
         if let Some(op) = fdef.is_binary_op() {
-            c.lower_binary_into(dst, op, is_float_type(Some(fdef.args[0].type_def)), args[0], args[1], location);
+            c.lower_binary_into(dst, op, is_float_type(Some(fdef.args[0].type_def)), args[0], args[1]);
             return;
         }
         if let Some(op) = fdef.is_unary_op() {
-            c.lower_unary_into(dst, op, is_float_type(Some(fdef.args[0].type_def)), args[0], location);
+            c.lower_unary_into(dst, op, is_float_type(Some(fdef.args[0].type_def)), args[0]);
             return;
         }
         if base == B.get_transmute_qn() {
-            c.emit(Instruction.Set(dst, args[0]), location);
+            c.emit(Instruction.Set(dst, args[0]));
             return;
         }
         if base == B.get_util_discriminator_qn() {
-            c.emit(Instruction.ReadTag(dst, args[0]), location);
+            c.emit(Instruction.ReadTag(dst, args[0]));
             return;
         }
         if base == B.get_util_uninitialized_qn() {
-            c.emit(Instruction.Uninitialized(dst), location);
+            c.emit(Instruction.Uninitialized(dst));
             return;
         }
-        c.emit(Instruction.Call(dst, c.function_ids.get(qname).unwrap(), args), location);
+        c.emit(Instruction.Call(dst, c.function_ids.get(qname).unwrap(), args));
     }
 
-    fn lower_ptr_call(c: FunctionCompiler, dst: Int, name: I.String, args: Vec[Int], location: Location) {
+    fn lower_ptr_call(c: FunctionCompiler, dst: Int, name: I.String, args: Vec[Int]) {
         if name == B.get_ptr_allocate_name() || name == B.get_ptr_gc_allocate_name() {
-            c.emit(Instruction.PtrAllocate(dst, None), location);
+            c.emit(Instruction.PtrAllocate(dst, None));
         } else if name == B.get_ptr_allocate_array_name()
             || name == B.get_ptr_gc_allocate_array_name()
             || name == B.get_ptr_gc_allocate_atomic_name() {
-            c.emit(Instruction.PtrAllocate(dst, Some(args.last().unwrap())), location);
+            c.emit(Instruction.PtrAllocate(dst, Some(args.last().unwrap())));
         } else if name == B.get_ptr_deallocate_name() {
-            c.emit(Instruction.Unit(dst), location);
+            c.emit(Instruction.Unit(dst));
         } else if name == B.get_ptr_get_null_ptr_name()
             || name == B.get_ptr_get_null_voidptr_name() {
-            c.emit(Instruction.PtrNull(dst), location);
+            c.emit(Instruction.PtrNull(dst));
         } else if name == B.get_ptr_is_null_ptr_name()
             || name == B.get_ptr_is_null_voidptr_name() {
-            c.emit(Instruction.PtrIsNull(dst, args.last().unwrap()), location);
+            c.emit(Instruction.PtrIsNull(dst, args.last().unwrap()));
         } else if name == B.get_ptr_offset_of_name() {
-            c.emit(Instruction.PtrOffset(dst, args[args.len() - 2], args.last().unwrap()), location);
+            c.emit(Instruction.PtrOffset(dst, args[args.len() - 2], args.last().unwrap()));
         } else if name == B.get_ptr_copy_name() {
             let n = args.len();
-            c.emit(Instruction.PtrCopy(args[n - 5], args[n - 4], args[n - 3], args[n - 2], args[n - 1]), location.clone());
-            c.emit(Instruction.Unit(dst), location);
+            c.emit(Instruction.PtrCopy(args[n - 5], args[n - 4], args[n - 3], args[n - 2], args[n - 1]));
+            c.emit(Instruction.Unit(dst));
         } else {
-            c.emit(Instruction.Trap("unsupported Std.Ptr operation ${I.resolve(name)}"), location);
+            c.emit(trap("unsupported Std.Ptr operation ${I.resolve(name)}"));
         }
     }
 
-    fn lower_binary(c: FunctionCompiler, op: BinaryOp, float: Bool, lhs: Int, rhs: Int, location: Location) -> Int {
+    fn lower_binary(c: FunctionCompiler, op: BinaryOp, float: Bool, lhs: Int, rhs: Int) -> Int {
         let dst = c.register();
-        c.lower_binary_into(dst, op, float, lhs, rhs, location);
+        c.lower_binary_into(dst, op, float, lhs, rhs);
         dst
     }
 
-    fn lower_binary_into(c: FunctionCompiler, dst: Int, op: BinaryOp, float: Bool, lhs: Int, rhs: Int, location: Location) {
+    fn lower_binary_into(c: FunctionCompiler, dst: Int, op: BinaryOp, float: Bool, lhs: Int, rhs: Int) {
         let instruction = if float {
             match op {
                 BinaryOp.Add => Instruction.FloatAdd(dst, lhs, rhs),
@@ -593,7 +600,7 @@ struct FunctionCompiler {
                 BinaryOp.Div => Instruction.FloatDiv(dst, lhs, rhs),
                 BinaryOp.Eq => Instruction.FloatEq(dst, lhs, rhs),
                 BinaryOp.Less => Instruction.FloatLess(dst, lhs, rhs),
-                _ => Instruction.Trap("unsupported float operation"),
+                _ => trap("unsupported float operation"),
             }
         } else {
             match op {
@@ -613,23 +620,23 @@ struct FunctionCompiler {
                 BinaryOp.Greater => Instruction.IntGreater(dst, lhs, rhs),
                 BinaryOp.LessEq => Instruction.IntLessEq(dst, lhs, rhs),
                 BinaryOp.GreaterEq => Instruction.IntGreaterEq(dst, lhs, rhs),
-                _ => Instruction.Trap("unexpected short-circuit operation"),
+                _ => trap("unexpected short-circuit operation"),
             }
         };
-        c.emit(instruction, location);
+        c.emit(instruction);
     }
 
-    fn lower_unary(c: FunctionCompiler, op: UnaryOp, float: Bool, value: Int, location: Location) -> Int {
+    fn lower_unary(c: FunctionCompiler, op: UnaryOp, float: Bool, value: Int) -> Int {
         let dst = c.register();
-        c.lower_unary_into(dst, op, float, value, location);
+        c.lower_unary_into(dst, op, float, value);
         dst
     }
 
-    fn lower_unary_into(c: FunctionCompiler, dst: Int, op: UnaryOp, float: Bool, value: Int, location: Location) {
+    fn lower_unary_into(c: FunctionCompiler, dst: Int, op: UnaryOp, float: Bool, value: Int) {
         let instruction = if float {
             match op {
                 UnaryOp.Neg => Instruction.FloatNeg(dst, value),
-                _ => Instruction.Trap("unsupported float unary operation"),
+                _ => trap("unsupported float unary operation"),
             }
         } else {
             match op {
@@ -638,7 +645,7 @@ struct FunctionCompiler {
                 UnaryOp.BNot => Instruction.IntBitNot(dst, value),
             }
         };
-        c.emit(instruction, location);
+        c.emit(instruction);
     }
 
     fn finish(c: FunctionCompiler) {
@@ -726,8 +733,8 @@ fn parse_float_literal(text: String) -> F64 {
 fn compile_function(
     program: Program,
     function_ids: Map[QualifiedName, Int],
-    string_constants: Map[String, Int],
-    constants: Vec[Value],
+    string_constants: Map[I.String, Int],
+    constants: Vec[I.String],
     qname: QualifiedName,
     fdef: FunctionDef,
 ) -> ExecutableFunction {
@@ -738,32 +745,28 @@ fn compile_function(
     let body = match fdef.body {
         Some(body) if !fdef.is_builtin() && !fdef.is_extern() => body,
         _ => {
-            let location = fdef.name.location;
-            compiler.emit(Instruction.Trap("entered non-executable function"), location.clone());
+            compiler.emit(trap("entered non-executable function"));
             compiler.finish();
             return ExecutableFunction(
-                I.resolve(qname.name()),
+                qname.name(),
                 fdef.args.len(),
                 compiler.next_register,
                 compiler.code,
-                compiler.locations,
             );
         }
     };
-    let location = body.location;
     let result = compiler.lower_expr(body);
-    compiler.emit(Instruction.Return(result), location);
+    compiler.emit(Instruction.Return(result));
     compiler.finish();
     ExecutableFunction(
-        I.resolve(qname.name()),
+        qname.name(),
         fdef.args.len(),
         compiler.next_register,
         compiler.code,
-        compiler.locations,
     )
 }
 
-pub fn compile(program: Program) -> ExecutableProgram {
+pub fn compile(program: Program) -> CompilationResult {
     let function_ids: Map[QualifiedName, Int] = Map.new();
     let function_names: Vec[QualifiedName] = Vec.new(program.functions.len());
     for qname in program.functions.keys() {
@@ -773,8 +776,8 @@ pub fn compile(program: Program) -> ExecutableProgram {
         function_ids.insert(qname, index);
     }
     let functions: Vec[ExecutableFunction] = Vec.new(function_names.len());
-    let string_constants: Map[String, Int] = Map.new();
-    let constants: Vec[Value] = Vec.new();
+    let string_constants: Map[I.String, Int] = Map.new();
+    let constants: Vec[I.String] = Vec.new();
     for qname in function_names {
         functions.push(compile_function(
             program,
@@ -785,11 +788,11 @@ pub fn compile(program: Program) -> ExecutableProgram {
             program.functions.get(qname).unwrap(),
         ));
     }
-    let entry_points: Vec[EntryPoint] = Vec.new(program.entry_points.len());
+    let entry_points: Vec[Int] = Vec.new(program.entry_points.len());
     for name in program.entry_points {
-        entry_points.push(EntryPoint(name, function_ids.get(name).unwrap()));
+        entry_points.push(function_ids.get(name).unwrap());
     }
-    ExecutableProgram(functions, entry_points, constants)
+    CompilationResult(ExecutableProgram(functions, constants), entry_points)
 }
 
 }

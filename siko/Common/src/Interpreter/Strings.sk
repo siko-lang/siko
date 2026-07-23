@@ -1,11 +1,13 @@
 module Siko.Interpreter.Strings {
 
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
 import Siko.Interpreter.Memory
 import Siko.Interpreter.Value
 import Std.StringBuilder
 
-pub fn make_string_literal_ptr(s: String) -> Value {
+pub fn make_string_literal_ptr(value: I.String) -> Value {
+    let s = I.resolve(value);
     let len = s.len();
     let bytes = s.as_slice();
     let array = ArrayBox.new(len);
@@ -24,9 +26,9 @@ pub fn make_string(s: String) -> Value {
     }
     let data = Value(ValueKind.Ptr(PtrValue.Slot(array, 0)));
     let len_value = Value(ValueKind.Int(len));
-    let string_qn = B.get_string_type_qn();
+    let string_name = B.get_string_type_qn().base_name().name();
     Value(ValueKind.Struct(StructBox(
-        qname: string_qn,
+        type_name: string_name,
         fields: [data, len_value],
     )))
 }
@@ -65,7 +67,8 @@ pub fn try_render_string(value: Value) -> Option[String] {
         ValueKind.Struct(sbox) => sbox,
         _ => return None,
     };
-    if sbox.qname.base_name() != B.get_string_type_qn() || sbox.fields.len() != 2 {
+    if sbox.type_name != B.get_string_type_qn().base_name().name()
+        || sbox.fields.len() != 2 {
         return None;
     }
     let len = match sbox.fields[1].kind {

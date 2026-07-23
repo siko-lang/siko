@@ -1,7 +1,7 @@
 module Siko.Interpreter.Value {
 
-import Siko.AST.QualifiedName
 import Siko.Constants.Builtins as B
+import Siko.Interner as I
 import Siko.Interpreter.Memory
 
 pub struct Value {
@@ -29,14 +29,14 @@ pub enum ValueKind {
 
 pub struct StructBox {
     // Kept only for the compiler bridge. VM field access is always indexed.
-    pub qname: QualifiedName,
+    pub type_name: I.String,
     pub fields: Vec[Value],
 }
 
 pub struct VariantBox {
     // Kept only for the compiler bridge. VM branching uses `tag` directly.
-    pub enum_qname: QualifiedName,
-    pub variant_qname: QualifiedName,
+    pub enum_name: I.String,
+    pub variant_name: I.String,
     pub tag: Int,
     pub items: Vec[Value],
 }
@@ -48,7 +48,7 @@ pub fn copy_value_type(value: Value) -> Value {
             for field in sbox.fields {
                 fields.push(field);
             }
-            Value(ValueKind.Struct(StructBox(sbox.qname, fields)))
+            Value(ValueKind.Struct(StructBox(sbox.type_name, fields)))
         }
         ValueKind.Variant(vbox) => {
             let items = Vec.new(vbox.items.len());
@@ -56,8 +56,8 @@ pub fn copy_value_type(value: Value) -> Value {
                 items.push(item);
             }
             Value(ValueKind.Variant(VariantBox(
-                vbox.enum_qname,
-                vbox.variant_qname,
+                vbox.enum_name,
+                vbox.variant_name,
                 vbox.tag,
                 items,
             )))
@@ -67,14 +67,14 @@ pub fn copy_value_type(value: Value) -> Value {
 }
 
 pub fn make_bool(value: Bool) -> Value {
-    let (variant_qname, tag) = if value {
-        (B.get_bool_true_qn(), B.get_bool_true_variant_index())
+    let (variant_name, tag) = if value {
+        (B.get_bool_true_qn().base_name().name(), B.get_bool_true_variant_index())
     } else {
-        (B.get_bool_false_qn(), B.get_bool_false_variant_index())
+        (B.get_bool_false_qn().base_name().name(), B.get_bool_false_variant_index())
     };
     Value(ValueKind.Variant(VariantBox(
-        enum_qname: B.get_bool_type_qn(),
-        variant_qname: variant_qname,
+        enum_name: B.get_bool_type_qn().base_name().name(),
+        variant_name: variant_name,
         tag: tag,
         items: Vec.new(),
     )))

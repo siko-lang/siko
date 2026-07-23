@@ -55,6 +55,8 @@ pub struct Statistics {
     macro_program_compilation_time: Duration,
     macro_program_compilation_max_us: I64,
     macro_program_compilation_starts: Vec[Instant],
+    macro_cache_hits: Int,
+    macro_cache_misses: Int,
     macro_executions: Int,
     macro_execution_time: Duration,
     macro_execution_max_us: I64,
@@ -67,6 +69,8 @@ pub struct Statistics {
             macro_program_compilation_time: Duration.zero(),
             macro_program_compilation_max_us: 0,
             macro_program_compilation_starts: Vec.new(1),
+            macro_cache_hits: 0,
+            macro_cache_misses: 0,
             macro_executions: 0,
             macro_execution_time: Duration.zero(),
             macro_execution_max_us: 0,
@@ -96,6 +100,18 @@ pub struct Statistics {
         statistics_start(stats.enabled, stats.macro_execution_starts);
     }
 
+    pub fn macro_cache_hit(stats: Statistics) {
+        if stats.enabled {
+            stats.macro_cache_hits += 1;
+        }
+    }
+
+    pub fn macro_cache_miss(stats: Statistics) {
+        if stats.enabled {
+            stats.macro_cache_misses += 1;
+        }
+    }
+
     pub fn macro_execution_end(stats: Statistics) {
         if let Some(elapsed) = statistics_elapsed(
             stats.enabled,
@@ -120,6 +136,10 @@ pub struct Statistics {
             stats.macro_program_compilations,
             stats.macro_program_compilation_time,
             stats.macro_program_compilation_max_us,
+        );
+        println(
+            "  macro_cache: hits=${stats.macro_cache_hits}, "
+            + "misses=${stats.macro_cache_misses}"
         );
         print_time_stat(
             "macro_execution",

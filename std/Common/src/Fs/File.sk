@@ -43,7 +43,7 @@ pub struct File {
         Std.Fs.Stat.fstat(f.fd.get_fd())
     }
 
-    fn close(f: File) -> Result[(), Error] {
+    pub fn close(f: File) -> Result[(), Error] {
         f.fd.close()
     }
 }
@@ -65,6 +65,19 @@ pub fn remove_file(path: String) -> Result[(), Error] {
     let c_path = CString.from_string(path.clone());
     if unlink(c_path.as_ptr()) < 0 {
         return Err(IO.Error.with_message(get_errno(), path)).context();
+    }
+    Ok(())
+}
+
+@safe
+pub fn rename_file(old_path: String, new_path: String) -> Result[(), Error] {
+    let c_old_path = CString.from_string(old_path.clone());
+    let c_new_path = CString.from_string(new_path.clone());
+    if Std.Libc.Unistd.rename(c_old_path.as_ptr(), c_new_path.as_ptr()) < 0 {
+        return Err(IO.Error.with_message(
+            get_errno(),
+            "${old_path} -> ${new_path}",
+        )).context();
     }
     Ok(())
 }

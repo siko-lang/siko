@@ -1,0 +1,236 @@
+module Siko.Resolver.Macros.Cache {
+
+import Siko.AST.Module as M
+import Siko.FileManager
+import Siko.Interner as I
+import Siko.Interpreter.IR
+import Siko.Resolver.Macros.Launcher
+import Std.Encoding.Binary
+import Std.Encoding.BinaryCodec
+import Std.Fs.Directory
+import Std.Fs.File
+import Std.Fs.Path
+import Std.Hash
+import Std.Map
+import Std.Macro.Derive.Binary
+import Std.Set
+import Std.Sys.Process as Sys
+
+fn cache_magic() -> String {
+    "siko-macro-cache"
+}
+
+fn cache_version() -> Int {
+    1
+}
+
+@derive(Binary, PartialEq, Eq, PartialOrd, Ord)
+struct ModuleStamp {
+    module_name: String,
+    source_hash: U64,
+}
+
+@derive(Binary)
+struct CachedMacroLauncher {
+    provider: String,
+    launcher: MacroLauncher,
+}
+
+@derive(Binary)
+struct CachedMacroProgram {
+    executable: ExecutableProgram,
+    launchers: Vec[CachedMacroLauncher],
+}
+
+@derive(Binary)
+struct MacroCacheBody {
+    macro_module: String,
+    modules: Vec[ModuleStamp],
+}
+
+fn cache_root() -> Option[String] {
+    if let Some(path) = Sys.getenv("SIKO_CACHE") {
+        return Some(path);
+    }
+    let executable = match Sys.get_executable_path() {
+        Some(executable) => executable,
+        None => return None,
+    };
+    let directory = match Path.parent(executable) {
+        Some(directory) => directory,
+        None => return None,
+    };
+    Some(Path.join(directory, ".cache"))
+}
+
+fn cache_path(macro_module: I.String) -> Option[(String, String)] {
+    let root = match cache_root() {
+        Some(root) => root,
+        None => return None,
+    };
+    let directory = Path.join(root, "macros");
+    let file_name = I.resolve(macro_module) + ".bin";
+    Some((directory, Path.join(directory, file_name)))
+}
+
+fn module_stamps(
+    modules: Vec[M.Module],
+    dependencies: Set[I.String],
+) -> Option[Vec[ModuleStamp]] {
+    let stamps = Vec.new(dependencies.len());
+    for module_name in dependencies {
+        let module_def = match modules
+            .iter()
+            .find(|item| item.name.name() == module_name) {
+                Some(module_def) => module_def,
+                None => return None,
+            };
+        let source = Siko.FileManager.get_content(module_def.name.location.file_id);
+        stamps.push(ModuleStamp(
+            I.resolve(module_name),
+            hash_value(source),
+        ));
+    }
+    stamps.sort();
+    Some(stamps)
+}
+
+fn cached_program(program: MacroProgram) -> CachedMacroProgram {
+    let launchers = Vec.new(program.launchers.len());
+    for (provider, launcher) in program.launchers {
+        launchers.push(CachedMacroLauncher(I.resolve(provider), launcher));
+    }
+    CachedMacroProgram(
+        program.executable,
+        launchers,
+    )
+}
+
+fn executable_program(
+    program: CachedMacroProgram,
+) -> Option[MacroProgram] {
+    let launchers = Map.new();
+    for cached in program.launchers {
+        launchers.insert(I.intern(cached.provider), cached.launcher);
+    }
+    Some(MacroProgram(
+        program.executable,
+        launchers,
+    ))
+}
+
+pub fn load(
+    macro_module: I.String,
+    dependencies: Set[I.String],
+    modules: Vec[M.Module],
+) -> Option[MacroProgram] {
+    let (_, path) = match cache_path(macro_module) {
+        Some(value) => value,
+        None => return None,
+    };
+    let expected_modules = match module_stamps(modules, dependencies) {
+        Some(stamps) => stamps,
+        None => return None,
+    };
+    let file = match File.open(path) {
+        Ok(file) => file,
+        Err(_) => return None,
+    };
+    let decoder = Decoder.new(file);
+    let decoded_magic: Result[String, DecodeError] = decode(decoder);
+    let magic = match decoded_magic {
+        Ok(magic) => magic,
+        Err(_) => {
+            file.close();
+            return None;
+        }
+    };
+    let decoded_version: Result[Int, DecodeError] = decode(decoder);
+    let version = match decoded_version {
+        Ok(version) => version,
+        Err(_) => {
+            file.close();
+            return None;
+        }
+    };
+    if magic != cache_magic() || version != cache_version() {
+        file.close();
+        return None;
+    }
+    let decoded_body: Result[MacroCacheBody, DecodeError] = decode(decoder);
+    let body = match decoded_body {
+        Ok(body) => body,
+        Err(_) => {
+            file.close();
+            return None;
+        }
+    };
+    if body.macro_module != I.resolve(macro_module)
+        || body.modules != expected_modules {
+        file.close();
+        return None;
+    }
+    let decoded_program: Result[CachedMacroProgram, DecodeError] =
+        decode(decoder);
+    file.close();
+    match decoded_program {
+        Ok(program) => executable_program(program),
+        Err(_) => None,
+    }
+}
+
+fn discard(path: String) {
+    match File.remove_file(path) {
+        Ok(_) | Err(_) => {}
+    }
+}
+
+pub fn store(
+    macro_module: I.String,
+    dependencies: Set[I.String],
+    modules: Vec[M.Module],
+    program: MacroProgram,
+) {
+    let (directory, path) = match cache_path(macro_module) {
+        Some(value) => value,
+        None => return,
+    };
+    let stamps = match module_stamps(modules, dependencies) {
+        Some(stamps) => stamps,
+        None => return,
+    };
+    if Directory.create_dir_all(directory).is_err() {
+        return;
+    }
+    let body = MacroCacheBody(
+        I.resolve(macro_module),
+        stamps,
+    );
+    let program = cached_program(program);
+    let temp_path = path + "." + Sys.get_pid().to_string() + ".tmp";
+    let file = match File.create(temp_path) {
+        Ok(file) => file,
+        Err(_) => return,
+    };
+    let encoder = Encoder.new(file);
+    let encoded = match cache_magic().encode(encoder) {
+        Ok(_) => match cache_version().encode(encoder) {
+            Ok(_) => match body.encode(encoder) {
+                Ok(_) => program.encode(encoder),
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        },
+        Err(error) => Err(error),
+    };
+    let closed = file.close();
+    if encoded.is_err() || closed.is_err() {
+        discard(temp_path);
+        return;
+    }
+    if File.rename_file(temp_path, path).is_err() {
+        discard(temp_path);
+    }
+}
+
+}

@@ -20,7 +20,7 @@ fn is_optional(ty: TypeDef) -> Bool {
 fn item_def(state: BridgeState, index: Int, item: D.ItemInfo) -> Value {
     let qname = B.get_macro_variant_item_def_qn();
     let name = item.name.map(|name| make_string(I.resolve(name.name)));
-    Value(ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname.base_name().name(), [
             int_value(index),
             option_value(name),
             handle_value(B.get_macro_type_def_qn(), state.add_type(item.ty)),
@@ -35,7 +35,7 @@ pub fn variant_def(state: BridgeState, variant: D.VariantDef) -> Value {
         .enumerate()
         .map(|(index, item)| item_def(state, index, item))
         .collect();
-    Value(ValueKind.Struct(StructBox(qname, [
+    Value(ValueKind.Struct(StructBox(qname.base_name().name(), [
             int_value(state.add_variant(variant)),
             vec_value(items),
             handle_value(

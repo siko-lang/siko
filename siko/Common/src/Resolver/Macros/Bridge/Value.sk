@@ -10,12 +10,17 @@ pub fn int_value(value: Int) -> Value {
 }
 
 pub fn handle_value(qname: QualifiedName, id: Int) -> Value {
-    Value(ValueKind.Struct(StructBox(qname, [int_value(id)])))
+    Value(ValueKind.Struct(StructBox(
+        qname.base_name().name(),
+        [int_value(id)],
+    )))
 }
 
 pub fn read_handle(value: Value, qname: QualifiedName) -> Option[Int] {
     let sbox = match value.kind {
-        ValueKind.Struct(sbox) if sbox.qname.base_name() == qname.base_name() && sbox.fields.len() == 1 => sbox,
+        ValueKind.Struct(sbox)
+            if sbox.type_name == qname.base_name().name()
+                && sbox.fields.len() == 1 => sbox,
         _ => return None,
     };
     match sbox.fields[0].kind {
@@ -26,14 +31,18 @@ pub fn read_handle(value: Value, qname: QualifiedName) -> Option[Int] {
 
 pub fn read_struct(value: Value, qname: QualifiedName, field_count: Int) -> Option[Vec[Value]] {
     match value.kind {
-        ValueKind.Struct(sbox) if sbox.qname.base_name() == qname.base_name() && sbox.fields.len() == field_count => Some(sbox.fields),
+        ValueKind.Struct(sbox)
+            if sbox.type_name == qname.base_name().name()
+                && sbox.fields.len() == field_count => Some(sbox.fields),
         _ => None,
     }
 }
 
 pub fn read_vec(value: Value) -> Option[Vec[Value]] {
     let fields = match value.kind {
-        ValueKind.Struct(sbox) if sbox.qname.base_name() == B.get_vec_type_qn() && sbox.fields.len() == 3 => sbox.fields,
+        ValueKind.Struct(sbox)
+            if sbox.type_name == B.get_vec_type_qn().base_name().name()
+                && sbox.fields.len() == 3 => sbox.fields,
         _ => return None,
     };
     let len = match fields[1].kind {
@@ -61,7 +70,10 @@ pub fn read_vec(value: Value) -> Option[Vec[Value]] {
 }
 
 pub fn empty_struct(qname: QualifiedName) -> Value {
-    Value(ValueKind.Struct(StructBox(qname, Vec.new())))
+    Value(ValueKind.Struct(StructBox(
+        qname.base_name().name(),
+        Vec.new(),
+    )))
 }
 
 pub fn variant_value(
@@ -71,8 +83,8 @@ pub fn variant_value(
     items: Vec[Value],
 ) -> Value {
     Value(ValueKind.Variant(VariantBox(
-        enum_qname: enum_qname,
-        variant_qname: variant_qname,
+        enum_name: enum_qname.base_name().name(),
+        variant_name: variant_qname.base_name().name(),
         tag: tag,
         items: items,
     )))
@@ -91,7 +103,7 @@ pub fn vec_value(items: Vec[Value]) -> Value {
         Value(ValueKind.Ptr(PtrValue.Slot(array, 0)))
     };
     Value(ValueKind.Struct(StructBox(
-        qname,
+        qname.base_name().name(),
         [
             data,
             Value(ValueKind.Int(len)),
@@ -104,14 +116,14 @@ pub fn option_value(value: Option[Value]) -> Value {
     let option_qname = B.get_option_type_qn();
     match value {
         Some(value) => Value(ValueKind.Variant(VariantBox(
-            enum_qname: option_qname,
-            variant_qname: B.get_option_some_qn(),
+            enum_name: option_qname.base_name().name(),
+            variant_name: B.get_option_some_qn().base_name().name(),
             tag: 0,
             items: [value],
         ))),
         None => Value(ValueKind.Variant(VariantBox(
-            enum_qname: option_qname,
-            variant_qname: B.get_option_none_qn(),
+            enum_name: option_qname.base_name().name(),
+            variant_name: B.get_option_none_qn().base_name().name(),
             tag: 1,
             items: Vec.new(),
         ))),
@@ -121,8 +133,12 @@ pub fn option_value(value: Option[Value]) -> Value {
 pub fn result_value(ok: Bool, item: Value) -> Value {
     let result_qname = B.get_result_type_qn();
     Value(ValueKind.Variant(VariantBox(
-        enum_qname: result_qname,
-        variant_qname: if ok { B.get_result_ok_qn() } else { B.get_result_err_qn() },
+        enum_name: result_qname.base_name().name(),
+        variant_name: if ok {
+            B.get_result_ok_qn().base_name().name()
+        } else {
+            B.get_result_err_qn().base_name().name()
+        },
         tag: if ok { 0 } else { 1 },
         items: [item],
     )))

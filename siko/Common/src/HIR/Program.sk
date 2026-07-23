@@ -55,6 +55,71 @@ pub struct Program {
         )
     }
 
+    // Map.clone() preserves its values, which is normally desirable for Siko's
+    // reference types. Nested compilation needs a fully isolated program,
+    // however, because compiler passes mutate definitions in place.
+    pub fn deep_clone(program: Program) -> Program {
+        let cloned = Program.new();
+        for (name, def) in program.structs {
+            cloned.structs.insert(name.clone(), def.clone());
+        }
+        for (name, def) in program.enums {
+            cloned.enums.insert(name.clone(), def.clone());
+        }
+        for (variant, enum_name) in program.variant_enum_map {
+            cloned.variant_enum_map.insert(variant.clone(), enum_name.clone());
+        }
+        for (name, def) in program.traits {
+            cloned.traits.insert(name.clone(), def.clone());
+        }
+        for (name, def) in program.all_instances {
+            cloned.all_instances.insert(name.clone(), def.clone());
+        }
+        for name in program.named_instances.keys() {
+            cloned.named_instances.insert(
+                name.clone(),
+                cloned.all_instances.get(name).unwrap(),
+            );
+        }
+        for def in program.canonical_instances {
+            let name = def.qualified_name.unwrap();
+            cloned.canonical_instances.push(
+                cloned.all_instances.get(name).unwrap(),
+            );
+        }
+        for (name, def) in program.functions {
+            cloned.functions.insert(name.clone(), def.clone());
+        }
+        for (name, def) in program.effects {
+            cloned.effects.insert(name.clone(), def.clone());
+        }
+        for (name, def) in program.effect_associated_types {
+            cloned.effect_associated_types.insert(name.clone(), def.clone());
+        }
+        for (name, def) in program.implicits {
+            cloned.implicits.insert(name.clone(), def.clone());
+        }
+        cloned.entry_points = program.entry_points.clone();
+        cloned.module_names = program.module_names.clone();
+        for (module_name, imports) in program.module_instance_imports {
+            cloned.module_instance_imports.insert(
+                module_name.clone(),
+                imports.clone(),
+            );
+        }
+        for (module_name, method_map) in program.module_trait_method_map {
+            let cloned_method_map = Map.new();
+            for (trait_name, methods) in method_map {
+                cloned_method_map.insert(trait_name.clone(), methods.clone());
+            }
+            cloned.module_trait_method_map.insert(
+                module_name.clone(),
+                cloned_method_map,
+            );
+        }
+        cloned
+    }
+
     pub fn struct_def(program: Program, qname: QualifiedName) -> StructDef {
         program.structs.get(qname).unwrap()
     }

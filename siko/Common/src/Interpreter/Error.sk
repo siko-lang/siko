@@ -1,20 +1,20 @@
 module Siko.Interpreter.Error {
 
+import Siko.Interner as I
 import Siko.Location
 
 pub struct FrameInfo {
-    pub name: String,
-    pub location: Location,
+    pub name: I.String,
 }
 
 pub enum ErrorKind {
-    Panic(String),
-    WrongArgCount(String, Int, Int),
+    Panic(I.String),
+    WrongArgCount(I.String, Int, Int),
     UninitializedRead,
     DivisionByZero,
     NullDeref,
     StackOverflow,
-    Internal(String),
+    Internal(I.String),
 }
 
 pub struct InterpreterError {
@@ -29,9 +29,9 @@ pub fn error(kind: ErrorKind, location: Location) -> InterpreterError {
 
 pub fn format_error(e: InterpreterError) -> String {
     let message = match e.kind {
-        ErrorKind.Panic(msg) => "compile-time code panicked: ${msg}",
+        ErrorKind.Panic(msg) => "compile-time code panicked: ${I.resolve(msg)}",
         ErrorKind.WrongArgCount(name, expected, got) =>
-            "compile-time execution failed: `${name}` expects ${expected} arguments, got ${got}",
+            "compile-time execution failed: `${I.resolve(name)}` expects ${expected} arguments, got ${got}",
         ErrorKind.UninitializedRead =>
             "compile-time execution failed: read of uninitialized value",
         ErrorKind.DivisionByZero =>
@@ -41,11 +41,11 @@ pub fn format_error(e: InterpreterError) -> String {
         ErrorKind.StackOverflow =>
             "compile-time execution failed: interpreter call depth limit exceeded",
         ErrorKind.Internal(msg) =>
-            "compile-time execution failed: internal interpreter error: ${msg}",
+            "compile-time execution failed: internal interpreter error: ${I.resolve(msg)}",
     };
     let i = e.backtrace.len() - 1;
     while i >= 0 {
-        message = message + "\n  in ${e.backtrace[i].name}";
+        message = message + "\n  in ${I.resolve(e.backtrace[i].name)}";
         i -= 1;
     }
     message
