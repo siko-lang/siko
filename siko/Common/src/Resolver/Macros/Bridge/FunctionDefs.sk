@@ -6,6 +6,7 @@ import Siko.AST.Function as F
 import Siko.AST.Generics
 import Siko.AST.Identifier
 import Siko.AST.QualifiedName
+import Siko.AST.Traits
 import Siko.AST.Type
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
@@ -31,6 +32,70 @@ fn method_short_name(name: QualifiedName, trait_name: QualifiedName) -> Result[I
         },
         QualifiedName.Mono(_) => Err("generated instance function cannot be monomorphized"),
     }
+}
+
+fn combine_method_type_args(
+    method_defs: Option[TypeArgDefs],
+    instance_defs: Option[TypeArgDefs],
+) -> Option[TypeArgDefs] {
+    let context = if let Some(defs) = instance_defs {
+        defs
+    } else {
+        return method_defs;
+    };
+    if context.type_args.is_empty() && context.bounds.is_empty() {
+        return method_defs;
+    }
+    Some(match method_defs {
+        None => context,
+        Some(method) => {
+            let method_names: Vec[I.String] =
+                method.type_args.iter().map(|arg| arg.name).collect();
+            let instance_type_args: Vec[Identifier] = context
+                .type_args
+                .iter()
+                .filter(|arg| !method_names.contains(arg.name))
+                .collect();
+            let bounds: Vec[Bound] =
+                context.bounds.iter().map(|bound| bound.clone()).collect();
+            for bound in method.bounds {
+                let already_present = bounds.iter().any(|existing|
+                    existing.trait_name == bound.trait_name
+                    && existing.type_args == bound.type_args
+                    && existing.constraints == bound.constraints);
+                if !already_present {
+                    bounds.push(bound);
+                }
+            }
+            TypeArgDefs(
+                method
+                    .type_args
+                    .iter()
+                    .chain(instance_type_args.iter())
+                    .collect(),
+                bounds,
+            )
+        }
+    })
+}
+
+fn generated_method_type_args(
+    trait_def: TraitDef,
+    trait_method: F.FunctionDef,
+    instance_defs: Option[TypeArgDefs],
+) -> Option[TypeArgDefs] {
+    let method_defs = trait_method.type_arg_defs.map(|defs| {
+        let trait_arg_count =
+            trait_def.type_args.len() + trait_def.associated_types.len();
+        TypeArgDefs(
+            defs.type_args.iter().skip(trait_arg_count).collect(),
+            // Resolved trait methods always carry their dispatch/self bound
+            // first. Instance methods receive that witness from their instance,
+            // so only the method's own bounds belong on the generated method.
+            defs.bounds.iter().skip(1).collect(),
+        )
+    });
+    combine_method_type_args(method_defs, instance_defs)
 }
 
 pub fn decode_function(
@@ -67,6 +132,8 @@ pub fn decode_function(
     let substitution = Substitution.new();
     substitution.bind_named(trait_def.type_args[0].name, target);
     let result_type = substitution.apply(declared_result);
+    let method_type_arg_defs =
+        generated_method_type_args(trait_def, trait_method, type_arg_defs);
     let args = match read_vec(fields[1]) {
         Some(args) => args,
         None => return Err("function arguments are not a Vec"),
@@ -101,7 +168,7 @@ pub fn decode_function(
         name: full_name,
         qualified_name: Some(method_qname),
         kind: F.FunctionDefKind.Regular,
-        type_arg_defs: type_arg_defs,
+        type_arg_defs: method_type_arg_defs,
         args: function_args,
         yield_type: None,
         result_type: Some(result_type),

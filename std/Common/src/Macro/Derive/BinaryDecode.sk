@@ -1,0 +1,108 @@
+module Std.Macro.Derive.BinaryDecode {
+
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.BinarySupport
+
+fn decoded_call(
+    builder: FunctionBuilder,
+    cfg: Config,
+    constructor: QualifiedName,
+    types: Vec[TypeDef],
+    decoder: Expr,
+) -> Expr {
+    let bindings: Vec[LetBinding] =
+        types.iter().map(|_| builder.local()).collect();
+    let values: Vec[Expr] =
+        bindings.iter().map(|binding| binding.value).collect();
+    let body = ok(
+        builder,
+        cfg.result,
+        builder.call(
+            constructor,
+            values,
+        ),
+    );
+    let index = types.len() - 1;
+    while index >= 0 {
+        body = builder.let_expr(
+            bindings[index],
+            types[index],
+            try_value(
+                builder,
+                cfg.result,
+                builder.call(cfg.decode.function, [decoder]),
+            ),
+            body,
+        );
+        index -= 1;
+    }
+    body
+}
+
+pub fn struct_method(
+    def: StructDef,
+    cfg: Config,
+) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.decode.function);
+    let decoder = builder.add_argument(cfg.decode.argument_types[0]);
+    let types = def.fields.iter().map(|field| field.type_def).collect();
+    builder.finish(decoded_call(
+        builder,
+        cfg,
+        def.constructor,
+        types,
+        decoder,
+    ))
+}
+
+fn invalid_tag(
+    builder: FunctionBuilder,
+    cfg: Config,
+    tag: Expr,
+) -> Expr {
+    err(
+        builder,
+        cfg.result,
+        builder.call(cfg.invalid_tag.constructor, [tag]),
+    )
+}
+
+pub fn enum_method(
+    def: EnumDef,
+    cfg: Config,
+) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.decode.function);
+    let decoder = builder.add_argument(cfg.decode.argument_types[0]);
+    let tag = builder.local();
+    let arms = Vec.new();
+    for (index, variant) in def.variants.iter().enumerate() {
+        arms.push(builder.arm(
+            builder.integer_pattern(index),
+            decoded_call(
+                builder,
+                cfg,
+                variant.constructor,
+                variant.items.iter().map(|item| item.type_def).collect(),
+                decoder,
+            ),
+        ));
+    }
+    arms.push(builder.arm(
+        builder.wildcard_pattern(),
+        invalid_tag(builder, cfg, tag.value),
+    ));
+    let body = builder.let_expr(
+        tag,
+        cfg.u8_type,
+        try_value(
+            builder,
+            cfg.result,
+            builder.call(cfg.decode.function, [decoder]),
+        ),
+        builder.match_expr(tag.value, arms),
+    );
+    builder.finish(body)
+}
+
+}

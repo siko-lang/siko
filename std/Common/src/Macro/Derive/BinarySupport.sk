@@ -1,0 +1,99 @@
+module Std.Macro.Derive.BinarySupport {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+
+pub struct ResultDef {
+    pub ok_variant: VariantDef,
+    pub err_variant: VariantDef,
+}
+
+pub struct Config {
+    pub trait_def: TraitDef,
+    pub encode: TraitMethodDef,
+    pub decode: TraitMethodDef,
+    pub result: ResultDef,
+    pub u8_type: TypeDef,
+    pub invalid_tag: VariantDef,
+}
+
+fn method(
+    trait_def: TraitDef,
+    name: String,
+) -> Result[TraitMethodDef, MacroError] {
+    for method in trait_def.methods {
+        if method.name == name {
+            return Ok(method);
+        }
+    }
+    Err(MacroError.NotSupported(
+        "trait `${trait_def.name}` has no method `${name}`",
+    ))
+}
+
+pub fn config(ctx: MacroContext) -> Result[Config, MacroError] {
+    let trait_def = ctx.resolve_trait("Std.Encoding.BinaryCodec.Binary")?;
+    let encode = method(trait_def, "encode")?;
+    let decode = method(trait_def, "decode")?;
+    if encode.argument_types.len() != 2 {
+        return Err(MacroError.NotSupported(
+            "Binary.encode must have exactly two arguments",
+        ));
+    }
+    if decode.argument_types.len() != 1 {
+        return Err(MacroError.NotSupported(
+            "Binary.decode must have exactly one argument",
+        ));
+    }
+    Ok(Config(
+        trait_def,
+        encode,
+        decode,
+        ResultDef(
+            ctx.resolve_variant("Std.Result.Result.Ok")?,
+            ctx.resolve_variant("Std.Result.Result.Err")?,
+        ),
+        ctx.resolve_type("Std.Int.U8.U8")?,
+        ctx.resolve_variant("Std.Encoding.Binary.DecodeError.InvalidTag")?,
+    ))
+}
+
+pub fn validate_enum(def: EnumDef) -> Result[(), MacroError] {
+    if def.variants.len() > 256 {
+        Err(MacroError.NotSupported(
+            "Binary supports at most 256 enum variants",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+pub fn ok(builder: FunctionBuilder, result: ResultDef, value: Expr) -> Expr {
+    builder.call(result.ok_variant.constructor, [value])
+}
+
+pub fn err(builder: FunctionBuilder, result: ResultDef, value: Expr) -> Expr {
+    builder.call(result.err_variant.constructor, [value])
+}
+
+pub fn try_value(
+    builder: FunctionBuilder,
+    result: ResultDef,
+    value: Expr,
+) -> Expr {
+    let ok_binding = builder.bind();
+    let err_binding = builder.bind();
+    builder.match_expr(value, [
+        builder.arm(
+            builder.variant_pattern(result.ok_variant, [ok_binding.pattern]),
+            ok_binding.value,
+        ),
+        builder.arm(
+            builder.variant_pattern(result.err_variant, [err_binding.pattern]),
+            builder.return_expr(err(builder, result, err_binding.value)),
+        ),
+    ])
+}
+
+}

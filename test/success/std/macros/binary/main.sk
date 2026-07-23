@@ -1,0 +1,50 @@
+module Main {
+
+import Std.Encoding.Binary
+import Std.Encoding.BinaryCodec
+import Std.IO.Memory as Memory
+import Std.Macro.Derive.Binary
+
+@derive(Binary, PartialEq, Eq)
+struct Envelope[T] {
+    sequence: U16,
+    payload: T,
+}
+
+@derive(Binary, PartialEq, Eq)
+enum Message {
+    Ping,
+    Text(Envelope[String]),
+    State(id: I32, active: Bool),
+}
+
+fn main() {
+    let original: Vec[Message] = [
+        Message.Ping,
+        Message.Text(Envelope(0x1234, "hello")),
+        Message.State(-7, True),
+    ];
+    let output = Memory.Writer.new(1);
+    original
+        .encode(Encoder.new(output, ByteOrder.BigEndian))
+        .unwrap();
+
+    let decoder = Decoder.new(
+        Memory.Reader.new(output.bytes(), 1),
+        ByteOrder.BigEndian,
+    );
+    let decoded: Result[Vec[Message], DecodeError] = decode(decoder);
+    assert(decoded.unwrap() == original);
+    assert(decoder.position() == output.len());
+
+    let invalid: Result[Message, DecodeError] = decode(
+        Decoder.new(Memory.Reader.new([9])),
+    );
+    match invalid {
+        Err(DecodeError.InvalidTag(9)) => {}
+        _ => panic("expected invalid enum tag"),
+    }
+    println("ok");
+}
+
+}

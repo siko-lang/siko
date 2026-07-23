@@ -1,0 +1,81 @@
+@prelude
+module Std.Macro.Derive.Binary {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.InstanceBuilder
+import Std.Macro.Derive.BinarySupport
+import Std.Macro.Derive.BinaryEncode as Encode
+import Std.Macro.Derive.BinaryDecode as Decode
+
+fn attached_struct(
+    def: StructDef,
+    cfg: Config,
+) -> InstanceDef {
+    let builder = InstanceBuilder.new(cfg.trait_def, def.type_def);
+    for type_parameter in def.type_params {
+        builder.add_bound(type_parameter, cfg.trait_def);
+    }
+    builder.add_method(Encode.struct_method(def, cfg));
+    builder.add_method(Decode.struct_method(def, cfg));
+    builder.finish()
+}
+
+fn attached_enum(
+    def: EnumDef,
+    cfg: Config,
+) -> Result[InstanceDef, MacroError] {
+    validate_enum(def)?;
+    let builder = InstanceBuilder.new(cfg.trait_def, def.type_def);
+    for type_parameter in def.type_params {
+        builder.add_bound(type_parameter, cfg.trait_def);
+    }
+    builder.add_method(Encode.enum_method(def, cfg));
+    builder.add_method(Decode.enum_method(def, cfg));
+    Ok(builder.finish())
+}
+
+fn external_struct(
+    def: StructDef,
+    cfg: Config,
+) -> InstanceBody {
+    let builder = InstanceBodyBuilder.new();
+    builder.add_method(Encode.struct_method(def, cfg));
+    builder.add_method(Decode.struct_method(def, cfg));
+    builder.finish()
+}
+
+fn external_enum(
+    def: EnumDef,
+    cfg: Config,
+) -> Result[InstanceBody, MacroError] {
+    validate_enum(def)?;
+    let builder = InstanceBodyBuilder.new();
+    builder.add_method(Encode.enum_method(def, cfg));
+    builder.add_method(Decode.enum_method(def, cfg));
+    Ok(builder.finish())
+}
+
+pub macro Binary {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        Ok(attached_struct(ctx.struct_target()?, config(ctx)?))
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        attached_enum(ctx.enum_target()?, config(ctx)?)
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(external_struct(ctx.struct_target()?, config(ctx)?))
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        external_enum(ctx.enum_target()?, config(ctx)?)
+    }
+}
+
+}

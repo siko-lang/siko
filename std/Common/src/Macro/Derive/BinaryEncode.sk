@@ -1,0 +1,75 @@
+module Std.Macro.Derive.BinaryEncode {
+
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.BinarySupport
+
+fn encode_values(
+    builder: FunctionBuilder,
+    cfg: Config,
+    values: Vec[Expr],
+    encoder: Expr,
+) -> Expr {
+    let expressions: Vec[Expr] = values
+        .iter()
+        .map(|value| try_value(
+            builder,
+            cfg.result,
+            builder.call(cfg.encode.function, [value, encoder]),
+        ))
+        .collect();
+    expressions.push(ok(builder, cfg.result, builder.tuple(Vec.new())));
+    builder.sequence(expressions)
+}
+
+pub fn struct_method(
+    def: StructDef,
+    cfg: Config,
+) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.encode.function);
+    let value = builder.add_argument(cfg.encode.argument_types[0]);
+    let encoder = builder.add_argument(cfg.encode.argument_types[1]);
+    let fields = def.fields
+        .iter()
+        .map(|field| builder.field(value, field))
+        .collect();
+    builder.finish(encode_values(builder, cfg, fields, encoder))
+}
+
+fn variant_body(
+    builder: FunctionBuilder,
+    cfg: Config,
+    index: Int,
+    values: Vec[Expr],
+    encoder: Expr,
+) -> Expr {
+    let tag = builder.local();
+    let encoded = [tag.value];
+    encoded.extend(values);
+    builder.let_expr(
+        tag,
+        cfg.u8_type,
+        builder.integer(index),
+        encode_values(builder, cfg, encoded, encoder),
+    )
+}
+
+pub fn enum_method(
+    def: EnumDef,
+    cfg: Config,
+) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.encode.function);
+    let value = builder.add_argument(cfg.encode.argument_types[0]);
+    let encoder = builder.add_argument(cfg.encode.argument_types[1]);
+    let arms = Vec.new();
+    for (index, variant) in def.variants.iter().enumerate() {
+        let binding = builder.destructure(variant);
+        arms.push(builder.arm(
+            binding.pattern,
+            variant_body(builder, cfg, index, binding.values, encoder),
+        ));
+    }
+    builder.finish(builder.match_expr(value, arms))
+}
+
+}

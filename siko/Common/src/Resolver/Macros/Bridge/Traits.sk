@@ -30,16 +30,15 @@ fn trait_method_def(
     if trait_def.type_args.len() == 1 {
         substitution.bind_named(trait_def.type_args[0].name, target);
     }
-    let extra_argument_types = function.args
+    let argument_types = function.args
         .iter()
-        .skip(1)
         .map(|arg| type_def(state, substitution.apply(arg.type_def)))
         .collect();
     let qname = B.get_macro_trait_method_def_qn();
     Value(ValueKind.Struct(StructBox(qname, [
             make_string(I.resolve(short_name)),
             handle_value(B.get_macro_qualified_name_qn(), state.add_name(function_name)),
-            vec_value(extra_argument_types),
+            vec_value(argument_types),
         ])))
 }
 
