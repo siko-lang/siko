@@ -1,0 +1,51 @@
+module Std.Macro.Derive.HashMethods {
+
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+import Std.Macro.Derive.HashSupport
+
+pub fn struct_method(def: StructDef, cfg: Config) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.method.function);
+    let value = builder.add_argument(cfg.method.argument_types[0]);
+    let hasher = builder.add_argument(cfg.method.argument_types[1]);
+    let fields = def.fields
+        .iter()
+        .map(|field| builder.field(value, field))
+        .collect();
+    builder.finish(hash_values(builder, cfg, fields, hasher))
+}
+
+fn variant_body(
+    builder: FunctionBuilder,
+    cfg: Config,
+    index: Int,
+    values: Vec[Expr],
+    hasher: Expr,
+) -> Expr {
+    let tag = builder.local();
+    let hashed = [tag.value];
+    hashed.extend(values);
+    builder.let_expr(
+        tag,
+        cfg.u64_type,
+        builder.integer(index),
+        hash_values(builder, cfg, hashed, hasher),
+    )
+}
+
+pub fn enum_method(def: EnumDef, cfg: Config) -> FunctionDef {
+    let builder = FunctionBuilder.new(cfg.method.function);
+    let value = builder.add_argument(cfg.method.argument_types[0]);
+    let hasher = builder.add_argument(cfg.method.argument_types[1]);
+    let arms = Vec.new();
+    for (index, variant) in def.variants.iter().enumerate() {
+        let binding = builder.destructure(variant);
+        arms.push(builder.arm(
+            binding.pattern,
+            variant_body(builder, cfg, index, binding.values, hasher),
+        ));
+    }
+    builder.finish(builder.match_expr(value, arms))
+}
+
+}

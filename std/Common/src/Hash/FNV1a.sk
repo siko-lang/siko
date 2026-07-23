@@ -1,6 +1,30 @@
 module Std.Hash.FNV1a {
 
+import Std.Hash.Hasher
+import Std.Slice
 import Std.Vec
+
+pub struct Hasher64 {
+    state: U64,
+
+    pub fn new() -> Hasher64 {
+        Hasher64(0xcbf29ce484222325)
+    }
+}
+
+instance Hasher[Hasher64] {
+    fn write(hasher: Hasher64, input: Slice[U8]) {
+        for index in 0..input.len() {
+            hasher.state =
+                (hasher.state ^ input[index].as_int().as_u64())
+                * 0x00000100000001b3;
+        }
+    }
+
+    fn finish(hasher: Hasher64) -> U64 {
+        hasher.state
+    }
+}
 
 pub fn compute32(input: Vec[U8]) -> U32 {
     let hash: U32 = 0x811c9dc5;
@@ -11,11 +35,9 @@ pub fn compute32(input: Vec[U8]) -> U32 {
 }
 
 pub fn compute64(input: Vec[U8]) -> U64 {
-    let hash: U64 = 0xcbf29ce484222325;
-    for byte in input {
-        hash = (hash ^ byte.as_int().as_u64()) * 0x00000100000001b3;
-    }
-    hash
+    let hasher = Hasher64.new();
+    hasher.write(input.slice());
+    hasher.finish()
 }
 
 }

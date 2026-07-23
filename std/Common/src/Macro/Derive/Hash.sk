@@ -1,0 +1,50 @@
+@prelude
+module Std.Macro.Derive.Hash {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.InstanceBuilder
+import Std.Macro.Derive.HashSupport
+import Std.Macro.Derive.HashMethods
+
+fn attached_struct(def: StructDef, cfg: Config) -> InstanceDef {
+    let builder = InstanceBuilder.new(cfg.trait_def, def.type_def);
+    for type_parameter in def.type_params {
+        builder.add_bound(type_parameter, cfg.trait_def);
+    }
+    builder.add_method(struct_method(def, cfg));
+    builder.finish()
+}
+
+fn attached_enum(def: EnumDef, cfg: Config) -> InstanceDef {
+    let builder = InstanceBuilder.new(cfg.trait_def, def.type_def);
+    for type_parameter in def.type_params {
+        builder.add_bound(type_parameter, cfg.trait_def);
+    }
+    builder.add_method(enum_method(def, cfg));
+    builder.finish()
+}
+
+pub macro Hash {
+    fn derive_struct(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        Ok(attached_struct(ctx.struct_target()?, config(ctx)?))
+    }
+
+    fn derive_enum(ctx: MacroContext) -> Result[InstanceDef, MacroError] {
+        ctx.require_no_args()?;
+        Ok(attached_enum(ctx.enum_target()?, config(ctx)?))
+    }
+
+    fn external_derive_struct(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(struct_method(ctx.struct_target()?, config(ctx)?).instance_body())
+    }
+
+    fn external_derive_enum(ctx: MacroContext) -> Result[InstanceBody, MacroError] {
+        ctx.require_no_args()?;
+        Ok(enum_method(ctx.enum_target()?, config(ctx)?).instance_body())
+    }
+}
+
+}

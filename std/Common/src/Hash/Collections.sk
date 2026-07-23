@@ -1,0 +1,30 @@
+module Std.Hash.Collections {
+
+import Std.Hash
+import Std.Hash.Hasher
+import Std.Map
+import Std.Set
+
+// Map iteration is ordered by key, so the internal AVL tree shape does not
+// affect the hash.
+instance[K, V: Ord[K], Hash[K], Hash[V]] Hash[Map[K, V]] {
+    fn hash[H: Hasher[H]](value: Map[K, V], hasher: H) {
+        value.len().hash(hasher);
+        for (key, item) in value {
+            key.hash(hasher);
+            item.hash(hasher);
+        }
+    }
+}
+
+// Set iteration is ordered, making insertion order irrelevant.
+instance[T: Ord[T], Hash[T]] Hash[Set[T]] {
+    fn hash[H: Hasher[H]](value: Set[T], hasher: H) {
+        value.len().hash(hasher);
+        for item in value {
+            item.hash(hasher);
+        }
+    }
+}
+
+}

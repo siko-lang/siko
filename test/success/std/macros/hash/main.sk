@@ -1,0 +1,72 @@
+module Main {
+
+import Std.Hash
+import Std.Map
+import Std.Set
+import Std.Macro.Derive.Hash
+
+@derive(Hash)
+struct Envelope[T] {
+    sequence: U16,
+    payload: T,
+    labels: Vec[Option[String]],
+}
+
+@derive(Hash)
+enum Message {
+    Ping,
+    Data(Envelope[String]),
+    State(id: I32, active: Bool),
+}
+
+@derive(Hash)
+struct TextPair {
+    left: String,
+    right: String,
+}
+
+fn main() {
+    let first = Message.Data(Envelope(
+        42,
+        "payload",
+        [Some("alpha"), None, Some("beta")],
+    ));
+    let same = Message.Data(Envelope(
+        42,
+        "payload",
+        [Some("alpha"), None, Some("beta")],
+    ));
+    let changed = Message.Data(Envelope(
+        43,
+        "payload",
+        [Some("alpha"), None, Some("beta")],
+    ));
+    assert(hash_value(first) == hash_value(same));
+    assert(hash_value(first) != hash_value(changed));
+    assert(hash_value(Message.Ping) != hash_value(Message.State(0, False)));
+
+    // Length prefixes preserve structural boundaries.
+    assert(
+        hash_value(TextPair("ab", "c"))
+        != hash_value(TextPair("a", "bc")),
+    );
+
+    let map_a: Map[String, Int] = Map.new();
+    map_a.insert("second", 2);
+    map_a.insert("first", 1);
+    let map_b: Map[String, Int] = Map.new();
+    map_b.insert("first", 1);
+    map_b.insert("second", 2);
+    assert(hash_value(map_a) == hash_value(map_b));
+
+    let set_a: Set[Int] = [3, 1, 2].into_iter().collect();
+    let set_b: Set[Int] = [1, 2, 3].into_iter().collect();
+    assert(hash_value(set_a) == hash_value(set_b));
+
+    let positive_zero: F64 = 0.0;
+    let negative_zero: F64 = -0.0;
+    assert(hash_value(positive_zero) == hash_value(negative_zero));
+    println("ok");
+}
+
+}

@@ -1,0 +1,178 @@
+module Std.Hash {
+
+import Std.Array
+import Std.Hash.FNV1a
+import Std.Hash.Hasher
+import Std.Intrinsics
+import Std.Slice
+import Std.Vec
+
+// Hash feeds the semantic contents of a value into a caller-selected Hasher.
+// Equal values must feed the same bytes. Derived instances recurse
+// structurally; cyclic values must provide a cycle-aware instance manually.
+pub trait Hash[T] {
+    fn hash[H: Hasher[H]](value: T, hasher: H)
+}
+
+pub fn hash_value[T: Hash[T]](value: T) -> U64 {
+    let hasher = FNV1a.Hasher64.new();
+    value.hash(hasher);
+    hasher.finish()
+}
+
+@safe
+fn write_unsigned[H: Hasher[H]](
+    hasher: H,
+    value: U64,
+    width: Int,
+) {
+    let buffer: [U8; 8] = uninitialized();
+    let bytes = Slice.from_raw(Std.Array.as_ptr(&buffer), width);
+    for index in 0..width {
+        let shift = (index * 8).as_u64();
+        bytes[index] = (value >> shift).as_int().as_u8();
+    }
+    hasher.write(bytes);
+}
+
+instance Hash[()] {
+    fn hash[H: Hasher[H]](value: (), hasher: H) {}
+}
+
+instance Hash[Bool] {
+    fn hash[H: Hasher[H]](value: Bool, hasher: H) {
+        write_unsigned(hasher, if value { 1 } else { 0 }, 1);
+    }
+}
+
+instance Hash[U8] {
+    fn hash[H: Hasher[H]](value: U8, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 1);
+    }
+}
+
+instance Hash[I8] {
+    fn hash[H: Hasher[H]](value: I8, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 1);
+    }
+}
+
+instance Hash[U16] {
+    fn hash[H: Hasher[H]](value: U16, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 2);
+    }
+}
+
+instance Hash[I16] {
+    fn hash[H: Hasher[H]](value: I16, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 2);
+    }
+}
+
+instance Hash[U32] {
+    fn hash[H: Hasher[H]](value: U32, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 4);
+    }
+}
+
+instance Hash[I32] {
+    fn hash[H: Hasher[H]](value: I32, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 4);
+    }
+}
+
+instance Hash[U64] {
+    fn hash[H: Hasher[H]](value: U64, hasher: H) {
+        write_unsigned(hasher, value, 8);
+    }
+}
+
+instance Hash[I64] {
+    fn hash[H: Hasher[H]](value: I64, hasher: H) {
+        write_unsigned(hasher, value.as_int().as_u64(), 8);
+    }
+}
+
+instance Hash[Int] {
+    fn hash[H: Hasher[H]](value: Int, hasher: H) {
+        write_unsigned(hasher, value.as_u64(), 8);
+    }
+}
+
+instance Hash[F32] {
+    @safe
+    fn hash[H: Hasher[H]](value: F32, hasher: H) {
+        // IEEE signed zeroes compare equal, so give them one representation.
+        let bits: I32 = if value == 0.0 { 0 } else { transmute(value) };
+        bits.hash(hasher);
+    }
+}
+
+instance Hash[F64] {
+    @safe
+    fn hash[H: Hasher[H]](value: F64, hasher: H) {
+        // IEEE signed zeroes compare equal, so give them one representation.
+        let bits: I64 = if value == 0.0 { 0 } else { transmute(value) };
+        bits.hash(hasher);
+    }
+}
+
+instance Hash[String] {
+    fn hash[H: Hasher[H]](value: String, hasher: H) {
+        value.len().hash(hasher);
+        hasher.write(value.as_slice());
+    }
+}
+
+instance[T: Hash[T]] Hash[Slice[T]] {
+    fn hash[H: Hasher[H]](value: Slice[T], hasher: H) {
+        value.len().hash(hasher);
+        for index in 0..value.len() {
+            value[index].hash(hasher);
+        }
+    }
+}
+
+instance[T: Hash[T]] Hash[Vec[T]] {
+    fn hash[H: Hasher[H]](value: Vec[T], hasher: H) {
+        value.len().hash(hasher);
+        for item in value {
+            item.hash(hasher);
+        }
+    }
+}
+
+instance[T: Hash[T]] Hash[Option[T]] {
+    fn hash[H: Hasher[H]](value: Option[T], hasher: H) {
+        match value {
+            None => {
+                let tag: U8 = 0;
+                tag.hash(hasher);
+            }
+            Some(item) => {
+                let tag: U8 = 1;
+                tag.hash(hasher);
+                item.hash(hasher);
+            }
+        }
+    }
+}
+
+instance[T, E: Hash[T], Hash[E]] Hash[Result[T, E]] {
+    fn hash[H: Hasher[H]](value: Result[T, E], hasher: H) {
+        match value {
+            Ok(item) => {
+                let tag: U8 = 0;
+                tag.hash(hasher);
+                item.hash(hasher);
+            }
+            Err(error) => {
+                let tag: U8 = 1;
+                tag.hash(hasher);
+                error.hash(hasher);
+            }
+        }
+    }
+}
+
+}

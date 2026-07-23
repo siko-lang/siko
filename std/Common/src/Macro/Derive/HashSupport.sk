@@ -1,0 +1,51 @@
+module Std.Macro.Derive.HashSupport {
+
+import Std.Macro
+import Std.Macro.Reflection
+import Std.Macro.FunctionBuilder
+
+pub struct Config {
+    pub trait_def: TraitDef,
+    pub method: TraitMethodDef,
+    pub u64_type: TypeDef,
+}
+
+fn hash_method(trait_def: TraitDef) -> Result[TraitMethodDef, MacroError] {
+    for method in trait_def.methods {
+        if method.name == "hash" {
+            return Ok(method);
+        }
+    }
+    Err(MacroError.NotSupported("Hash has no method `hash`"))
+}
+
+pub fn config(ctx: MacroContext) -> Result[Config, MacroError] {
+    let trait_def = ctx.resolve_trait("Std.Hash.Hash")?;
+    let method = hash_method(trait_def)?;
+    if method.argument_types.len() != 2 {
+        return Err(MacroError.NotSupported(
+            "Hash.hash must have exactly two arguments",
+        ));
+    }
+    Ok(Config(
+        trait_def,
+        method,
+        ctx.resolve_type("Std.Int.U64.U64")?,
+    ))
+}
+
+pub fn hash_values(
+    builder: FunctionBuilder,
+    cfg: Config,
+    values: Vec[Expr],
+    hasher: Expr,
+) -> Expr {
+    let expressions: Vec[Expr] = values
+        .iter()
+        .map(|value| builder.call(cfg.method.function, [value, hasher]))
+        .collect();
+    expressions.push(builder.tuple(Vec.new()));
+    builder.sequence(expressions)
+}
+
+}
