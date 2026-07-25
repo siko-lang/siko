@@ -81,12 +81,10 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
         .fn_implicit_ctx
         .get(callee)
         .unwrap_or(Vec.new());
-    let (stmts, ctx_var, ctx_ty) =
-        rewriter.ensure_ctx_var(callee_implicits, loc);
-    let ctx_var_expr = typed_var_expr(ctx_var, ctx_ty, loc);
-    let new_args = [ctx_var_expr];
+    let ctx_expr = rewriter.build_ctx_arg(callee_implicits, loc);
+    let new_args = [ctx_expr];
     new_args.extend(args.rewrite(rewriter));
-    let new_call = Expr(
+    Expr(
         ExprKind.FunctionCall(
             FunctionCallInfo(
                 callee,
@@ -98,10 +96,8 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
             )
         ),
         loc,
-        e_ty.clone(),
-    );
-    stmts.push(S.Statement.TrailingExpr(new_call));
-    Expr(ExprKind.Block(BlockInfo(stmts)), loc, e_ty)
+        e_ty,
+    )
 }
 
 fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
@@ -181,6 +177,9 @@ fn rewrite_closure(info: CreateClosureInfo, rewriter: Rewriter, loc: Location, e
         loc,
         e_ty,
     );
+    if stmts.is_empty() {
+        return new_closure;
+    }
     stmts.push(S.Statement.TrailingExpr(new_closure));
     Expr(ExprKind.Block(BlockInfo(stmts)), loc, None)
 }

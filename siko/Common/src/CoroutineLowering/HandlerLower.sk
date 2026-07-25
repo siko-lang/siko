@@ -20,8 +20,9 @@ import Siko.CoroutineLowering.Utils
 //       yield v   -> { frame.state = AfterYield_i ; return Yielded(v) ; resume_i: }
 //       return v  -> { frame.state = Completed   ; return Returned(v) }
 // They never interleave: a yield value is frame-substituted simply by recursing
-// into it. The normalizer later flattens the produced blocks and (with sticky
-// fell-through) keeps the code reachable through the dispatch gotos.
+// into it. The normalizer normalizes the produced blocks in place and (with
+// sticky fell-through) keeps code reachable through the dispatch gotos;
+// LowerBasicBlock flattens them later.
 
 pub struct HandlerLowerer {
     pub frame_var: VariableName,

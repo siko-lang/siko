@@ -62,6 +62,93 @@ struct Normalizer {
         Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type())
     }
 
+    // Normalize the contents of an existing body/branch container without
+    // wrapping that container in another Block. This keeps repeated
+    // normalization stable.
+    fn lower_block_contents(norm: Normalizer, body: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+        let loc = body.location;
+        let ty = body.ty;
+        match body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => norm.lower_stmts(stmts, out, loc),
+            kind => norm.to_atom(Expr(kind, loc, ty), out),
+        }
+    }
+
+    // Preserve a block used in value position by moving only its result across
+    // the boundary. All evaluation and all lifted temporaries remain inside
+    // the original block.
+    fn lower_value_block(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        ty: Option[TypeDef],
+    ) -> Option[Expr] {
+        let has_explicit_value = match stmts.last() {
+            Some(S.Statement.TrailingExpr(_)) => True,
+            _ => False,
+        };
+        let block_out = Vec.new();
+        let value = norm.lower_stmts(stmts, block_out, loc);
+        match value {
+            None => {
+                out.push(S.Statement.Expr(Expr(
+                    ExprKind.Block(BlockInfo(block_out)),
+                    loc,
+                    norm.unit_type(),
+                )));
+                None
+            }
+            Some(value) => {
+                if !has_explicit_value {
+                    out.push(S.Statement.Expr(Expr(
+                        ExprKind.Block(BlockInfo(block_out)),
+                        loc,
+                        norm.unit_type(),
+                    )));
+                    return Some(norm.unit_expr(loc));
+                }
+
+                let result = norm.alloc_temp();
+                let result_ty = match value.ty {
+                    Some(_) => value.ty,
+                    None => ty,
+                };
+                out.push(S.Statement.Declare(S.DeclareInfo(result, result_ty)));
+                block_out.push(S.Statement.Assign(
+                    Expr(ExprKind.Var(result), loc, result_ty),
+                    value,
+                ));
+                out.push(S.Statement.Expr(Expr(
+                    ExprKind.Block(BlockInfo(block_out)),
+                    loc,
+                    norm.unit_type(),
+                )));
+                Some(Expr(ExprKind.Var(result), loc, result_ty))
+            }
+        }
+    }
+
+    // A statement-position block already has its final container. Normalize
+    // its contents in place so a later normalization run preserves exactly one
+    // copy of the same boundary.
+    fn lower_statement_block(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        initially_reachable: Bool,
+    ) -> Bool {
+        let block_out = Vec.new();
+        let value = norm.lower_stmts(stmts, block_out, loc, initially_reachable);
+        out.push(S.Statement.Expr(Expr(
+            ExprKind.Block(BlockInfo(block_out)),
+            loc,
+            norm.unit_type(),
+        )));
+        value.is_some()
+    }
+
     fn lower_expr(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
         let loc = expr.location;
         let ty = expr.ty;
@@ -287,7 +374,7 @@ struct Normalizer {
                 Some(Expr(ExprKind.Tuple(atom_args), loc, ty))
             }
 
-            ExprKind.Block(BlockInfo(inner_stmts)) => norm.lower_stmts(inner_stmts, out, loc),
+            ExprKind.Block(BlockInfo(inner_stmts)) => norm.lower_value_block(inner_stmts, out, loc, ty),
 
             ExprKind.If(cond, then_body, else_opt) => {
                 norm.lower_if(cond, then_body, else_opt, loc, ty, out)
@@ -299,7 +386,7 @@ struct Normalizer {
 
             ExprKind.ResolvedLambda(args, body, capture_count) => {
                 let body_out = Vec.new();
-                let body_val = norm.lower_expr(body, body_out);
+                let body_val = norm.lower_block_contents(body, body_out);
                 let body_block = norm.finish_block(body_out, body_val, loc);
                 let body_with_return = norm.add_explicit_return(body_block, norm.div_fns);
                 Some(Expr(ExprKind.ResolvedLambda(args, body_with_return, capture_count), loc, ty))
@@ -470,7 +557,13 @@ struct Normalizer {
         Some(result)
     }
 
-    fn lower_stmts(norm: Normalizer, stmts: Vec[S.Statement], out: Vec[S.Statement], loc: Location) -> Option[Expr] {
+    fn lower_stmts(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        initially_reachable: Bool = True,
+    ) -> Option[Expr] {
         let trailing_count = 0;
         let j = 0;
         while j < stmts.len() {
@@ -497,8 +590,12 @@ struct Normalizer {
         // `return`s but are reached through the dispatch's gotos) while still
         // dropping genuinely-dead code (e.g. a `let x = diverges(); use(x)` whose
         // binding could not even be formed).
-        let reachable = True;
+        let reachable = initially_reachable;
         for stmt in stmts {
+            let contains_label = stmt_contains_label(stmt);
+            if !reachable && !contains_label {
+                continue;
+            }
             match stmt {
                 S.Statement.Expr(e) => {
                     match e.kind {
@@ -506,14 +603,20 @@ struct Normalizer {
                             reachable = True;
                             out.push(S.Statement.Expr(e));
                         }
+                        ExprKind.Block(BlockInfo(body)) => {
+                            reachable = norm.lower_statement_block(
+                                body,
+                                out,
+                                e.location,
+                                reachable,
+                            );
+                        }
                         _ => {
-                            if reachable {
-                                match norm.lower_expr(e, out) {
-                                    None => { reachable = False; }
-                                    Some(expr) => {
-                                        if !is_atom(expr) {
-                                            out.push(S.Statement.Expr(expr));
-                                        }
+                            match norm.lower_expr(e, out) {
+                                None => { reachable = False; }
+                                Some(expr) => {
+                                    if !is_atom(expr) {
+                                        out.push(S.Statement.Expr(expr));
                                     }
                                 }
                             }
@@ -521,38 +624,35 @@ struct Normalizer {
                     }
                 }
                 S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
-                    if reachable {
-                        match norm.lower_expr(rhs, out) {
-                            None => { reachable = False; }
-                            Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
-                        }
+                    match norm.lower_expr(rhs, out) {
+                        None => { reachable = False; }
+                        Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
                     }
                 }
-                S.Statement.Declare(_) => { if reachable { out.push(stmt); } }
+                S.Statement.Declare(_) => out.push(stmt),
                 S.Statement.Assign(lhs, rhs) => {
-                    if reachable {
-                        match norm.to_atom(rhs, out) {
-                            None => { reachable = False; }
-                            Some(rhs_atom) => {
-                                match norm.lower_expr(lhs, out) {
-                                    None => { reachable = False; }
-                                    Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
-                                }
+                    match norm.to_atom(rhs, out) {
+                        None => { reachable = False; }
+                        Some(rhs_atom) => {
+                            match norm.lower_expr(lhs, out) {
+                                None => { reachable = False; }
+                                Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
                             }
                         }
                     }
                 }
                 S.Statement.TrailingExpr(e) => {
-                    if reachable {
-                        return norm.to_atom(e, out);
-                    }
-                    return None;
+                    return norm.to_atom(e, out);
                 }
                 S.Statement.Loop(BlockInfo(body)) => {
-                    if reachable {
-                        let loop_out = Vec.new();
-                        norm.lower_stmts(body, loop_out, loc);
-                        out.push(S.Statement.Loop(BlockInfo(loop_out)));
+                    let was_reachable = reachable;
+                    let loop_out = Vec.new();
+                    norm.lower_stmts(body, loop_out, loc, reachable);
+                    out.push(S.Statement.Loop(BlockInfo(loop_out)));
+                    if !was_reachable {
+                        // A goto may enter at a label inside the loop. Code
+                        // following the loop is reachable only through a break.
+                        reachable = loop_body_has_break(loop_out);
                     }
                 }
                 S.Statement.UnresolvedLet(_, _, _) => panic("normalizer: UnresolvedLet"),
@@ -591,7 +691,7 @@ struct Normalizer {
         };
 
         let then_out = Vec.new();
-        let then_val = norm.to_atom(then_body, then_out);
+        let then_val = norm.lower_block_contents(then_body, then_out);
 
         if let Some(else_body) = else_opt {
             let else_implicit_unit = match else_body.kind {
@@ -604,7 +704,7 @@ struct Normalizer {
             let both_implicit_unit = then_implicit_unit && else_implicit_unit;
 
             let else_out = Vec.new();
-            let else_val = norm.to_atom(else_body, else_out);
+            let else_val = norm.lower_block_contents(else_body, else_out);
 
             let both_diverge = then_val.is_none() && else_val.is_none();
             let assign_to = if !both_diverge && !both_implicit_unit {
@@ -668,7 +768,7 @@ struct Normalizer {
         for arm in arms {
             let pattern = norm.lower_pattern(arm.pattern);
             let arm_out = Vec.new();
-            let arm_val = norm.to_atom(arm.body, arm_out);
+            let arm_val = norm.lower_block_contents(arm.body, arm_out);
             lowered_arms.push((pattern, arm_out, arm_val));
         }
 
@@ -717,7 +817,7 @@ struct Normalizer {
         out: Vec[S.Statement],
     ) -> Option[Expr] {
         let body_out = Vec.new();
-        let body_val = norm.to_atom(body, body_out);
+        let body_val = norm.lower_block_contents(body, body_out);
 
         let diverges = body_val.is_none();
         let assign_to = if !diverges {
@@ -763,7 +863,7 @@ struct Normalizer {
                     None => {
                         let tmp = norm.alloc_temp();
                         guard_out.push(S.Statement.Declare(S.DeclareInfo(tmp, None)));
-                        let guard_val = norm.to_atom(guard_expr, guard_out);
+                        let guard_val = norm.lower_block_contents(guard_expr, guard_out);
                         if let Some(val) = guard_val {
                             guard_out.push(S.Statement.Assign(
                                 Expr(ExprKind.Var(tmp), loc, None),
@@ -832,6 +932,54 @@ struct Normalizer {
         }
     }
 
+}
+
+fn stmts_contain_label(stmts: Vec[S.Statement]) -> Bool {
+    for stmt in stmts {
+        if stmt_contains_label(stmt) {
+            return True;
+        }
+    }
+    False
+}
+
+fn stmt_contains_label(stmt: S.Statement) -> Bool {
+    match stmt {
+        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => expr_contains_label(e),
+        S.Statement.Let(S.LetInfo(_, _, rhs)) => expr_contains_label(rhs),
+        S.Statement.Assign(lhs, rhs) => expr_contains_label(lhs) || expr_contains_label(rhs),
+        S.Statement.Loop(BlockInfo(stmts)) => stmts_contain_label(stmts),
+        _ => False,
+    }
+}
+
+fn expr_contains_label(expr: Expr) -> Bool {
+    match expr.kind {
+        ExprKind.Label(_) => True,
+        ExprKind.Block(BlockInfo(stmts)) => stmts_contain_label(stmts),
+        ExprKind.If(cond, then_branch, else_branch) => {
+            expr_contains_label(cond) ||
+            expr_contains_label(then_branch) ||
+            match else_branch {
+                Some(e) => expr_contains_label(e),
+                None => False,
+            }
+        }
+        ExprKind.Match(MatchInfo(scrutinee, arms)) => {
+            if expr_contains_label(scrutinee) {
+                return True;
+            }
+            for arm in arms {
+                if expr_contains_label(arm.body) {
+                    return True;
+                }
+            }
+            False
+        }
+        ExprKind.With(WithInfo(_, body)) => expr_contains_label(body),
+        ExprKind.Paren(inner) => expr_contains_label(inner),
+        _ => False,
+    }
 }
 
 fn is_divergent_with_fns(expr: Expr, div_fns: Set[QualifiedName]) -> Bool {
@@ -905,7 +1053,7 @@ pub fn normalize_function(func: FunctionDef, div_fns: Set[QualifiedName], unit_t
         let norm = Normalizer.new(func.var_allocator, div_fns, unit_type);
         let loc = body.location;
         let out = Vec.new();
-        let val = norm.to_atom(body, out);
+        let val = norm.lower_block_contents(body, out);
         let new_body = norm.finish_block(out, val, loc);
         func.body = Some(norm.add_explicit_return(new_body, div_fns));
     }
