@@ -1,0 +1,84 @@
+module Siko.Normalizer.Util {
+
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+
+pub fn is_atom(expr: Expr) -> Bool {
+    match expr.kind {
+        ExprKind.Var(_) | ExprKind.IntLiteral(_, _) | ExprKind.FloatLiteral(_) | ExprKind.StringLiteral(_) |
+        ExprKind.CharLiteral(_) | ExprKind.Name(_) | ExprKind.ImplicitRef(_) |
+        ExprKind.FunctionPtr(_) => True,
+        ExprKind.Tuple(args) => args.is_empty(),
+        _ => False,
+    }
+}
+
+pub fn is_divergent_with_fns(expr: Expr, div_fns: Set[QualifiedName]) -> Bool {
+    match expr.kind {
+        ExprKind.Return(_) | ExprKind.Break | ExprKind.Continue => True,
+        ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
+            Some(S.Statement.TrailingExpr(e)) => is_divergent_with_fns(e, div_fns),
+            Some(S.Statement.Expr(e)) => is_divergent_with_fns(e, div_fns),
+            _ => False,
+        }
+        ExprKind.If(_, then_branch, else_branch) => {
+            is_divergent_with_fns(then_branch, div_fns) && match else_branch {
+                Some(e) => is_divergent_with_fns(e, div_fns),
+                None => False,
+            }
+        }
+        ExprKind.IfLet(_, _, then_branch, else_branch) => {
+            is_divergent_with_fns(then_branch, div_fns) && match else_branch {
+                Some(e) => is_divergent_with_fns(e, div_fns),
+                None => False,
+            }
+        }
+        ExprKind.FunctionCall(FunctionCallInfo(name, _, _, _, _, _)) => div_fns.contains(name),
+        _ => False,
+    }
+}
+
+pub fn loop_body_has_break(stmts: Vec[S.Statement]) -> Bool {
+    for stmt in stmts {
+        if stmt_has_break(stmt) {
+            return True;
+        }
+    }
+    False
+}
+
+fn stmt_has_break(stmt: S.Statement) -> Bool {
+    match stmt {
+        S.Statement.Loop(_) => False,
+        S.Statement.Expr(e) | S.Statement.TrailingExpr(e) => expr_has_break(e),
+        S.Statement.Let(S.LetInfo(_, _, rhs)) => expr_has_break(rhs),
+        S.Statement.Assign(lhs, rhs) => expr_has_break(lhs) || expr_has_break(rhs),
+        _ => False,
+    }
+}
+
+fn expr_has_break(expr: Expr) -> Bool {
+    match expr.kind {
+        ExprKind.Break => True,
+        ExprKind.Block(BlockInfo(stmts)) => loop_body_has_break(stmts),
+        ExprKind.If(_, then_branch, else_branch) => {
+            expr_has_break(then_branch) || match else_branch {
+                Some(e) => expr_has_break(e),
+                None => False,
+            }
+        }
+        ExprKind.Match(MatchInfo(_, arms)) => {
+            for arm in arms {
+                if expr_has_break(arm.body) {
+                    return True;
+                }
+            }
+            False
+        }
+        _ => False,
+    }
+}
+
+}

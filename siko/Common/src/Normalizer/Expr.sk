@@ -1,0 +1,353 @@
+module Siko.Normalizer.Expr {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.Normalizer
+
+pub fn lower_expr(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+    let loc = expr.location;
+    let ty = expr.ty;
+
+    match expr.kind {
+        ExprKind.IntLiteral(_, _) | ExprKind.FloatLiteral(_) | ExprKind.StringLiteral(_) | ExprKind.CharLiteral(_) |
+        ExprKind.Name(_) | ExprKind.Var(_) | ExprKind.ImplicitRef(_) |
+        ExprKind.CreateClosure(_) | ExprKind.SizeOf(_) => Some(expr),
+
+        ExprKind.Alloc(_) => panic("normalizer: Alloc exists before lower-data"),
+
+        ExprKind.AtomicLoad(pointer, order) => {
+            let pointer = match norm.to_atom(pointer, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.AtomicLoad(pointer, order), loc, ty))
+        }
+        ExprKind.AtomicStore(pointer, value, order) => {
+            let pointer = match norm.to_atom(pointer, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.AtomicStore(pointer, value, order), loc, ty))
+        }
+        ExprKind.AtomicRmw(op, pointer, value, order) => {
+            let pointer = match norm.to_atom(pointer, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.AtomicRmw(op, pointer, value, order), loc, ty))
+        }
+        ExprKind.AtomicCompareExchange(pointer, current, new, success, failure, weak) => {
+            let pointer = match norm.to_atom(pointer, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let current = match norm.to_atom(current, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let new = match norm.to_atom(new, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.AtomicCompareExchange(
+                pointer, current, new, success, failure, weak,
+            ), loc, ty))
+        }
+        ExprKind.AtomicFence(order) => Some(Expr(ExprKind.AtomicFence(order), loc, ty)),
+
+        ExprKind.Discriminator(inner) => {
+            let lowered = match norm.lower_expr(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Discriminator(lowered), loc, ty))
+        }
+        ExprKind.Deref(inner) => {
+            let lowered = match norm.lower_expr(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Deref(lowered), loc, ty))
+        }
+        ExprKind.AddrOf(inner) => {
+            match inner.kind {
+                ExprKind.FieldAccess(recv, field, field_index) => {
+                    let recv_atom = match norm.to_atom(recv, out) {
+                        None => return None,
+                        Some(v) => v,
+                    };
+                    let field_expr = Expr(ExprKind.FieldAccess(recv_atom, field, field_index), inner.location, inner.ty);
+                    Some(Expr(ExprKind.AddrOf(field_expr), loc, ty))
+                }
+                _ => {
+                    let lowered = match norm.lower_expr(inner, out) {
+                        None => return None,
+                        Some(v) => v,
+                    };
+                    Some(Expr(ExprKind.AddrOf(lowered), loc, ty))
+                }
+            }
+        }
+        ExprKind.Paren(inner) => norm.lower_expr(inner, out),
+
+        ExprKind.Transmute(inner) => {
+            let lowered = match norm.lower_expr(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Transmute(lowered), loc, ty))
+        }
+
+        ExprKind.Return(inner) => {
+            let atom = match norm.to_atom(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            out.push(S.Statement.Expr(Expr(ExprKind.Return(atom), loc, norm.unit_type())));
+            None
+        }
+
+        ExprKind.Break => {
+            out.push(S.Statement.Expr(Expr(ExprKind.Break, loc, norm.unit_type())));
+            None
+        }
+
+        ExprKind.Continue => {
+            out.push(S.Statement.Expr(Expr(ExprKind.Continue, loc, norm.unit_type())));
+            None
+        }
+
+        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args, is_co)) => {
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let call = Expr(ExprKind.FunctionCall(FunctionCallInfo(name, kind, atom_args, wi, named_args, is_co)), loc, ty);
+            if norm.div_fns.contains(name) {
+                out.push(S.Statement.Expr(call));
+                None
+            } else {
+                Some(call)
+            }
+        }
+
+        ExprKind.TraitObjectPack(trait_name, value, witnesses) => {
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.TraitObjectPack(trait_name, value, witnesses), loc, ty))
+        }
+
+        ExprKind.TraitObjectCall(_, _) =>
+            panic("normalizer: TraitObjectCall must be lowered before normalization"),
+
+        ExprKind.TraitObjectCarrierPack(trait_name, value) => {
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.TraitObjectCarrierPack(trait_name, value), loc, ty))
+        }
+
+        ExprKind.TraitObjectDowncast(trait_name, value, target_ty) => {
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.TraitObjectDowncast(trait_name, value, target_ty), loc, ty))
+        }
+
+        ExprKind.DynamicCall(callee, args) => {
+            let callee_atom = match norm.to_atom(callee, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.DynamicCall(callee_atom, atom_args), loc, ty))
+        }
+
+        ExprKind.Call(CallInfo(callee, args, named_args, is_co)) => {
+            let callee_atom = match norm.to_atom(callee, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Call(CallInfo(callee_atom, atom_args, named_args, is_co)), loc, ty))
+        }
+
+        ExprKind.MethodCall(MethodCallInfo(recv, name, args, named_args)) => {
+            let recv_atom = match norm.to_atom(recv, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.MethodCall(MethodCallInfo(recv_atom, name, atom_args, named_args)), loc, ty))
+        }
+
+        ExprKind.FieldAccess(recv, field, field_index) => {
+            let recv_atom = match norm.to_atom(recv, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.FieldAccess(recv_atom, field, field_index), loc, ty))
+        }
+
+        ExprKind.TupleIndex(recv, index) => {
+            let recv_atom = match norm.to_atom(recv, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.TupleIndex(recv_atom, index), loc, ty))
+        }
+
+        ExprKind.Tuple(args) => {
+            if args.is_empty() {
+                return Some(Expr(ExprKind.Tuple([]), loc, ty));
+            }
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Tuple(atom_args), loc, ty))
+        }
+
+        ExprKind.Block(BlockInfo(inner_stmts)) => norm.lower_value_block(inner_stmts, out, loc, ty),
+
+        ExprKind.If(cond, then_body, else_opt) => {
+            norm.lower_if(cond, then_body, else_opt, loc, ty, out)
+        }
+
+        ExprKind.Match(MatchInfo(scrutinee, arms)) => norm.lower_match(scrutinee, arms, loc, ty, out),
+
+        ExprKind.With(WithInfo(selections, body)) => norm.lower_with(selections, body, loc, ty, out),
+
+        ExprKind.ResolvedLambda(args, body, capture_count) => {
+            let body_out = Vec.new();
+            let body_val = norm.lower_block_contents(body, body_out);
+            let body_block = norm.finish_block(body_out, body_val, loc);
+            let body_with_return = norm.add_explicit_return(body_block, norm.div_fns);
+            Some(Expr(ExprKind.ResolvedLambda(args, body_with_return, capture_count), loc, ty))
+        }
+
+        ExprKind.UnresolvedLambda(_, _) => panic("normalizer: UnresolvedLambda must be resolved"),
+        ExprKind.List(_) => panic("normalizer: List must be desugared"),
+        ExprKind.Index(container, idx) => {
+            let container_lowered = match norm.lower_lvalue(container, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let idx_atom = match norm.to_atom(idx, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Index(container_lowered, idx_atom), loc, ty))
+        }
+        ExprKind.IfLet(_, _, _, _) => panic("normalizer: IfLet must be desugared"),
+        ExprKind.Is(_, _) => panic("normalizer: Is must be desugared"),
+        ExprKind.Range(_, _) => panic("normalizer: Range must be desugared"),
+        ExprKind.Try(_) => panic("normalizer: Try must be lowered"),
+        ExprKind.FunctionPtr(_) => Some(expr),
+
+        ExprKind.FunctionPtrCall(callee, args) => {
+            let callee_atom = match norm.to_atom(callee, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.FunctionPtrCall(callee_atom, atom_args), loc, ty))
+        }
+
+        ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, args, wi, named_args)) => {
+            let atom_args = match norm.lower_args(args, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.TypeAssociatedCall(TypeAssociatedCallInfo(type_def, fn_name, atom_args, wi, named_args)), loc, ty))
+        }
+
+        ExprKind.Yield(YieldInfo(inner)) => {
+            let lowered = match norm.lower_expr(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Yield(YieldInfo(lowered)), loc, ty))
+        }
+
+        // goto is an unconditional jump: divergent, like break/continue, so it
+        // never lands in value position (e.g. as a match-arm result temp).
+        ExprKind.Goto(label) => {
+            out.push(S.Statement.Expr(Expr(ExprKind.Goto(label), loc, norm.unit_type())));
+            None
+        }
+        // a label is just a marker; control flows past it, value is unit.
+        ExprKind.Label(_) => Some(expr),
+
+        ExprKind.EnumTag(inner) => {
+            let inner = match norm.to_atom(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.EnumTag(inner), loc, ty))
+        }
+        ExprKind.Switch(tag, arms) => {
+            let tag = match norm.to_atom(tag, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.Switch(tag, arms), loc, ty))
+        }
+        ExprKind.ReadVariant(value, tag) => {
+            let value = match norm.to_atom(value, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let tag = match norm.to_atom(tag, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.ReadVariant(value, tag), loc, ty))
+        }
+
+        ExprKind.BinaryOp(op, lhs, rhs) => {
+            let lhs = match norm.to_atom(lhs, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            let rhs = match norm.to_atom(rhs, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.BinaryOp(op, lhs, rhs), loc, ty))
+        }
+        ExprKind.UnaryOp(op, inner) => {
+            let inner = match norm.to_atom(inner, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            Some(Expr(ExprKind.UnaryOp(op, inner), loc, ty))
+        }
+    }
+}
+
+}

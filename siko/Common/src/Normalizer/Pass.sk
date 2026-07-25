@@ -1,0 +1,508 @@
+module Siko.Normalizer {
+
+import Std.Set
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.AST.Function
+import Siko.HIR.Program
+import Siko.Location
+import Siko.Normalizer.Expr as E
+import Siko.Normalizer.Statement as StatementNormalizer
+import Siko.Normalizer.Util
+import Siko.Utils.VarAllocator
+
+pub struct Normalizer {
+    var_alloc: VarAllocator,
+    pub div_fns: Set[QualifiedName],
+    unit_ty: TypeDef,
+
+    fn new(var_alloc: VarAllocator, div_fns: Set[QualifiedName], unit_ty: TypeDef) -> Normalizer {
+        Normalizer(var_alloc, div_fns, unit_ty)
+    }
+
+    fn alloc_temp(norm: Normalizer) -> VariableName {
+        norm.var_alloc.allocate_temp()
+    }
+
+    pub fn unit_type(norm: Normalizer) -> Option[TypeDef] {
+        Some(norm.unit_ty)
+    }
+
+    pub fn unit_expr(norm: Normalizer, loc: Location) -> Expr {
+        Expr(ExprKind.Tuple([]), loc, norm.unit_type())
+    }
+
+    pub fn finish_block(norm: Normalizer, stmts: Vec[S.Statement], val: Option[Expr], loc: Location) -> Expr {
+        if let Some(v) = val {
+            stmts.push(S.Statement.TrailingExpr(v));
+        }
+        Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type())
+    }
+
+    fn wrap_branch(norm: Normalizer, stmts: Vec[S.Statement], val: Option[Expr], assign_to: Option[VariableName], loc: Location) -> Expr {
+        if let Some(atom) = val {
+            if let Some(tmp) = assign_to {
+                let tmp_ty = atom.ty;
+                stmts.push(S.Statement.Assign(
+                    Expr(ExprKind.Var(tmp), loc, tmp_ty),
+                    atom,
+                ));
+            }
+        }
+        Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type())
+    }
+
+    // Normalize the contents of an existing body/branch container without
+    // wrapping that container in another Block. This keeps repeated
+    // normalization stable.
+    pub fn lower_block_contents(norm: Normalizer, body: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+        let loc = body.location;
+        let ty = body.ty;
+        match body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => norm.lower_stmts(stmts, out, loc),
+            kind => norm.to_atom(Expr(kind, loc, ty), out),
+        }
+    }
+
+    // Preserve a block used in value position by moving only its result across
+    // the boundary. All evaluation and all lifted temporaries remain inside
+    // the original block.
+    pub fn lower_value_block(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        ty: Option[TypeDef],
+    ) -> Option[Expr] {
+        let has_explicit_value = match stmts.last() {
+            Some(S.Statement.TrailingExpr(_)) => True,
+            _ => False,
+        };
+        let block_out = Vec.new();
+        let value = norm.lower_stmts(stmts, block_out, loc);
+        match value {
+            None => {
+                out.push(S.Statement.Expr(Expr(
+                    ExprKind.Block(BlockInfo(block_out)),
+                    loc,
+                    norm.unit_type(),
+                )));
+                None
+            }
+            Some(value) => {
+                if !has_explicit_value {
+                    out.push(S.Statement.Expr(Expr(
+                        ExprKind.Block(BlockInfo(block_out)),
+                        loc,
+                        norm.unit_type(),
+                    )));
+                    return Some(norm.unit_expr(loc));
+                }
+
+                let result = norm.alloc_temp();
+                let result_ty = match value.ty {
+                    Some(_) => value.ty,
+                    None => ty,
+                };
+                out.push(S.Statement.Declare(S.DeclareInfo(result, result_ty)));
+                block_out.push(S.Statement.Assign(
+                    Expr(ExprKind.Var(result), loc, result_ty),
+                    value,
+                ));
+                out.push(S.Statement.Expr(Expr(
+                    ExprKind.Block(BlockInfo(block_out)),
+                    loc,
+                    norm.unit_type(),
+                )));
+                Some(Expr(ExprKind.Var(result), loc, result_ty))
+            }
+        }
+    }
+
+    // A statement-position block already has its final container. Normalize
+    // its contents in place so a later normalization run preserves exactly one
+    // copy of the same boundary.
+    pub fn lower_statement_block(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        initially_reachable: Bool,
+    ) -> Bool {
+        let block_out = Vec.new();
+        let value = norm.lower_stmts(stmts, block_out, loc, initially_reachable);
+        out.push(S.Statement.Expr(Expr(
+            ExprKind.Block(BlockInfo(block_out)),
+            loc,
+            norm.unit_type(),
+        )));
+        value.is_some()
+    }
+
+    pub fn lower_expr(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+        E.lower_expr(norm, expr, out)
+    }
+
+    pub fn lower_lvalue(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+        match expr.kind {
+            ExprKind.FieldAccess(recv, field, field_index) => {
+                let recv_lowered = match norm.lower_lvalue(recv, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.FieldAccess(recv_lowered, field, field_index), expr.location, expr.ty))
+            }
+            ExprKind.Index(container, idx) => {
+                let container_lowered = match norm.lower_lvalue(container, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let idx_atom = match norm.to_atom(idx, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.Index(container_lowered, idx_atom), expr.location, expr.ty))
+            }
+            ExprKind.Deref(ptr) => {
+                let ptr_atom = match norm.to_atom(ptr, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.Deref(ptr_atom), expr.location, expr.ty))
+            }
+            _ => norm.to_atom(expr, out),
+        }
+    }
+
+    pub fn to_atom(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option[Expr] {
+        let loc = expr.location;
+        let ty = expr.ty;
+        let lowered = match norm.lower_expr(expr, out) {
+            None => return None,
+            Some(v) => v,
+        };
+        if is_atom(lowered) {
+            return Some(lowered);
+        }
+        let tmp = norm.alloc_temp();
+        let tmp_ty = match lowered.ty {
+            Some(_) => lowered.ty,
+            None => ty,
+        };
+        out.push(S.Statement.Let(S.LetInfo(tmp, tmp_ty, lowered)));
+        Some(Expr(ExprKind.Var(tmp), loc, tmp_ty))
+    }
+
+    pub fn lower_args(norm: Normalizer, args: Vec[Expr], out: Vec[S.Statement]) -> Option[Vec[Expr]] {
+        let result = Vec.new();
+        for arg in args {
+            let atom = match norm.to_atom(arg, out) {
+                None => return None,
+                Some(v) => v,
+            };
+            result.push(atom);
+        }
+        Some(result)
+    }
+
+    pub fn lower_stmts(
+        norm: Normalizer,
+        stmts: Vec[S.Statement],
+        out: Vec[S.Statement],
+        loc: Location,
+        initially_reachable: Bool = True,
+    ) -> Option[Expr] {
+        StatementNormalizer.lower_stmts(norm, stmts, out, loc, initially_reachable)
+    }
+
+    pub fn lower_if(
+        norm: Normalizer,
+        cond: Expr,
+        then_body: Expr,
+        else_opt: Option[Expr],
+        loc: Location,
+        ty: Option[TypeDef],
+        out: Vec[S.Statement],
+    ) -> Option[Expr] {
+        let cond_atom = match norm.to_atom(cond, out) {
+            None => return None,
+            Some(v) => v,
+        };
+
+        let then_implicit_unit = match then_body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
+                Some(S.Statement.TrailingExpr(_)) => False,
+                _ => True,
+            },
+            _ => False,
+        };
+
+        let then_out = Vec.new();
+        let then_val = norm.lower_block_contents(then_body, then_out);
+
+        if let Some(else_body) = else_opt {
+            let else_implicit_unit = match else_body.kind {
+                ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
+                    Some(S.Statement.TrailingExpr(_)) => False,
+                    _ => True,
+                },
+                _ => False,
+            };
+            let both_implicit_unit = then_implicit_unit && else_implicit_unit;
+
+            let else_out = Vec.new();
+            let else_val = norm.lower_block_contents(else_body, else_out);
+
+            let both_diverge = then_val.is_none() && else_val.is_none();
+            let assign_to = if !both_diverge && !both_implicit_unit {
+                let tmp = norm.alloc_temp();
+                out.push(S.Statement.Declare(S.DeclareInfo(tmp, ty)));
+                Some(tmp)
+            } else {
+                None
+            };
+
+            let then_branch = norm.wrap_branch(then_out, then_val, assign_to, loc);
+            let else_branch = norm.wrap_branch(else_out, else_val, assign_to, loc);
+
+            out.push(S.Statement.Expr(Expr(
+                ExprKind.If(cond_atom, then_branch, Some(else_branch)),
+                loc,
+                norm.unit_type(),
+            )));
+
+            if both_diverge {
+                None
+            } else if both_implicit_unit {
+                Some(norm.unit_expr(loc))
+            } else {
+                let tmp = assign_to.unwrap();
+                Some(Expr(ExprKind.Var(tmp), loc, ty))
+            }
+        } else {
+            let then_branch = norm.wrap_branch(then_out, then_val, None, loc);
+            out.push(S.Statement.Expr(Expr(
+                ExprKind.If(cond_atom, then_branch, None),
+                loc,
+                norm.unit_type(),
+            )));
+            Some(norm.unit_expr(loc))
+        }
+    }
+
+    pub fn lower_match(
+        norm: Normalizer,
+        scrutinee: Expr,
+        arms: Vec[MatchArm],
+        loc: Location,
+        ty: Option[TypeDef],
+        out: Vec[S.Statement],
+    ) -> Option[Expr] {
+        let scrutinee_atom = match norm.to_atom(scrutinee, out) {
+            None => return None,
+            Some(v) => v,
+        };
+
+        let all_arms_implicit_unit = arms.iter().all(|arm| match arm.body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => match stmts.last() {
+                Some(S.Statement.TrailingExpr(_)) => False,
+                _ => True,
+            },
+            _ => False,
+        });
+
+        let lowered_arms = Vec.new();
+        for arm in arms {
+            let pattern = norm.lower_pattern(arm.pattern);
+            let arm_out = Vec.new();
+            let arm_val = norm.lower_block_contents(arm.body, arm_out);
+            lowered_arms.push((pattern, arm_out, arm_val));
+        }
+
+        let all_diverge = True;
+        for (_, _, arm_val) in lowered_arms {
+            if arm_val.is_some() {
+                all_diverge = False;
+            }
+        }
+
+        let assign_to = if !all_diverge && !all_arms_implicit_unit {
+            let tmp = norm.alloc_temp();
+            out.push(S.Statement.Declare(S.DeclareInfo(tmp, ty)));
+            Some(tmp)
+        } else {
+            None
+        };
+
+        let final_arms = Vec.new();
+        for (pattern, arm_out, arm_val) in lowered_arms {
+            final_arms.push(MatchArm(pattern, norm.wrap_branch(arm_out, arm_val, assign_to, loc)));
+        }
+
+        out.push(S.Statement.Expr(Expr(
+            ExprKind.Match(MatchInfo(scrutinee_atom, final_arms)),
+            loc,
+            ty,
+        )));
+
+        if all_diverge {
+            None
+        } else if all_arms_implicit_unit {
+            Some(norm.unit_expr(loc))
+        } else {
+            let tmp = assign_to.unwrap();
+            Some(Expr(ExprKind.Var(tmp), loc, ty))
+        }
+    }
+
+    pub fn lower_with(
+        norm: Normalizer,
+        selections: Vec[HandlerSelection],
+        body: Expr,
+        loc: Location,
+        ty: Option[TypeDef],
+        out: Vec[S.Statement],
+    ) -> Option[Expr] {
+        let body_out = Vec.new();
+        let body_val = norm.lower_block_contents(body, body_out);
+
+        let diverges = body_val.is_none();
+        let assign_to = if !diverges {
+            let tmp = norm.alloc_temp();
+            out.push(S.Statement.Declare(S.DeclareInfo(tmp, ty)));
+            Some(tmp)
+        } else {
+            None
+        };
+
+        let body_block = norm.wrap_branch(body_out, body_val, assign_to, loc);
+        out.push(S.Statement.Expr(Expr(
+            ExprKind.With(WithInfo(selections, body_block)),
+            loc,
+            norm.unit_type(),
+        )));
+
+        if diverges {
+            None
+        } else {
+            let tmp = assign_to.unwrap();
+            Some(Expr(ExprKind.Var(tmp), loc, ty))
+        }
+    }
+
+    fn lower_pattern(norm: Normalizer, pattern: Pattern) -> Pattern {
+        match pattern.kind {
+            PatternKind.Guard(inner, guard_expr, existing_var) => {
+                let loc = guard_expr.location;
+                let guard_out = Vec.new();
+                match existing_var {
+                    Some(var_expr) => {
+                        // already normalized: just re-lower the setup block contents in case
+                        // a prior pass injected new non-atomic exprs, keep the existing var ref
+                        norm.lower_stmts(match guard_expr.kind {
+                            ExprKind.Block(BlockInfo(stmts)) => stmts,
+                            _ => panic("normalizer: guard setup is not a block on re-normalization"),
+                        }, guard_out, loc);
+                        let setup = Expr(ExprKind.Block(BlockInfo(guard_out)), loc, norm.unit_type());
+                        pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
+                        pattern
+                    }
+                    None => {
+                        let tmp = norm.alloc_temp();
+                        guard_out.push(S.Statement.Declare(S.DeclareInfo(tmp, None)));
+                        let guard_val = norm.lower_block_contents(guard_expr, guard_out);
+                        if let Some(val) = guard_val {
+                            guard_out.push(S.Statement.Assign(
+                                Expr(ExprKind.Var(tmp), loc, None),
+                                val,
+                            ));
+                        }
+                        let setup = Expr(ExprKind.Block(BlockInfo(guard_out)), loc, norm.unit_type());
+                        let var_expr = Expr(ExprKind.Var(tmp), loc, None);
+                        pattern.kind = PatternKind.Guard(inner, setup, Some(var_expr));
+                        pattern
+                    }
+                }
+            }
+            _ => pattern,
+        }
+    }
+
+    pub fn add_explicit_return(norm: Normalizer, body: Expr, divergent_fns: Set[QualifiedName]) -> Expr {
+        if is_divergent_with_fns(body, divergent_fns) {
+            return body;
+        }
+        let loc = body.location;
+        match body.kind {
+            ExprKind.Block(BlockInfo(stmts)) => {
+                let n = stmts.len();
+                if n >= 2 {
+                    match stmts[n - 1] {
+                        S.Statement.TrailingExpr(_) => {
+                            match stmts[n - 2] {
+                                S.Statement.Loop(BlockInfo(loop_body)) => {
+                                    if !loop_body_has_break(loop_body) {
+                                        stmts.pop();
+                                    }
+                                }
+                                _ => (),
+                            }
+                        }
+                        _ => (),
+                    }
+                }
+                match stmts.last() {
+                    Some(S.Statement.Loop(BlockInfo(loop_body))) => {
+                        if !loop_body_has_break(loop_body) {
+                            return Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type());
+                        }
+                    }
+                    _ => (),
+                }
+                let return_expr = match stmts.last() {
+                    Some(S.Statement.TrailingExpr(_)) => {
+                        match stmts.pop().unwrap() {
+                            S.Statement.TrailingExpr(inner) => inner,
+                            _ => panic("unreachable"),
+                        }
+                    }
+                    _ => norm.unit_expr(loc),
+                };
+                stmts.push(S.Statement.Expr(Expr(ExprKind.Return(return_expr), loc, norm.unit_type())));
+                Expr(ExprKind.Block(BlockInfo(stmts)), loc, norm.unit_type())
+            }
+            other_kind => Expr(
+                ExprKind.Return(Expr(other_kind, loc, norm.unit_type())),
+                loc,
+                None,
+            ),
+        }
+    }
+
+}
+
+pub fn normalize_function(func: FunctionDef, div_fns: Set[QualifiedName], unit_type: TypeDef = TypeDef.Tuple(Vec.new())) {
+    if let Some(body) = func.body {
+        let norm = Normalizer.new(func.var_allocator, div_fns, unit_type);
+        let loc = body.location;
+        let out = Vec.new();
+        let val = norm.lower_block_contents(body, out);
+        let new_body = norm.finish_block(out, val, loc);
+        func.body = Some(norm.add_explicit_return(new_body, div_fns));
+    }
+}
+
+pub fn normalize(program: Program, unit_type: TypeDef = TypeDef.Tuple(Vec.new())) {
+    let div_fns = program.get_divergent_functions();
+    let keys: Vec[_] = program.functions.keys().collect();
+    for key in keys {
+        let func = program.functions[key];
+        normalize_function(func, div_fns, unit_type);
+        program.functions.insert(key, func);
+    }
+}
+
+}

@@ -1,0 +1,96 @@
+module Siko.Normalizer.LabelSearch {
+
+import Siko.AST.Expr
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.Interner as I
+import Siko.Location
+
+struct LabelSearch {
+    found: Bool,
+}
+
+trait SearchLabels[T] {
+    fn search_labels(value: T, search: LabelSearch)
+}
+
+instance SearchLabels[Location]          = auto(Fold, =)
+instance SearchLabels[I.String]          = auto(Fold, =)
+instance SearchLabels[String]            = auto(Fold, =)
+instance SearchLabels[Int]               = auto(Fold, =)
+instance SearchLabels[U8]                = auto(Fold, =)
+instance SearchLabels[Bool]              = auto(Fold, =)
+instance SearchLabels[QualifiedName]     = auto(Fold, =)
+instance SearchLabels[VariableName]      = auto(Fold, =)
+instance SearchLabels[Name]              = auto(Fold, =)
+instance SearchLabels[Identifier]        = auto(Fold, =)
+instance SearchLabels[FunctionKind]      = auto(Fold, =)
+instance SearchLabels[BinaryOp]          = auto(Fold, =)
+instance SearchLabels[UnaryOp]           = auto(Fold, =)
+instance SearchLabels[AtomicOrdering]    = auto(Fold, =)
+instance SearchLabels[AtomicRmwOp]       = auto(Fold, =)
+instance SearchLabels[WitnessInfo]       = auto(Fold, =)
+instance SearchLabels[HandlerSelection]  = auto(Fold, =)
+instance SearchLabels[ImplicitRefInfo]   = auto(Fold, =)
+instance SearchLabels[CreateClosureInfo] = auto(Fold, =)
+instance SearchLabels[FunctionPtrInfo]   = auto(Fold, =)
+instance SearchLabels[LambdaArg]         = auto(Fold, =)
+instance SearchLabels[TypeDef]           = auto(Fold, =)
+instance SearchLabels[NamedArgument]     = auto(Fold, =)
+instance SearchLabels[NamedPatternArg]   = auto(Fold, =)
+instance SearchLabels[NamedPatternInfo]  = auto(Fold)
+instance SearchLabels[Pattern]           = auto(Fold)
+instance SearchLabels[PatternKind]       = auto(Fold)
+instance SearchLabels[FunctionCallInfo]  = auto(Fold)
+instance SearchLabels[TypeAssociatedCallInfo] = auto(Fold)
+instance SearchLabels[MethodCallInfo]    = auto(Fold)
+instance SearchLabels[CallInfo]          = auto(Fold)
+instance SearchLabels[WithInfo]          = auto(Fold)
+instance SearchLabels[MatchArm]          = auto(Fold)
+instance SearchLabels[MatchInfo]         = auto(Fold)
+instance SearchLabels[YieldInfo]         = auto(Fold)
+instance SearchLabels[S.LetInfo]         = auto(Fold)
+instance SearchLabels[S.DeclareInfo]     = auto(Fold)
+instance SearchLabels[BlockInfo]         = auto(Fold)
+instance SearchLabels[S.Statement]       = auto(Fold)
+instance SearchLabels[ExprKind]          = auto(Fold)
+
+instance[T: SearchLabels[T]] SearchLabels[Option[T]] {
+    fn search_labels(value: Option[T], search: LabelSearch) {
+        if let Some(value) = value {
+            value.search_labels(search);
+        }
+    }
+}
+
+instance[T: SearchLabels[T]] SearchLabels[Vec[T]] {
+    fn search_labels(values: Vec[T], search: LabelSearch) {
+        for value in values {
+            value.search_labels(search);
+        }
+    }
+}
+
+instance SearchLabels[Expr] {
+    fn search_labels(expr: Expr, search: LabelSearch) {
+        if search.found {
+            return;
+        }
+        match expr.kind {
+            ExprKind.Label(_) => { search.found = True; }
+            kind => kind.search_labels(search),
+        }
+    }
+}
+
+pub fn stmt_contains_label(stmt: S.Statement) -> Bool {
+    let search = LabelSearch(False);
+    stmt.search_labels(search);
+    search.found
+}
+
+}

@@ -1,0 +1,122 @@
+module Siko.Normalizer.Statement {
+
+import Siko.AST.Expr
+import Siko.AST.Statement as S
+import Siko.Location
+import Siko.Normalizer
+import Siko.Normalizer.LabelSearch
+import Siko.Normalizer.Util
+
+pub fn lower_stmts(
+    norm: Normalizer,
+    stmts: Vec[S.Statement],
+    out: Vec[S.Statement],
+    loc: Location,
+    initially_reachable: Bool,
+) -> Option[Expr] {
+    let trailing_count = 0;
+    let j = 0;
+    while j < stmts.len() {
+        match stmts[j] {
+            S.Statement.TrailingExpr(_) => {trailing_count += 1;}
+            _ => (),
+        }
+        j += 1;
+    }
+    if trailing_count > 1 {
+        panic("normalizer: block has multiple TrailingExpr statements (resolver bug)");
+    }
+    if trailing_count == 1 {
+        match stmts.last() {
+            Some(S.Statement.TrailingExpr(_)) => (),
+            _ => panic("normalizer: TrailingExpr is not the last statement in block (resolver bug)"),
+        }
+    }
+
+    // Reachability-based dead-code elimination. A divergent statement turns
+    // `reachable` off (subsequent straight-line code is dead and is dropped),
+    // but a `label` is a goto join point, so it turns reachability back on —
+    // that is what keeps a coroutine handler's segments (which sit after the
+    // `return`s but are reached through the dispatch's gotos) while still
+    // dropping genuinely-dead code (e.g. a `let x = diverges(); use(x)` whose
+    // binding could not even be formed).
+    let reachable = initially_reachable;
+    for stmt in stmts {
+        let contains_label = stmt_contains_label(stmt);
+        if !reachable && !contains_label {
+            continue;
+        }
+        match stmt {
+            S.Statement.Expr(e) => {
+                match e.kind {
+                    ExprKind.Label(_) => {
+                        reachable = True;
+                        out.push(S.Statement.Expr(e));
+                    }
+                    ExprKind.Block(BlockInfo(body)) => {
+                        reachable = norm.lower_statement_block(
+                            body,
+                            out,
+                            e.location,
+                            reachable,
+                        );
+                    }
+                    _ => {
+                        match norm.lower_expr(e, out) {
+                            None => { reachable = False; }
+                            Some(expr) => {
+                                if !is_atom(expr) {
+                                    out.push(S.Statement.Expr(expr));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            S.Statement.Let(S.LetInfo(name, ty, rhs)) => {
+                match norm.lower_expr(rhs, out) {
+                    None => { reachable = False; }
+                    Some(e) => out.push(S.Statement.Let(S.LetInfo(name, ty, e))),
+                }
+            }
+            S.Statement.Declare(_) => out.push(stmt),
+            S.Statement.Assign(lhs, rhs) => {
+                match norm.to_atom(rhs, out) {
+                    None => { reachable = False; }
+                    Some(rhs_atom) => {
+                        match norm.lower_expr(lhs, out) {
+                            None => { reachable = False; }
+                            Some(lhs_expr) => out.push(S.Statement.Assign(lhs_expr, rhs_atom)),
+                        }
+                    }
+                }
+            }
+            S.Statement.TrailingExpr(e) => {
+                return norm.to_atom(e, out);
+            }
+            S.Statement.Loop(BlockInfo(body)) => {
+                let was_reachable = reachable;
+                let loop_out = Vec.new();
+                norm.lower_stmts(body, loop_out, loc, reachable);
+                out.push(S.Statement.Loop(BlockInfo(loop_out)));
+                if !was_reachable {
+                    // A goto may enter at a label inside the loop. Code
+                    // following the loop is reachable only through a break.
+                    reachable = loop_body_has_break(loop_out);
+                }
+            }
+            S.Statement.UnresolvedLet(_, _, _) => panic("normalizer: UnresolvedLet"),
+            S.Statement.ForLoop(_, _, _) => panic("normalizer: ForLoop must be desugared"),
+            S.Statement.WhileLoop(_, _) => panic("normalizer: WhileLoop must be desugared"),
+            S.Statement.Defer(_) => panic("normalizer: Defer must be lowered by lower-defer"),
+            S.Statement.SyntaxBlockStart(_) | S.Statement.SyntaxBlockEnd(_) => out.push(stmt),
+        }
+    }
+    if reachable {
+        Some(norm.unit_expr(loc))
+    } else {
+        None
+    }
+}
+
+}
