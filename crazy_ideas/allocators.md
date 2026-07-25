@@ -42,7 +42,7 @@ The relevant pipeline order (`build_full_passes`,
 check → lambda-lift → lower-match → mono → propagate-implicits
       → lower-closures → lower-coroutines → lower-tuples → lower-builtins
       → value-types → lower-ifs → lower-basic-block → lower-pointers
-      → lower-enums → llvm
+      → lower-data → llvm
 ```
 
 Key facts:
@@ -52,10 +52,10 @@ Key facts:
   analysis over layout dependencies — *after* mono, implicit propagation,
   closure lowering and coroutine lowering (it has to run late because those
   passes create new types: ctx structs, closure structs, coroutine frames).
-- **Ctor bodies don't exist until lower-enums.** The last pass before the
+- **Ctor bodies don't exist until lower-data.** The last pass before the
   backend synthesizes every struct/variant constructor as a real function
   (`generate_struct_ctor` / `generate_variant_ctor` in
-  `siko/Compiler/LowerEnums.sk`) and emits `ExprKind.Alloc(ty)` for non-value
+  `siko/Compiler/LowerData.sk`) and emits `ExprKind.Alloc(ty)` for non-value
   types (`siko/Common/AST/Expr.sk`, the `Alloc` variant). Before that, ctor
   call sites are just `FunctionCall` with kind `StructCtor`/`VariantCtor` and
   no callee body anywhere.
@@ -190,7 +190,7 @@ At mono/IP/closure time nobody knows which types end up heap-allocated
 *every* ctor call in an allocator context, including ones that turn out to be
 value types. Accepted: the cost is dead ctx args on value-type ctors and some
 extra specializations — not observable behavior. Crucially, because
-allocation stays inside the lower-enums-generated ctor bodies, the runtime
+allocation stays inside the lower-data-generated ctor bodies, the runtime
 semantics remain exact: **the allocator is called iff the type is actually
 heap-allocated**. A counting allocator observes precisely the real
 allocations.
@@ -203,11 +203,11 @@ The blocker chain, for the record:
 - A yielding call must be expanded by `transform_transitive`
   (`siko/Compiler/CoroutineLowering/TransitiveLower.sk`) into co_create + a
   drive loop — but a ctor has no callee body at that point (bodies appear in
-  lower-enums, long after the frame/state-machine machinery is gone).
+  lower-data, long after the frame/state-machine machinery is gone).
 - The workable path would be hoisting the allocation to the call site before
   coroutine lowering — rewrite `T(args)` into
   `{ let mem = A.allocate(SizeOf(T)); T#placement(mem, args) }` — with
-  lower-enums generating non-allocating *placement* ctors.
+  lower-data generating non-allocating *placement* ctors.
 - But since heap-ness is unknown before value-types, the hoist would call the
   allocator even for types that end up unboxed. Unlike conservative
   *coloring* (harmless), a spurious *runtime call* is observable in a counting

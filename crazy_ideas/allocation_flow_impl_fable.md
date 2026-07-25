@@ -39,11 +39,11 @@ Why exactly there:
   (`AST/Statement.sk:28-30`), `Match`, `Block` scopes — everything the
   scope-instance lifetime rule needs. After basic-block lowering it's
   `Goto`/`Label`/`Switch` straight-line form (see the whitelist in
-  `LowerEnums.lower_expr`, `Common/src/LowerEnums.sk:111-151`) and scope
+  `LowerData.lower_expr`, `Common/src/LowerData.sk:111-151`) and scope
   structure is gone.
 - Ctor call sites are still recognizable: `FunctionKind.StructCtor /
-  VariantCtor` on `FunctionCallInfo` survives until `lower-enums` retargets
-  them to generated `new_ctor` functions (`LowerEnums.sk:126-129`). The
+  VariantCtor` on `FunctionCallInfo` survives until `lower-data` retargets
+  them to generated `new_ctor` functions (`LowerData.sk:126-129`). The
   stamp goes on exactly these calls.
 - Closures and coroutines are already structs by then, so **closure
   environments and coroutine frames are ordinary allocation sites** — a
@@ -98,7 +98,7 @@ analysis state in this compiler. So:
 `build_groups` (`InferProfiles/CollectDeps.sk:123`) is directly reusable —
 it is `pub`, generic over the AST via `auto(Fold)` derives, and its one
 special case (ctor calls contribute no dep, `CollectDeps.sk:84-93`) is also
-correct for allocation flow: ctors have no bodies until lower-enums, so
+correct for allocation flow: ctors have no bodies until lower-data, so
 there is nothing to order against.
 
 The flow walk (`Flow.sk`, instance `Flow[E.Expr]` at 442) is the template
@@ -213,7 +213,7 @@ Two facts make this low-risk:
   Vec.new()`, `is_coroutine_create = False`), so no construction site in
   the compiler needs touching.
 - Every intermediate pass moves `FunctionCallInfo` through `auto`-derived
-  instances or in-place field mutation (e.g. `LowerEnums.sk:123-133`
+  instances or in-place field mutation (e.g. `LowerData.sk:123-133`
   mutates `info.args`/`info.qname` and keeps the rest), so the stamp
   survives `lower-ifs` → `lower-basic-block` → `lower-pointers`. A pass
   that ever rebuilt the struct positionally would silently reset to `Heap`
@@ -223,10 +223,10 @@ Two facts make this low-risk:
 The default `Heap` means: no analysis run ≡ today's behavior; the pass is
 trivially flag-gatable in `Config`.
 
-## 7. Consumption in lower-enums
+## 7. Consumption in lower-data
 
 Today the generated ctor body allocates or declares based on the *type*
-(`CtorBuilder.new_local`, `LowerEnums.sk:200-214`: heap → `ExprKind.Alloc`
+(`CtorBuilder.new_local`, `LowerData.sk:200-214`: heap → `ExprKind.Alloc`
 via `Let`, value → `Declare`). The decision moves from per-type to
 per-call-site. Two viable shapes:
 
@@ -235,18 +235,18 @@ per-call-site. Two viable shapes:
   is the same `assign_field` sequence into `Deref(out)` instead of a fresh
   local, returning `out`. Call sites: `Declare tmp: T` + pass
   `AddrOf(tmp)`. All the pieces exist — `AddrOf`/`Deref` construction is
-  exactly what `payload_read` does (`LowerEnums.sk:64-81`), and
-  `make_ctor_fn` (`LowerEnums.sk:227`) is reusable scaffolding with a
+  exactly what `payload_read` does (`LowerData.sk:64-81`), and
+  `make_ctor_fn` (`LowerData.sk:227`) is reusable scaffolding with a
   second qname (`new_ctor` has room for a sibling constructor kind in
   `QualifiedName`).
 - **(b) Inline at site.** Ctor bodies are trivial straight-line
   `Declare` + assigns; a stack site could be expanded in place. But at
-  lower-enums time call sites sit in arbitrary expression positions of
+  lower-data time call sites sit in arbitrary expression positions of
   post-basic-block statements, so this needs temp introduction — more
   fiddly than (a) for no gain. **Choose (a).**
 
 Important discovery about the return type: heap ctors return `Ptr(T)`
-(`generate_struct_ctor`, `LowerEnums.sk:251-275`: `ret_ty = Ptr(struct_ty)`
+(`generate_struct_ctor`, `LowerData.sk:251-275`: `ret_ty = Ptr(struct_ty)`
 iff `!value_type`). A stack site keeps consuming a `*T` (from `AddrOf`), so
 **downstream types don't change at all** — the pointee just lives in a
 frame. Only the by-value-return upgrade (expanded doc §5) would touch
@@ -258,8 +258,8 @@ the call was in. Whether the backend emits `Declare` as an entry-block
 alloca or an in-place one must be verified in `LLVM/Lower.sk` before
 shipping — a loop-resident `Declare` that becomes a loop-resident `alloca`
 would grow the stack unboundedly. If it isn't already hoisted, hoisting
-`Declare`s of stack-stamped ctors to function entry during lower-enums is a
-few lines (straight-line statement lists, `LowerEnums.lower_stmts`).
+`Declare`s of stack-stamped ctors to function entry during lower-data is a
+few lines (straight-line statement lists, `LowerData.lower_stmts`).
 
 ## 8. Extern/builtin models
 
@@ -320,12 +320,12 @@ siko/Common/src/AllocationFlow/
 
 plus: `AllocDecision` + field in `AST/Expr.sk`, annotation parsing, config
 flags, pass registration in `Compiler/src/Passes.sk`, ctor_place generation
-in `LowerEnums.sk`.
+in `LowerData.sk`.
 
 ## 11. Open items surfaced by the code (decide before/while building)
 
 1. **`Declare` → alloca placement in the LLVM backend** (§7) — must be
-   read before the first stack site ships; determines whether lower-enums
+   read before the first stack site ships; determines whether lower-data
    needs the hoist.
 2. **String literals / `List` literals / `Range`** — which of these
    allocate, and through what path? They don't go through ctor calls, so
@@ -357,7 +357,7 @@ in `LowerEnums.sk`.
 | Profiles + SCC driver | small — simpler than closures' | low |
 | Decide + stamp | small | low; determinism coupling between walk and stamp orders |
 | Models + annotation | small each, open-ended total | the precision budget lives here |
-| LowerEnums ctor_place | small | low; alloca-placement check first |
+| LowerData ctor_place | small | low; alloca-placement check first |
 | AST field + plumbing | trivial | none |
 
 Phase 1 (locally-dead allocations, no ABI change, conservative models +

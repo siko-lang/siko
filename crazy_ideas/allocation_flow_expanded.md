@@ -9,7 +9,7 @@ forces heap — physical placement never does**, and "allocation follows the
 value" applies to the directly-returned root, not to pointers escaping
 *inside* other values. The practical prerequisites (transparent-container
 profiles for the unsafe std layer, GC interaction, decision consumption in
-lower-enums) determine whether the analysis produces wins in practice or
+lower-data) determine whether the analysis produces wins in practice or
 classifies everything as Dunno.
 
 ## 1. Where it sits in the pipeline
@@ -17,11 +17,11 @@ classifies everything as Dunno.
 The analysis needs to know which positions are pointer-carrying, and that is
 decided by `value-types` (`siko/Common/src/ValueTypes.sk`), which runs in the
 backend pipeline after `lower-builtins`. The decision is consumed by
-`lower-enums`, which is where `ExprKind.Alloc` is born today
-(`LowerEnums.sk:208`). So the natural slot is:
+`lower-data`, which is where `ExprKind.Alloc` is born today
+(`LowerData.sk:208`). So the natural slot is:
 
 ```text
-lower-builtins → value-types → [allocation-flow] → lower-ifs → ... → lower-enums
+lower-builtins → value-types → [allocation-flow] → lower-ifs → ... → lower-data
 ```
 
 This placement is fortunate for another reason: closures, coroutines, tuples,
@@ -311,7 +311,7 @@ conservative collection shapes the story favorably:
 
 - Stamp each ctor call site with `stack | heap | dunno` — a new field on
   `FunctionCallInfo`, defaulting to heap, which is exactly today's behavior.
-- `lower-enums` today synthesizes one ctor per type whose body does `Alloc` +
+- `lower-data` today synthesizes one ctor per type whose body does `Alloc` +
   field stores. Stack sites instead need the fields stored into
   caller-provided storage: a *placement* ctor taking a `*T` (the entry-block
   alloca), sharing the field-store body with the heap ctor.
@@ -349,4 +349,4 @@ conservative collection shapes the story favorably:
 | 4 | Mutation / immutability | mutation is just extra edges; immutability is a precision win, not a soundness prerequisite |
 | 5 | Extern/std defaults will drown the analysis | transparent-container annotation = conservative merge minus BlackHole; custom profiles later |
 | 6 | GC not mentioned | free under Boehm (conservative scan); a precise collector would need non-heap-address tolerance + stack-aggregate roots |
-| 7 | Decision consumption unspecified | call-site stamp + placement ctors in lower-enums |
+| 7 | Decision consumption unspecified | call-site stamp + placement ctors in lower-data |

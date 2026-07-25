@@ -28,7 +28,7 @@ The main additions beyond closure inference are:
 3. unsafe pointer primitives need trusted summaries;
 4. caller-chosen return storage needs a `fresh result` fact in addition to
    ordinary input-to-output links;
-5. `lower-enums` must gain placement construction.
+5. `lower-data` must gain placement construction.
 
 The recommended first milestone is local stack placement of constructor roots.
 Caller-chosen returns should be the next milestone, built on the same analysis.
@@ -45,7 +45,7 @@ lower-builtins
 → lower-ifs
 → lower-basic-block
 → lower-pointers
-→ lower-enums
+→ lower-data
 → llvm
 ```
 
@@ -58,7 +58,7 @@ lower-builtins
 → lower-ifs
 → lower-basic-block
 → lower-pointers
-→ lower-enums
+→ lower-data
 ```
 
 At this point:
@@ -105,7 +105,7 @@ value type      Named(Foo)
 heap type       Ptr(Named(Foo))
 ```
 
-`siko/Common/src/LowerEnums.sk` then generates one constructor function per
+`siko/Common/src/LowerData.sk` then generates one constructor function per
 struct/variant. A non-value constructor currently:
 
 ```text
@@ -116,7 +116,7 @@ Alloc(Foo) → initialize fields → return *Foo
 `siko/Compiler/src/LLVM/Lower.sk`.
 
 The LLVM backend already puts every `Declare`/`Let` local in the function entry
-block (`FunctionLowerer.add_local`). This is useful: if `lower-enums` injects an
+block (`FunctionLowerer.add_local`). This is useful: if `lower-data` injects an
 inline `Declare(Foo)`, the backend automatically creates one entry-block alloca
 per syntactic site. A loop reuses it; recursion gets a fresh function frame.
 
@@ -567,7 +567,7 @@ location/ordinal side table.
 full freshness test. A later scan can recover the set of fresh-return functions
 from these markers without adding a field to every `FunctionDef`.
 
-## 9. Consuming decisions in `lower-enums`
+## 9. Consuming decisions in `lower-data`
 
 ### Placement constructors
 
@@ -605,7 +605,7 @@ ForwardResult:
     let f: *Foo = Foo.ctor(function_out, fields...)
 ```
 
-`LowerEnums.lower_stmts` currently emits one statement per input statement. It
+`LowerData.lower_stmts` currently emits one statement per input statement. It
 must be refactored to allow a constructor/call statement to expand into several
 statements. The normalizer guarantees call arguments are atomic, so moving the
 physical allocation before the call does not reorder argument effects.
@@ -640,7 +640,7 @@ can optimize.
 
 This requires a signature rewrite as well as call-site rewriting:
 `FunctionDef.args` gains the destination parameter before bodies are lowered,
-then calls receive the selected destination. `lower-enums` already walks every
+then calls receive the selected destination. `lower-data` already walks every
 function and ordinary call, so it can host this rewrite, although a small
 placement-lowering submodule would keep it separate from enum-layout logic.
 
@@ -712,7 +712,7 @@ Existing files that need changes:
 - `siko/Common/src/LowerPointers.sk`: share heap/value representation logic;
 - `siko/Common/src/AST/Expr.sk`: persist allocation decisions on calls;
 - positional call destructuring and derived walkers: carry the new field;
-- `siko/Common/src/LowerEnums.sk`: statement expansion, placement constructors,
+- `siko/Common/src/LowerData.sk`: statement expansion, placement constructors,
   destination parameters, enum root placement;
 - `siko/Common/src/Config/Config.sk` and `siko/Compiler/src/CLI.sk`: feature
   flag and debug/profile/stat flags;
@@ -736,7 +736,7 @@ This exposes profile blowups and missing std models without risking codegen.
 - Seed only direct struct/variant constructor roots.
 - Compute per-function sets and `Stack | Heap | Dunno`.
 - Initially optimize non-loop, non-goto struct sites.
-- Teach `lower-enums` caller storage plus placement construction.
+- Teach `lower-data` caller storage plus placement construction.
 - Keep fresh-result calls and enum payloads on the current heap path.
 
 This validates the core safety rule with the smallest ABI surface.
@@ -785,7 +785,7 @@ Unknown sharing a slot with pFoo     pFoo remains independently decidable
 function SCC                         finite directed profile
 ```
 
-Also test `--pass lower-enums`:
+Also test `--pass lower-data`:
 
 ```text
 Stack site  → inline Declare, no root Alloc

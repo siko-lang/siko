@@ -1,4 +1,4 @@
-module Siko.LowerEnums {
+module Siko.LowerData {
 
 import Std.Map
 import Siko.AST.Expr
@@ -64,11 +64,11 @@ struct EnumLowerer {
     fn payload_read(l: EnumLowerer, value: Expr, result_ty: TypeDef, loc: Location) -> Expr {
         let enum_qname = match named_qname(value.ty) {
             Some(qname) => qname,
-            None => panic("lower-enums: ReadVariant scrutinee is not an enum type"),
+            None => panic("lower-data: ReadVariant scrutinee is not an enum type"),
         };
         let payload_ty = match l.payload_types.get(enum_qname) {
             Some(ty) => ty,
-            None => panic("lower-enums: ReadVariant on payload-less enum"),
+            None => panic("lower-data: ReadVariant on payload-less enum"),
         };
         let fa = Expr(
             ExprKind.FieldAccess(value, Identifier.new(VP.container_payload_name(), loc), Some(1)),
@@ -115,7 +115,7 @@ struct EnumLowerer {
             ExprKind.FunctionCall(info) => {
                 match info.kind {
                     FunctionKind.StructCtor | FunctionKind.VariantCtor => {}
-                    _ => panic("lower-enums: placement target is not a constructor"),
+                    _ => panic("lower-data: placement target is not a constructor"),
                 }
                 info.args = l.lower_exprs(info.args);
                 info.args.insert(0, destination);
@@ -123,7 +123,7 @@ struct EnumLowerer {
                 info.kind = FunctionKind.UserDefined;
                 Expr(ExprKind.FunctionCall(info), loc, ty)
             }
-            _ => panic("lower-enums: placement target is not a call"),
+            _ => panic("lower-data: placement target is not a call"),
         }
     }
 
@@ -142,7 +142,7 @@ struct EnumLowerer {
                 return Expr(ExprKind.IntLiteral(I.intern("0"), Some(0)), loc, Some(l.int_ty));
             }
             ExprKind.ReadVariant(value, _) => {
-                let result_ty = expr.ty.expect("lower-enums: ReadVariant has no type");
+                let result_ty = expr.ty.expect("lower-data: ReadVariant has no type");
                 return l.payload_read(l.lower_expr(value), result_ty, loc);
             }
             ExprKind.IntLiteral(_, _) |
@@ -163,7 +163,7 @@ struct EnumLowerer {
                     FunctionKind.StructCtor | FunctionKind.VariantCtor => {
                         match expr.ty {
                             Some(TypeDef.Ptr(_)) =>
-                                panic("lower-enums: heap constructor outside statement position"),
+                                panic("lower-data: heap constructor outside statement position"),
                             _ => {}
                         }
                         info.qname = QualifiedName.new_ctor(info.qname);
@@ -190,7 +190,7 @@ struct EnumLowerer {
             ),
             ExprKind.AtomicFence(order) => ExprKind.AtomicFence(order),
             ExprKind.Block(BlockInfo(stmts)) => ExprKind.Block(BlockInfo(l.lower_stmts(stmts))),
-            _ => panic("lower-enums: unexpected expression kind after basic block lowering"),
+            _ => panic("lower-data: unexpected expression kind after basic block lowering"),
         };
         Expr(kind, loc, expr.ty)
     }
@@ -236,7 +236,7 @@ struct EnumLowerer {
                         None => out.push(S.Statement.Expr(l.lower_expr(e))),
                     }
                 }
-                _ => panic("lower-enums: unexpected statement after basic block lowering"),
+                _ => panic("lower-data: unexpected statement after basic block lowering"),
             }
         }
         out
@@ -273,7 +273,7 @@ struct CtorBuilder {
     }
 
     fn assign_field(b: CtorBuilder, receiver: Expr, field: I.String, field_index: Int, value: Expr) {
-        let field_ty = value.ty.expect("lower-enums: ctor field value has no type");
+        let field_ty = value.ty.expect("lower-data: ctor field value has no type");
         b.stmts.push(S.Statement.Assign(b.field_access(receiver, field, field_index, field_ty), value));
     }
 
@@ -382,7 +382,7 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
         // initialize its fields in place.
         let buffer_ty = payload_types
             .get(enum_qname)
-            .expect("lower-enums: variant with payload but container has no payload field");
+            .expect("lower-data: variant with payload but container has no payload field");
         let fa = b.field_access(b.var_expr(result, ret_ty), VP.container_payload_name(), 1, buffer_ty);
         let addr = Expr(ExprKind.AddrOf(fa), b.loc, Some(TypeDef.Ptr(buffer_ty)));
         let cast = Expr(ExprKind.Transmute(addr), b.loc, Some(TypeDef.Ptr(payload_named)));
@@ -419,14 +419,14 @@ fn payload_elem_ty(elem_align: Int) -> TypeDef {
         2 => B.get_u16_type_qn().as_mono(),
         4 => B.get_u32_type_qn().as_mono(),
         8 => B.get_u64_type_qn().as_mono(),
-        n => panic("lower-enums: unsupported payload alignment ${n}"),
+        n => panic("lower-data: unsupported payload alignment ${n}"),
     };
     builtin_ty(qname)
 }
 
 // ─── Entry point ──────────────────────────────────────────────────────────────
 
-pub fn lower_enums(program: Program) {
+pub fn lower_data(program: Program) {
     // Bool's tags are published as constants (Builtins' variant index
     // helpers) so passes may rely on them; verify std's declaration order
     // still matches before baking the tags into generated code.
@@ -434,7 +434,7 @@ pub fn lower_enums(program: Program) {
         let false_qn = bool_def.variants[B.get_bool_false_variant_index()].qualified_name.unwrap();
         let true_qn = bool_def.variants[B.get_bool_true_variant_index()].qualified_name.unwrap();
         if false_qn != B.get_bool_false_qn().as_mono() || true_qn != B.get_bool_true_qn().as_mono() {
-            panic("lower-enums: Bool variant order does not match Builtins' variant indices: index ${B.get_bool_false_variant_index()} is ${I.resolve(false_qn.name())}, index ${B.get_bool_true_variant_index()} is ${I.resolve(true_qn.name())}");
+            panic("lower-data: Bool variant order does not match Builtins' variant indices: index ${B.get_bool_false_variant_index()} is ${I.resolve(false_qn.name())}, index ${B.get_bool_true_variant_index()} is ${I.resolve(true_qn.name())}");
         }
     }
     let engine = LayoutEngine.new(program);
