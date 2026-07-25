@@ -54,10 +54,10 @@ pub fn payload_variant_name(qname: QualifiedName) -> I.String {
 }
 
 // Creates one real StructDef per monomorphic enum variant (including
-// payload-less variants, so enum container layout stays uniform). Runs after
-// value-types, so value_type must be set here: it mirrors the owning enum,
-// matching how the C backend stores payloads (inline for value-type enums,
-// by pointer otherwise).
+// payload-less variants, so enum container layout stays uniform). Payload
+// structs are representation-only inline types: even when the owning enum is
+// heap represented, its payload lives inside the enum's single allocation.
+// Runs after value-types, so this flag is set directly here.
 pub fn ensure_payload_structs(program: Program) {
     let new_structs: Map[QualifiedName, StructDef] = Map.new();
     for edef in program.enums.values() {
@@ -92,7 +92,7 @@ pub fn ensure_payload_structs(program: Program) {
                     method_map: MethodMap.new(),
                     module_name: I.intern(""),
                     default_value_names: Vec.new(),
-                    value_type: edef.value_type,
+                    value_type: True,
                 ),
             );
         }

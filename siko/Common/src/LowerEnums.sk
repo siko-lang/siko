@@ -21,10 +21,10 @@ import Siko.Interner as I
 // Converts enums into plain structs. Every enum becomes a container struct
 // { tag: U32, payload: uintN[count] } where N is the maximum alignment of the
 // stored variant payloads and count * N covers the largest payload including
-// its padding (heap enums store a pointer to the payload, so their buffer is
-// one uint64). The container is inserted into Program.structs under the
-// enum's own qname; Program.enums is kept as metadata for the C backend's
-// variant constructor synthesis.
+// its padding. Both value and heap enums store the payload inline; a heap enum
+// therefore needs one allocation for the whole container. The container is
+// inserted into Program.structs under the enum's own qname; Program.enums is
+// kept as metadata for constructor synthesis.
 //
 // Expression rewrites (bodies are in post-lower-pointers basic block form):
 //   EnumTag(v)         -> Transmute(v.tag): Int
@@ -58,9 +58,7 @@ struct EnumLowerer {
         Expr(ExprKind.Transmute(fa), loc, Some(l.int_ty))
     }
 
-    // `*(P*)&value.payload` typed as the ReadVariant result (P inline for
-    // value enums, P* for heap enums; the extra Ptr level falls out of the
-    // types themselves).
+    // `*(P*)&value.payload` typed as the inline ReadVariant result.
     fn payload_read(l: EnumLowerer, value: Expr, result_ty: TypeDef, loc: Location) -> Expr {
         let enum_qname = match named_qname(value.ty) {
             Some(qname) => qname,
@@ -280,7 +278,6 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
     let enum_named = TypeDef.Named(NamedInfo(Name.inner(enum_qname), []));
     let ret_ty = if is_heap { TypeDef.Ptr(enum_named) } else { enum_named };
     let payload_named = VP.payload_type(enum_qname, variant);
-    let payload_repr = if is_heap { TypeDef.Ptr(payload_named) } else { payload_named };
     let has_payload = !variant.items.is_empty();
 
     let b = CtorBuilder(VarAllocator.new(), Vec.new(), variant.name.location);
@@ -292,20 +289,6 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
         param_names.push(name);
     }
 
-    let variant_var: Option[VariableName] = None;
-    if has_payload {
-        let v = b.new_local(payload_repr, is_heap);
-        for (i, item) in variant.items.iter().enumerate() {
-            b.assign_field(
-                b.var_expr(v, payload_repr),
-                VP.payload_field_name(i),
-                i,
-                b.var_expr(param_names[i], item.ty),
-            );
-        }
-        variant_var = Some(v);
-    }
-
     let result = b.new_local(ret_ty, is_heap);
     b.assign_field(
         b.var_expr(result, ret_ty),
@@ -313,16 +296,24 @@ fn generate_variant_ctor(edef: EnumDef, variant: VariantDef, tag: Int, payload_t
         0,
         Expr(ExprKind.IntLiteral(I.intern("${tag}"), Some(tag)), b.loc, Some(u32_ty)),
     );
-    if let Some(v) = variant_var {
-        // *(P*)&result.payload = variant  (P* is P** for heap enums)
+    if has_payload {
+        // Treat the container's byte buffer as the concrete payload struct and
+        // initialize its fields in place.
         let buffer_ty = payload_types
             .get(enum_qname)
             .expect("lower-enums: variant with payload but container has no payload field");
         let fa = b.field_access(b.var_expr(result, ret_ty), VP.container_payload_name(), 1, buffer_ty);
         let addr = Expr(ExprKind.AddrOf(fa), b.loc, Some(TypeDef.Ptr(buffer_ty)));
-        let cast = Expr(ExprKind.Transmute(addr), b.loc, Some(TypeDef.Ptr(payload_repr)));
-        let slot = Expr(ExprKind.Deref(cast), b.loc, Some(payload_repr));
-        b.stmts.push(S.Statement.Assign(slot, b.var_expr(v, payload_repr)));
+        let cast = Expr(ExprKind.Transmute(addr), b.loc, Some(TypeDef.Ptr(payload_named)));
+        let payload = Expr(ExprKind.Deref(cast), b.loc, Some(payload_named));
+        for (i, item) in variant.items.iter().enumerate() {
+            b.assign_field(
+                payload,
+                VP.payload_field_name(i),
+                i,
+                b.var_expr(param_names[i], item.ty),
+            );
+        }
     }
     b.ret(b.var_expr(result, ret_ty));
     make_ctor_fn(variant.qualified_name.unwrap(), edef.module_name, params, ret_ty, b)
