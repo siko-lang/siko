@@ -72,11 +72,54 @@ struct Normalizer {
             ExprKind.CreateClosure(_) | ExprKind.SizeOf(_) => Some(expr),
 
             ExprKind.Alloc(_) => panic("normalizer: Alloc exists before lower-enums"),
-            ExprKind.AtomicLoad(_, _) |
-            ExprKind.AtomicStore(_, _, _) |
-            ExprKind.AtomicRmw(_, _, _, _) |
-            ExprKind.AtomicCompareExchange(_, _, _, _, _, _) |
-            ExprKind.AtomicFence(_) => panic("normalizer: atomic node exists before lower-builtins"),
+
+            ExprKind.AtomicLoad(pointer, order) => {
+                let pointer = match norm.to_atom(pointer, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.AtomicLoad(pointer, order), loc, ty))
+            }
+            ExprKind.AtomicStore(pointer, value, order) => {
+                let pointer = match norm.to_atom(pointer, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let value = match norm.to_atom(value, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.AtomicStore(pointer, value, order), loc, ty))
+            }
+            ExprKind.AtomicRmw(op, pointer, value, order) => {
+                let pointer = match norm.to_atom(pointer, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let value = match norm.to_atom(value, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.AtomicRmw(op, pointer, value, order), loc, ty))
+            }
+            ExprKind.AtomicCompareExchange(pointer, current, new, success, failure, weak) => {
+                let pointer = match norm.to_atom(pointer, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let current = match norm.to_atom(current, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let new = match norm.to_atom(new, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.AtomicCompareExchange(
+                    pointer, current, new, success, failure, weak,
+                ), loc, ty))
+            }
+            ExprKind.AtomicFence(order) => Some(Expr(ExprKind.AtomicFence(order), loc, ty)),
 
             ExprKind.Discriminator(inner) => {
                 let lowered = match norm.lower_expr(inner, out) {
@@ -318,11 +361,50 @@ struct Normalizer {
             // a label is just a marker; control flows past it, value is unit.
             ExprKind.Label(_) => Some(expr),
 
-            ExprKind.EnumTag(_) | ExprKind.Switch(_, _) | ExprKind.ReadVariant(_, _) =>
-                panic("normalizer: basic block expression reached normalizer"),
+            ExprKind.EnumTag(inner) => {
+                let inner = match norm.to_atom(inner, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.EnumTag(inner), loc, ty))
+            }
+            ExprKind.Switch(tag, arms) => {
+                let tag = match norm.to_atom(tag, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.Switch(tag, arms), loc, ty))
+            }
+            ExprKind.ReadVariant(value, tag) => {
+                let value = match norm.to_atom(value, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let tag = match norm.to_atom(tag, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.ReadVariant(value, tag), loc, ty))
+            }
 
-            ExprKind.BinaryOp(_, _, _) | ExprKind.UnaryOp(_, _) =>
-                panic("normalizer: BinaryOp/UnaryOp must be desugared"),
+            ExprKind.BinaryOp(op, lhs, rhs) => {
+                let lhs = match norm.to_atom(lhs, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                let rhs = match norm.to_atom(rhs, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.BinaryOp(op, lhs, rhs), loc, ty))
+            }
+            ExprKind.UnaryOp(op, inner) => {
+                let inner = match norm.to_atom(inner, out) {
+                    None => return None,
+                    Some(v) => v,
+                };
+                Some(Expr(ExprKind.UnaryOp(op, inner), loc, ty))
+            }
         }
     }
 
@@ -829,12 +911,12 @@ pub fn normalize_function(func: FunctionDef, div_fns: Set[QualifiedName], unit_t
     }
 }
 
-pub fn normalize(program: Program) {
+pub fn normalize(program: Program, unit_type: TypeDef = TypeDef.Tuple(Vec.new())) {
     let div_fns = program.get_divergent_functions();
     let keys: Vec[_] = program.functions.keys().collect();
     for key in keys {
         let func = program.functions[key];
-        normalize_function(func, div_fns);
+        normalize_function(func, div_fns, unit_type);
         program.functions.insert(key, func);
     }
 }
