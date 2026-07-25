@@ -22,6 +22,7 @@ import Siko.ClosureLowering.InferProfiles.Util
 import Siko.ClosureLowering.Resolve
 import Siko.ClosureLowering.Statistics
 import Siko.ClosureLowering.Debug
+import Siko.Constants.Builtins as B
 import Siko.HIR.Program
 import Siko.Interner as I
 import Siko.Location
@@ -855,6 +856,13 @@ fn rewrite_program(r: Resolver, program: Program) {
         handlers: Vec.new(),
         instance_names: Map.new(),
     );
+
+    for qname in B.implicit_mono_list() {
+        let mono_qname = qname.as_mono();
+        if r.program.structs.contains_key(mono_qname) || r.program.enums.contains_key(mono_qname) {
+            let _ = l.instantiate_data(mono_qname, []);
+        }
+    }
 
     let reachable = reachable_instances(r);
     let counters: Map[QualifiedName, Int] = Map.new();

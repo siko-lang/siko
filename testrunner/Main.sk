@@ -364,7 +364,7 @@ fn discover_pass_tests(case: String) -> Vec[PassTest] {
     pass_tests
 }
 
-fn build_test_case(path: String, nostd: Bool) -> TestCase {
+fn build_test_case(path: String) -> TestCase {
     let has_package = Path.exists(Path.join(path, "package.toml"));
     let input = if has_package {
         path
@@ -376,7 +376,6 @@ fn build_test_case(path: String, nostd: Bool) -> TestCase {
     TestCase(
         path: path,
         input: input,
-        nostd: nostd,
         has_package: has_package,
         snapshot: snapshot,
         has_snapshot: Path.exists(snapshot),
@@ -386,7 +385,7 @@ fn build_test_case(path: String, nostd: Bool) -> TestCase {
     )
 }
 
-fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: Bool) {
+fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String]) {
     let subdirs: Vec[String] = Vec.new();
     let iter = match Std.Fs.Directory.list_dir(dir) {
         Ok(it) => it,
@@ -411,17 +410,17 @@ fn collect_cases(dir: String, out: Vec[TestCase], filters: Vec[String], nostd: B
             Path.exists(Path.join(subdir, "src/main.sk"));
         if has_main {
             if filters.is_empty() || any_filter_matches(subdir, filters) {
-                out.push(build_test_case(subdir, nostd));
+                out.push(build_test_case(subdir));
             }
         } else {
-            collect_cases(subdir, out, filters, nostd);
+            collect_cases(subdir, out, filters);
         }
     }
 }
 
-fn discover_cases(root: String, filters: Vec[String], nostd: Bool) -> Vec[TestCase] {
+fn discover_cases(root: String, filters: Vec[String]) -> Vec[TestCase] {
     let cases: Vec[TestCase] = Vec.new();
-    collect_cases(root, cases, filters, nostd);
+    collect_cases(root, cases, filters);
     cases
 }
 
@@ -473,16 +472,12 @@ fn main() {
 
     let runner = TestRunner.new(compiler, bless, valgrind, cwd);
 
-    let nostd_cases = discover_cases("test/success/nostd", filters, True);
-    println("=== success (${nostd_cases.len()} cases) nostd ===");
-    runner.run_success_cases(nostd_cases);
-
-    let std_cases = discover_cases("test/success/std", filters, False);
+    let std_cases = discover_cases("test/success", filters);
     println("=== success (${std_cases.len()} cases) std ===");
     runner.run_success_cases(std_cases);
 
     if Path.exists("test/failure") {
-        let failure_cases = discover_cases("test/failure", filters, False);
+        let failure_cases = discover_cases("test/failure", filters);
         println("\n=== failure (${failure_cases.len()} cases) ===");
         runner.run_failure_cases(failure_cases);
     }
