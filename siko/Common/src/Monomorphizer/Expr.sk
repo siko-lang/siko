@@ -102,15 +102,32 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let handler_info = match mono.current_mono_ctx.get_effect(name) {
             Some(hi) => hi.clone(),
             None => {
-                mono.errors.push(MonoError.UnresolvedEffectHandler(name.name(), mono.current_location.unwrap()));
-                return FunctionCallInfo(
-                    qname: name,
-                    kind: FunctionKind.UserDefined,
-                    args: args,
-                    witnesses: witness_info,
-                    named_args: Vec.new(),
-                    is_coroutine_create: is_co,
-                );
+                if func.body.is_some() {
+                    let default_witnesses = match mono.resolve_witnesses(witness_info.witnesses) {
+                        Some(witnesses) => witnesses,
+                        None => {
+                            return FunctionCallInfo(
+                                qname: name,
+                                kind: FunctionKind.UserDefined,
+                                args: args,
+                                witnesses: WitnessInfo.new(),
+                                named_args: Vec.new(),
+                                is_coroutine_create: is_co,
+                            );
+                        }
+                    };
+                    HandlerInfo(name.clone(), default_witnesses)
+                } else {
+                    mono.errors.push(MonoError.UnresolvedEffectHandler(name.name(), mono.current_location.unwrap()));
+                    return FunctionCallInfo(
+                        qname: name,
+                        kind: FunctionKind.UserDefined,
+                        args: args,
+                        witnesses: witness_info,
+                        named_args: Vec.new(),
+                        is_coroutine_create: is_co,
+                    );
+                }
             }
         };
         let spec_args: Vec[Expr] = args.specialize(mono);
