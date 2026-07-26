@@ -30,6 +30,7 @@ instance Rewrite[I.String] = auto(Map, =)
 instance Rewrite[Identifier] = auto(Map, =)
 instance Rewrite[QualifiedName] = auto(Map, =)
 instance Rewrite[WitnessInfo] = auto(Map, =)
+instance Rewrite[AllocationInfo] = auto(Map)
 instance Rewrite[FunctionCallInfo]        = auto(Map)
 instance Rewrite[TypeAssociatedCallInfo]  = auto(Map, !)
 instance Rewrite[NamedArgument]           = auto(Map, =)
@@ -76,7 +77,7 @@ instance Rewrite[Expr] {
 }
 
 fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
-    let FunctionCallInfo(callee, kind, args, witnesses, named_args, is_co) = info;
+    let FunctionCallInfo(callee, kind, args, witnesses, named_args, is_co, allocation) = info;
     let callee_implicits = rewriter
         .fn_implicit_ctx
         .get(callee)
@@ -93,11 +94,29 @@ fn rewrite_function_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Locati
                 witnesses,
                 named_args,
                 is_co,
+                allocation,
             )
         ),
         loc,
         e_ty,
     )
+}
+
+fn rewrite_ctor_call(info: FunctionCallInfo, rewriter: Rewriter, loc: Location, e_ty: Option[TypeDef]) -> Expr {
+    let allocation = info.allocation.map(|allocation| {
+        let allocator_implicits = rewriter
+            .fn_implicit_ctx
+            .get(allocation.allocator)
+            .expect("implicit propagation: allocator function is missing");
+        AllocationInfo(
+            allocation.allocator,
+            Some(rewriter.build_ctx_arg(allocator_implicits, loc)),
+            allocation.location,
+        )
+    });
+    info.args = info.args.rewrite(rewriter);
+    info.allocation = allocation;
+    Expr(ExprKind.FunctionCall(info), loc, e_ty)
 }
 
 fn rewrite_with(wi: WithInfo, rewriter: Rewriter, loc: Location) -> Expr {
@@ -269,6 +288,10 @@ pub struct Rewriter {
 
             ExprKind.FunctionCall(info) if info.kind == FunctionKind.UserDefined => {
                 rewrite_function_call(info, rewriter, loc, orig_ty)
+            }
+
+            ExprKind.FunctionCall(info) if info.allocation.is_some() => {
+                rewrite_ctor_call(info, rewriter, loc, orig_ty)
             }
 
             ExprKind.CreateClosure(info) => {

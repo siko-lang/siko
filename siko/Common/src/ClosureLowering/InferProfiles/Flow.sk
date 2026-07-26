@@ -803,6 +803,19 @@ fn fill_result_subst(
 // profiles, so they take the same path.
 fn function_call_edges(ctx: FlowCtx, info: E.FunctionCallInfo, expr_ty: Option[TypeDef], out: Vec[FlowNode]) {
     flow(info.args, ctx);
+    if let Some(allocation) = info.allocation {
+        let allocator_ctx = allocation.ctx.expect("closure lowering: allocator call has no implicit context");
+        function_call_edges(
+            ctx,
+            E.FunctionCallInfo(
+                qname: allocation.allocator,
+                kind: E.FunctionKind.UserDefined,
+                args: [allocator_ctx],
+            ),
+            Some(TypeDef.VoidPtr),
+            Vec.new(),
+        );
+    }
     match info.kind {
         E.FunctionKind.StructCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),
         E.FunctionKind.VariantCtor => ctor_edges(ctx, info.qname, info.args, expr_ty),

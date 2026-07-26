@@ -156,6 +156,7 @@ instance Specialize[FunctionPtrInfo] {
                 callee_type_args,
                 callee_witnesses,
                 callee_mono_ctx,
+                mono.allocator_location_for(callee_mono_ctx),
             ));
         }
         FunctionPtrInfo(mono_key, WitnessInfo.new())
@@ -187,6 +188,7 @@ instance Specialize[CreateClosureInfo] {
                 callee_type_args,
                 callee_witnesses,
                 mono.current_mono_ctx,
+                mono.current_allocator_location,
             ));
         }
         CreateClosureInfo(mono_callee, info.params.clone(), WitnessInfo.new())
@@ -209,12 +211,13 @@ instance Specialize[FunctionCallInfo] {
 instance Specialize[WithInfo] {
     fn specialize(info: WithInfo, mono: Monomorphizer) -> WithInfo {
         let saved_mono_ctx = mono.current_mono_ctx;
+        let saved_allocator_location = mono.current_allocator_location;
         let with_mono_ctx = mono.current_mono_ctx.clone();
         mono.current_mono_ctx = with_mono_ctx;
         let implicit_selections = [];
         for sel in info.selections {
             match sel {
-                HandlerSelection.EffectFunction(method, handler, _, witness_info) => {
+                HandlerSelection.EffectFunction(method, handler, location, witness_info) => {
                     // Record the handler together with the witnesses for its bounds
                     // (computed at typecheck). Resolve those witnesses to modules
                     // here, at the `with` site, where the enclosing frame is known —
@@ -222,7 +225,12 @@ instance Specialize[WithInfo] {
                     // not the call site's. The handler itself is monomorphized later,
                     // at the effect call site, in the call-site dynamic context.
                     match mono.resolve_witnesses(witness_info.witnesses) {
-                        Some(handler_witnesses) => mono.current_mono_ctx.insert_effect(method.clone(), HandlerInfo(handler.clone(), handler_witnesses)),
+                        Some(handler_witnesses) => {
+                            mono.current_mono_ctx.insert_effect(method.clone(), HandlerInfo(handler.clone(), handler_witnesses));
+                            if method == B.get_allocator_allocate_qn() {
+                                mono.current_allocator_location = Some(location);
+                            }
+                        }
                         None => {},
                     }
                 }
@@ -250,6 +258,7 @@ instance Specialize[WithInfo] {
         mono.clear_type_cache();
         let spec_body = info.body.specialize(mono);
         mono.current_mono_ctx = saved_mono_ctx;
+        mono.current_allocator_location = saved_allocator_location;
         WithInfo(implicit_selections, spec_body)
     }
 }

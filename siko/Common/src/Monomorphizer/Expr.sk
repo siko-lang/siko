@@ -13,6 +13,7 @@ import Siko.Monomorphizer.TraitDispatch
 import Siko.Monomorphizer.Specialize
 import Siko.Monomorphizer.Types
 import Siko.Instances.FunctionInstanceResolver
+import Siko.Constants.Builtins as B
 import Siko.Utils.TypeVarAllocator
 import Siko.Interner as I
 
@@ -25,6 +26,70 @@ fn unresolved_user_defined_call(name: QualifiedName, args: Vec[Expr], is_co: Boo
         named_args: Vec.new(),
         is_coroutine_create: is_co,
     )
+}
+
+fn instantiate_effect_handler(
+    handler_info: HandlerInfo,
+    arg_types: Vec[TypeDef],
+    result_ty: TypeDef,
+    handler_ctx: MonoContext,
+    mono: Monomorphizer,
+) -> QualifiedName {
+    let handler_name = handler_info.name;
+    let handler_type_args = {
+        let handler = mono.source.functions.get(handler_name)
+            .expect("effect handler function ${handler_name.name()} not found in program");
+        let generic_params = handler.type_arg_defs.type_params();
+        let param_types: Vec[TypeDef] = handler.args.iter().map(|a| a.type_def.clone()).collect();
+        let all_arg_types = arg_types.clone();
+        if let Some(rt) = handler.result_type.clone() {
+            param_types.push(rt);
+            all_arg_types.push(result_ty);
+        }
+        Monomorphizer.extract_type_args(param_types, all_arg_types, generic_params)
+    };
+    let mono_handler = fn_mono_key(
+        mono,
+        handler_name,
+        handler_type_args,
+        handler_info.witnesses,
+        handler_ctx,
+    );
+    if !mono.fn_done.contains(mono_handler) {
+        mono.fn_queue.push_back(FnWork(
+            handler_name,
+            handler_type_args,
+            handler_info.witnesses,
+            handler_ctx,
+            mono.allocator_location_for(handler_ctx),
+        ));
+    }
+    mono_handler
+}
+
+fn ctor_allocation_info(mono: Monomorphizer) -> Option[AllocationInfo] {
+    let method = B.get_allocator_allocate_qn();
+    let handler_info = match mono.current_mono_ctx.get_effect(method) {
+        Some(info) => info,
+        None => return None,
+    };
+    let effect_fn = mono.source.functions.get(method)
+        .expect("allocator effect method not found in program");
+    let arg_types: Vec[TypeDef] = effect_fn.args.iter().map(|a| a.type_def.clone()).collect();
+    let result_ty = effect_fn.result_type
+        .expect("allocator effect method has no result type");
+    Some(AllocationInfo(
+        instantiate_effect_handler(
+            handler_info,
+            arg_types,
+            result_ty,
+            mono.current_mono_ctx.without_effect(method),
+            mono,
+        ),
+        None,
+        mono.current_allocator_location
+            .expect("allocator handler location is missing during monomorphization"),
+    ))
 }
 
 pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphizer, witness_info: WitnessInfo, is_co: Bool) -> FunctionCallInfo {
@@ -48,37 +113,15 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
                 );
             }
         };
-        let handler_name = handler_info.name;
-        // Already resolved to modules at the `with` site (see Specialize[WithInfo]).
-        let handler_witnesses: Vec[ResolvedWitness] = handler_info.witnesses.clone();
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
-        let handler_type_args = {
-            let hf = mono.source.functions.get(handler_name).expect("process_user_defined_fn: handler function ${handler_name.name()} not found in program");
-            let generic_params = hf.type_arg_defs.type_params();
-            let param_types: Vec[TypeDef] = hf.args.iter().map(|a| a.type_def.clone()).collect();
-            let all_arg_types = arg_types.clone();
-            if let Some(rt) = hf.result_type.clone() {
-                param_types.push(rt);
-                all_arg_types.push(concrete_result_ty);
-            }
-            Monomorphizer.extract_type_args(param_types, all_arg_types, generic_params)
-        };
-        let mono_handler = fn_mono_key(
-            mono,
-            handler_name,
-            handler_type_args,
-            handler_witnesses,
+        let mono_handler = instantiate_effect_handler(
+            handler_info,
+            arg_types,
+            concrete_result_ty,
             mono.current_mono_ctx,
+            mono,
         );
-        if !mono.fn_done.contains(mono_handler) {
-            mono.fn_queue.push_back(FnWork(
-                handler_name,
-                handler_type_args,
-                handler_witnesses,
-                mono.current_mono_ctx,
-            ));
-        }
         let result = FunctionCallInfo(
             qname: mono_handler,
             kind: FunctionKind.UserDefined,
@@ -243,6 +286,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
             callee_type_args,
             callee_witnesses,
             callee_mono_ctx,
+            mono.allocator_location_for(callee_mono_ctx),
         ));
     }
     let result = FunctionCallInfo(
@@ -280,6 +324,7 @@ pub fn process_struct_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorph
         witnesses: WitnessInfo.new(),
         named_args: Vec.new(),
         is_coroutine_create: is_co,
+        allocation: ctor_allocation_info(mono),
     );
     result
 }
@@ -307,6 +352,7 @@ pub fn process_variant_ctor(name: QualifiedName, args: Vec[Expr], mono: Monomorp
         witnesses: WitnessInfo.new(),
         named_args: Vec.new(),
         is_coroutine_create: is_co,
+        allocation: ctor_allocation_info(mono),
     );
     result
 }
@@ -338,7 +384,8 @@ pub fn process_extern_fn(name: QualifiedName, args: Vec[Expr], kind: FunctionKin
             name.clone(),
             ct,
             [],
-            empty_mono_ctx
+            empty_mono_ctx,
+            None,
         ));
     }
     let result = FunctionCallInfo(
@@ -508,7 +555,13 @@ pub fn process_type_associated_call(info: TypeAssociatedCallInfo, mono: Monomorp
         callee_mono_ctx,
     );
     if !mono.fn_done.contains(mono_callee) {
-        mono.fn_queue.push_back(FnWork(final_callee, callee_type_args, callee_witnesses, callee_mono_ctx));
+        mono.fn_queue.push_back(FnWork(
+            final_callee,
+            callee_type_args,
+            callee_witnesses,
+            callee_mono_ctx,
+            mono.allocator_location_for(callee_mono_ctx),
+        ));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,
@@ -540,7 +593,7 @@ pub fn process_builtin_fn(name: QualifiedName, args: Vec[Expr], mono: Monomorphi
         MonoContext.new(),
     );
     if !mono.fn_done.contains(mono_callee) {
-        mono.fn_queue.push_back(FnWork(name.clone(), ct, [], MonoContext.new()));
+        mono.fn_queue.push_back(FnWork(name.clone(), ct, [], MonoContext.new(), None));
     }
     let result = FunctionCallInfo(
         qname: mono_callee,

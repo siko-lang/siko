@@ -349,6 +349,7 @@ instance Rw[E.FunctionKind]      = auto(Map, =)
 instance Rw[E.BinaryOp]          = auto(Map, =)
 instance Rw[E.UnaryOp]           = auto(Map, =)
 instance Rw[E.WitnessInfo]       = auto(Map, =)
+instance Rw[E.AllocationInfo]    = auto(Map, !)
 instance Rw[E.HandlerSelection]  = auto(Map, =)
 instance Rw[E.ImplicitRefInfo]   = auto(Map, =)
 instance Rw[E.FunctionPtrInfo]   = auto(Map, =)
@@ -577,6 +578,20 @@ instance Rw[E.Expr] {
                 E.Expr(E.ExprKind.FunctionPtr(E.FunctionPtrInfo(new_name, info.witnesses)), loc, new_ty)
             }
             E.ExprKind.FunctionCall(info) => {
+                let allocation = info.allocation.map(|allocation| {
+                    let ctx_expr = allocation.ctx
+                        .expect("closure lowering: allocator call has no implicit context");
+                    let allocator_call = E.FunctionCallInfo(
+                        qname: allocation.allocator,
+                        kind: E.FunctionKind.UserDefined,
+                        args: [ctx_expr.clone()],
+                    );
+                    E.AllocationInfo(
+                        retarget_call(c, allocator_call, Some(TypeDef.VoidPtr)),
+                        Some(rw(ctx_expr, c)),
+                        allocation.location,
+                    )
+                });
                 let new_qname = match info.kind {
                     E.FunctionKind.UserDefined => retarget_call(c, info, orig_ty),
                     E.FunctionKind.Builtin => retarget_call(c, info, orig_ty),
@@ -595,6 +610,7 @@ instance Rw[E.Expr] {
                     witnesses: info.witnesses,
                     named_args: info.named_args,
                     is_coroutine_create: info.is_coroutine_create,
+                    allocation: allocation,
                 )), loc, new_ty)
             }
             kind => E.Expr(rw(kind, c), loc, new_ty),

@@ -54,6 +54,7 @@ instance Rewrite[MethodMap]     = auto(Map, =)
 instance Rewrite[FunctionArg]   = auto(Map)
 instance Rewrite[Pattern]       = auto(Map)
 instance Rewrite[PatternKind]   = auto(Map)
+instance Rewrite[AllocationInfo]           = auto(Map)
 instance Rewrite[FunctionCallInfo]         = auto(Map)
 instance Rewrite[TypeAssociatedCallInfo]   = auto(Map, !)
 instance Rewrite[NamedArgument]            = auto(Map, =)
@@ -74,7 +75,7 @@ instance Rewrite[BlockInfo] {
     fn rewrite(block: BlockInfo, ctx: BuiltinLowerer) -> BlockInfo {
         let out = Vec.new();
         for stmt in block.stmts {
-            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, _)), loc, expr_ty))) = stmt {
+            if let S.Statement.Let(S.LetInfo(name, ty, Expr(ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, _, _)), loc, expr_ty))) = stmt {
                 if qn.base_name() == B.get_util_uninitialized_qn() {
                     out.push(S.Statement.Declare(S.DeclareInfo(name, ty.or(expr_ty))));
                     continue;
@@ -108,7 +109,7 @@ instance Rewrite[Expr] {
         let loc = expr.location.clone();
         let ty = expr.ty.clone();
         match expr.kind {
-            ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, is_co)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qn, FunctionKind.Builtin, args, _, _, is_co, _)) => {
                 let args = args.rewrite(ctx);
                 if qn.base_name() == B.get_macro_debug_println_qn() {
                     report("Std.Macro.Debug.println is only available in compile-time interpreted code", Some(loc));

@@ -21,6 +21,7 @@ import Siko.CoroutineLowering.YieldCounter
 import Siko.CoroutineLowering.LocalCollect
 import Siko.CoroutineLowering.FunctionGroupBuilder as FGB
 import Siko.CoroutineLowering.TransitiveLower as TL
+import Siko.CoroutineLowering.Error
 
 // ── CoroutineLowerer ─────────────────────────────────────────────────────────
 
@@ -60,7 +61,7 @@ pub struct CoroutineLowerer {
         let loc = expr.location.clone();
         let rewritten_ty = expr.ty.rewrite_co(ctx);
         match expr.kind {
-            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_coroutine_create)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_coroutine_create, allocation)) => {
                 if is_coroutine_create {
                     return ctx.lower_co_create(qname, args, rewritten_ty, loc);
                 }
@@ -78,6 +79,7 @@ pub struct CoroutineLowerer {
                     witnesses: witnesses.rewrite_co(ctx),
                     named_args: named_args.rewrite_co(ctx),
                     is_coroutine_create: False,
+                    allocation: allocation.rewrite_co(ctx),
                 )), loc, rewritten_ty)
             }
             kind => Expr(kind.rewrite_co(ctx), loc, rewritten_ty),
@@ -125,8 +127,8 @@ pub struct CoroutineLowerer {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-pub fn lower_coroutines(program: Program) {
-    let is_co_map = FGB.build_coroutine_map(program);
+pub fn lower_coroutines(program: Program) -> Result[(), Vec[CoroutineLoweringError]] {
+    let is_co_map = FGB.build_coroutine_map(program)?;
     TL.transform_transitive(program, is_co_map);
     let repr_loc = any_location(program);
     let ctx = CoroutineLowerer(
@@ -319,6 +321,7 @@ pub fn lower_coroutines(program: Program) {
             None => panic("lower_coroutines: resume arg[0] is not a known coroutine wrap type"),
         }
     }
+    Ok(())
 }
 
 }

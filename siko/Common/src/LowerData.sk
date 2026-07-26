@@ -83,13 +83,13 @@ struct EnumLowerer {
     }
 
     // A constructor returning Ptr(T) constructs a non-value datatype.
-    fn heap_ctor_pointee(l: EnumLowerer, expr: Expr) -> Option[TypeDef] {
+    fn heap_ctor_info(l: EnumLowerer, expr: Expr) -> Option[(TypeDef, Option[AllocationInfo])] {
         match expr.kind {
             ExprKind.FunctionCall(info) => {
                 match info.kind {
                     FunctionKind.StructCtor | FunctionKind.VariantCtor => {
                         match expr.ty {
-                            Some(TypeDef.Ptr(pointee)) => Some(pointee),
+                            Some(TypeDef.Ptr(pointee)) => Some((pointee, info.allocation)),
                             _ => None,
                         }
                     }
@@ -97,6 +97,33 @@ struct EnumLowerer {
                 }
             }
             _ => None,
+        }
+    }
+
+    fn allocation_expr(
+        l: EnumLowerer,
+        pointee: TypeDef,
+        allocation: Option[AllocationInfo],
+        loc: Location,
+    ) -> Expr {
+        let ptr_ty = TypeDef.Ptr(pointee);
+        match allocation {
+            None => Expr(ExprKind.Alloc(pointee), loc, Some(ptr_ty)),
+            Some(AllocationInfo(allocator, ctx, _)) => {
+                let ctx = ctx.expect("lower-data: allocator call has no implicit context");
+                let u64_ty = builtin_ty(B.get_u64_type_qn().as_mono());
+                let size = Expr(ExprKind.SizeOf(pointee), loc, Some(u64_ty));
+                let call = Expr(
+                    ExprKind.FunctionCall(FunctionCallInfo(
+                        qname: allocator,
+                        kind: FunctionKind.UserDefined,
+                        args: [ctx, size],
+                    )),
+                    loc,
+                    Some(TypeDef.VoidPtr),
+                );
+                Expr(ExprKind.Transmute(call), loc, Some(ptr_ty))
+            }
         }
     }
 
@@ -113,6 +140,7 @@ struct EnumLowerer {
                 info.args.insert(0, destination);
                 info.qname = QualifiedName.new_ctor(info.qname);
                 info.kind = FunctionKind.UserDefined;
+                info.allocation = None;
                 Expr(ExprKind.FunctionCall(info), loc, ty)
             }
             _ => panic("lower-data: placement target is not a call"),
@@ -151,6 +179,7 @@ instance Rewrite[UnaryOp]           = auto(Map, =)
 instance Rewrite[AtomicOrdering]    = auto(Map, =)
 instance Rewrite[AtomicRmwOp]       = auto(Map, =)
 instance Rewrite[WitnessInfo]       = auto(Map, =)
+instance Rewrite[AllocationInfo]    = auto(Map)
 instance Rewrite[HandlerSelection]  = auto(Map, =)
 instance Rewrite[ImplicitRefInfo]   = auto(Map, =)
 instance Rewrite[CreateClosureInfo] = auto(Map, =)
@@ -220,6 +249,7 @@ instance Rewrite[Expr] {
                         }
                         info.qname = QualifiedName.new_ctor(info.qname);
                         info.kind = FunctionKind.UserDefined;
+                        info.allocation = None;
                     }
                     _ => {}
                 }
@@ -236,11 +266,11 @@ instance Rewrite[BlockInfo] {
         for stmt in block.stmts {
             match stmt {
                 S.Statement.Let(info) => {
-                    match l.heap_ctor_pointee(info.rhs) {
-                        Some(pointee) => {
+                    match l.heap_ctor_info(info.rhs) {
+                        Some((pointee, allocation)) => {
                             let loc = info.rhs.location;
                             let ptr_ty = TypeDef.Ptr(pointee);
-                            let alloc = Expr(ExprKind.Alloc(pointee), loc, Some(ptr_ty));
+                            let alloc = l.allocation_expr(pointee, allocation, loc);
                             let destination = Expr(ExprKind.Var(info.name), loc, Some(ptr_ty));
                             let call = l.placement_ctor_call(info.rhs, destination);
                             out.push(S.Statement.Let(S.LetInfo(info.name, info.ty, alloc)));
@@ -252,12 +282,12 @@ instance Rewrite[BlockInfo] {
                     }
                 }
                 S.Statement.Expr(e) => {
-                    match l.heap_ctor_pointee(e) {
-                        Some(pointee) => {
+                    match l.heap_ctor_info(e) {
+                        Some((pointee, allocation)) => {
                             let loc = e.location;
                             let ptr_ty = TypeDef.Ptr(pointee);
                             let destination_name = l.var_alloc.allocate_temp();
-                            let alloc = Expr(ExprKind.Alloc(pointee), loc, Some(ptr_ty));
+                            let alloc = l.allocation_expr(pointee, allocation, loc);
                             let destination = Expr(ExprKind.Var(destination_name), loc, Some(ptr_ty));
                             let call = l.placement_ctor_call(e, destination);
                             out.push(S.Statement.Let(S.LetInfo(destination_name, Some(ptr_ty), alloc)));

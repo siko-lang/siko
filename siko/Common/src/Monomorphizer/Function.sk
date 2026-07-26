@@ -5,6 +5,7 @@ import Siko.Monomorphizer.Specialize
 import Siko.Unification.Sub
 import Siko.AST.QualifiedName
 import Siko.AST.Type
+import Siko.Location
 import Siko.Config
 
 pub fn process_function(
@@ -12,6 +13,7 @@ pub fn process_function(
     type_args: Vec[TypeDef],
     fn_witnesses: Vec[ResolvedWitness],
     mono_ctx: MonoContext,
+    allocator_location: Option[Location],
     mono_name: QualifiedName,
     mono: Monomorphizer,
 ) {
@@ -24,6 +26,7 @@ pub fn process_function(
     mono.current_module = func.module_name.clone();
     mono.current_fn_witnesses = fn_witnesses.clone();
     mono.current_mono_ctx = mono_ctx;
+    mono.current_allocator_location = allocator_location;
     if get_config().debug_mono {
         println("Processing ${mono_name.name()}");
     }

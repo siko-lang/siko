@@ -47,6 +47,7 @@ instance CollectDeps[E.VariableName]      = auto(Fold, =)
 instance CollectDeps[Name]                = auto(Fold, =)
 instance CollectDeps[Identifier]          = auto(Fold, =)
 instance CollectDeps[E.WitnessInfo]       = auto(Fold, =)
+instance CollectDeps[E.AllocationInfo]    = auto(Fold)
 instance CollectDeps[E.FunctionKind]      = auto(Fold, =)
 instance CollectDeps[E.BinaryOp]          = auto(Fold, =)
 instance CollectDeps[E.UnaryOp]           = auto(Fold, =)
@@ -89,6 +90,10 @@ instance CollectDeps[E.FunctionCallInfo] {
             _ => { c.deps.insert(info.qname); }
         }
         collect_deps(info.args, c);
+        if let Some(allocation) = info.allocation {
+            c.deps.insert(allocation.allocator);
+            collect_deps(allocation.ctx, c);
+        }
     }
 }
 

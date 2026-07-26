@@ -1,0 +1,31 @@
+module Main {
+
+import Std.Effects.Allocator
+import Std.GC
+
+enum List {
+    Nil,
+    Cons(Int, List)
+}
+
+fn yielding() co(()) -> () {
+    yield ();
+}
+
+@safe
+fn custom_allocate(size: U64) -> void* {
+    yielding();
+    gc_malloc(size)
+}
+
+fn make_list() -> List {
+    Nil
+}
+
+fn main() {
+    with Allocator.allocate = custom_allocate {
+        let list = make_list();
+    }
+}
+
+}

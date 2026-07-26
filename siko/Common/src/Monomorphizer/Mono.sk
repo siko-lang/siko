@@ -34,6 +34,8 @@ pub struct FnWork {
     pub type_args: Vec[TypeDef],
     pub witnesses: Vec[ResolvedWitness],
     pub mono_ctx: MonoContext,
+    // Diagnostic provenance only; deliberately not part of the mono key.
+    pub allocator_location: Option[Location],
 }
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
@@ -103,6 +105,7 @@ pub struct Monomorphizer {
     pub current_module: I.String,
     pub current_fn_witnesses: Vec[ResolvedWitness],
     pub current_mono_ctx: MonoContext,
+    pub current_allocator_location: Option[Location],
     pub errors: Vec[MonoError],
     pub sub: Substitution,
     pub current_location: Option[Location],
@@ -128,6 +131,7 @@ pub struct Monomorphizer {
             current_module: I.intern(""),
             current_fn_witnesses: [],
             current_mono_ctx: MonoContext.new(),
+            current_allocator_location: None,
             errors: [],
             sub: Substitution.new(),
             current_location: None,
@@ -183,6 +187,13 @@ pub struct Monomorphizer {
 
     pub fn clear_type_cache(mono: Monomorphizer) {
         mono.ty_cache.clear();
+    }
+
+    pub fn allocator_location_for(mono: Monomorphizer, mono_ctx: MonoContext) -> Option[Location] {
+        match mono_ctx.get_effect(B.get_allocator_allocate_qn()) {
+            Some(_) => mono.current_allocator_location,
+            None => None,
+        }
     }
 
     pub fn enqueue_named_types(mono: Monomorphizer, name: QualifiedName, args: Vec[TypeDef]) {
@@ -281,6 +292,7 @@ pub struct Monomorphizer {
                 type_args: [],
                 witnesses: [],
                 mono_ctx: mono_ctx,
+                allocator_location: None,
             ));
         }
 
@@ -300,6 +312,7 @@ pub struct Monomorphizer {
                         work.type_args,
                         work.witnesses,
                         work.mono_ctx,
+                        work.allocator_location,
                         mono_name,
                         mono,
                     );

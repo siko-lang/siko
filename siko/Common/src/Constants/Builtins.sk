@@ -3,6 +3,7 @@ module Siko.Constants.Builtins {
 import Siko.AST.QualifiedName
 import Siko.Interner as I
 import Siko.Constants.Array
+import Siko.Constants.Allocator
 import Siko.Constants.Atomic
 import Siko.Constants.Bool
 import Siko.Constants.Coroutine
@@ -22,6 +23,7 @@ import Siko.Constants.String
 import Siko.Constants.Vec
 
 pub struct BuiltinNameCache {
+    allocator: Allocator.AllocatorNames,
     bool_: Bool.BoolNames,
     integer: Int.IntegerNames,
     float: Float.FloatNames,
@@ -51,6 +53,7 @@ pub struct BuiltinNameCache {
 
 pub fn build_cache() -> BuiltinNameCache {
     BuiltinNameCache(
+        allocator: Allocator.build_allocator_names(),
         bool_: Bool.build_bool_names(),
         integer: Int.build_integer_names(),
         float: Float.build_float_names(),
@@ -80,6 +83,8 @@ pub fn build_cache() -> BuiltinNameCache {
 }
 
 pub implicit name_cache: BuiltinNameCache
+
+pub fn get_allocator_allocate_qn() -> QualifiedName { name_cache.allocator.allocate_qn }
 
 // Primitive types
 pub fn get_bool_type_qn() -> QualifiedName { name_cache.bool_.type_qn }

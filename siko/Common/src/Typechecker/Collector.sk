@@ -225,7 +225,7 @@ pub struct Collector {
                 ExprKind.Block(BlockInfo(new_stmts))
             }
 
-            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_co)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, is_co, allocation)) => {
                 let (arg_tys, new_args) = c.collect_exprs(args, env);
                 c.emit(C.ConstraintKind.CallFunction(
                     qname: qname,
@@ -288,7 +288,7 @@ pub struct Collector {
                         }
                     }
                 }
-                ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co))
+                ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co, allocation))
             }
 
             ExprKind.TraitObjectPack(trait_name, value, witnesses) => {

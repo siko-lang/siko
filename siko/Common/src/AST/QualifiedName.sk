@@ -197,6 +197,12 @@ pub struct MonoContext {
     pub fn without_implicits(ctx: MonoContext) -> MonoContext {
         MonoContext(ctx.effect_ctx, ctx.effect_associated_type_ctx, Vec.new())
     }
+
+    pub fn without_effect(ctx: MonoContext, method_qname: QualifiedName) -> MonoContext {
+        let effect_ctx = ctx.effect_ctx.clone();
+        effect_ctx.remove(method_qname);
+        MonoContext(effect_ctx, ctx.effect_associated_type_ctx, ctx.implicit_ctx)
+    }
 }
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)

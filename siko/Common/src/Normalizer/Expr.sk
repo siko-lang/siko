@@ -125,12 +125,22 @@ pub fn lower_expr(norm: Normalizer, expr: Expr, out: Vec[S.Statement]) -> Option
             None
         }
 
-        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args, is_co)) => {
+        ExprKind.FunctionCall(FunctionCallInfo(name, kind, args, wi, named_args, is_co, allocation)) => {
             let atom_args = match norm.lower_args(args, out) {
                 None => return None,
                 Some(v) => v,
             };
-            let call = Expr(ExprKind.FunctionCall(FunctionCallInfo(name, kind, atom_args, wi, named_args, is_co)), loc, ty);
+            let allocation = match allocation {
+                Some(AllocationInfo(allocator, Some(ctx), location)) => {
+                    let ctx = match norm.to_atom(ctx, out) {
+                        Some(ctx) => ctx,
+                        None => return None,
+                    };
+                    Some(AllocationInfo(allocator, Some(ctx), location))
+                }
+                other => other,
+            };
+            let call = Expr(ExprKind.FunctionCall(FunctionCallInfo(name, kind, atom_args, wi, named_args, is_co, allocation)), loc, ty);
             if norm.div_fns.contains(name) {
                 out.push(S.Statement.Expr(call));
                 None

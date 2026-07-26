@@ -56,6 +56,7 @@ instance Finalize[CreateClosureInfo] = auto(Map, =)
 instance Finalize[FunctionPtrInfo]   = auto(Map, =)
 
 instance Finalize[LambdaArg]    = auto(Map)
+instance Finalize[AllocationInfo]        = auto(Map)
 instance Finalize[FunctionCallInfo]        = auto(Map)
 instance Finalize[TypeAssociatedCallInfo]  = auto(Map)
 instance Finalize[NamedArgument]           = auto(Map, =)
@@ -311,7 +312,7 @@ pub struct Finalizer {
                 }
             }
 
-            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args, is_co)) => {
+            ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, _, named_args, is_co, allocation)) => {
                 let new_args = finalize(args, f);
                 if qname.base_name() == B.get_util_downcast_qn() {
                     let value = new_args[0];
@@ -342,7 +343,7 @@ pub struct Finalizer {
                             Some(t) => Some(t),
                             None => ty,
                         };
-                        let call = FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co);
+                        let call = FunctionCallInfo(qname, kind, new_args, witnesses, named_args, is_co, allocation);
                         match f.method_resolutions.get(result_var).and_then(|cr| cr.trait_object) {
                             Some(trait_qname) => Expr(ExprKind.TraitObjectCall(trait_qname, call), loc, call_ty),
                             None => Expr(ExprKind.FunctionCall(call), loc, call_ty),
@@ -350,10 +351,10 @@ pub struct Finalizer {
                     }
                     FunctionKind.StructCtor => {
                         let new_args = f.inject_ctor_default_args(qname, new_args, loc);
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co)), loc, ty)
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co, allocation)), loc, ty)
                     }
                     FunctionKind.VariantCtor =>
-                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co)), loc, ty),
+                        Expr(ExprKind.FunctionCall(FunctionCallInfo(qname, kind, new_args, WitnessInfo.new(), named_args, is_co, allocation)), loc, ty),
                 }
             }
 

@@ -1,0 +1,26 @@
+module Main {
+
+import Std.Effects.Allocator
+import Std.GC
+
+implicit marker: Int
+
+enum List {
+    Nil,
+    Cons(Int, List)
+}
+
+@safe
+fn custom_allocate(size: U64) -> void* {
+    println(marker);
+    gc_malloc(size)
+}
+
+fn main() {
+    let n = 73;
+    with marker = n, Allocator.allocate = custom_allocate {
+        let list = Nil;
+    }
+}
+
+}

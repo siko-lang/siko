@@ -21,11 +21,18 @@ import Siko.Utils.SCC
 import Siko.Utils.VarAllocator
 import Siko.Utils.LabelAllocator
 import Siko.Config
+import Siko.CoroutineLowering.Error
+
+pub struct AllocatorUse {
+    pub allocator: QualifiedName,
+    pub location: Location,
+}
 
 pub struct CallCollector {
     pub deps: Set[QualifiedName],
     pub handler_deps: Set[QualifiedName],
     pub co_create_targets: Set[QualifiedName],
+    pub allocator_uses: Vec[AllocatorUse],
     pub program: Program,
 }
 
@@ -55,6 +62,13 @@ instance Collect[E.LambdaArg]        = auto(Fold, =)
 instance Collect[E.ImplicitRefInfo]  = auto(Fold, =)
 instance Collect[E.FunctionPtrInfo]  = auto(Fold, =)
 instance Collect[E.NamedArgument]    = auto(Fold, =)
+instance Collect[E.AllocationInfo] {
+    fn walk(info: E.AllocationInfo, c: CallCollector) {
+        c.deps.insert(info.allocator);
+        c.allocator_uses.push(AllocatorUse(info.allocator, info.location));
+        walk(info.ctx, c);
+    }
+}
 instance Collect[NamedPatternArg]    = auto(Fold, =)
 instance Collect[NamedPatternInfo]   = auto(Fold)
 instance Collect[E.MethodCallInfo]   = auto(Fold)
@@ -115,6 +129,7 @@ instance Collect[E.FunctionCallInfo] {
         walk(info.args, c);
         walk(info.witnesses, c);
         walk(info.named_args, c);
+        walk(info.allocation, c);
     }
 }
 
@@ -124,8 +139,8 @@ instance Collect[E.FunctionCallInfo] {
 // their final classification. An SCC is a coroutine if any of its members is an
 // intrinsic coroutine (has a yield type) or depends on a function already known
 // to be a coroutine.
-pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
-    let (sccs, graph, _, co_create_targets) = build_groups(program);
+pub fn build_coroutine_map(program: Program) -> Result[Map[QualifiedName, Bool], Vec[CoroutineLoweringError]] {
+    let (sccs, graph, _, co_create_targets, allocator_uses) = build_groups(program);
 
     let is_coroutine: Map[QualifiedName, Bool] = Map.new();
     let co_reason: Map[QualifiedName, String] = Map.new();
@@ -169,7 +184,17 @@ pub fn build_coroutine_map(program: Program) -> Map[QualifiedName, Bool] {
             println("${I.resolve(qname.name())} -> ${tag}${why}");
         }
     }
-    is_coroutine
+    let errors: Vec[CoroutineLoweringError] = Vec.new();
+    for use in allocator_uses {
+        if is_coroutine.get(use.allocator).unwrap_or(False) {
+            errors.push(CoroutineLoweringError.AllocatorMayYield(use.allocator, use.location));
+        }
+    }
+    if errors.is_empty() {
+        Ok(is_coroutine)
+    } else {
+        Err(errors)
+    }
 }
 
 fn print_dep_tree(qname: QualifiedName, graph: Map[QualifiedName, Vec[QualifiedName]], visited: Set[QualifiedName], prefix: String, is_last: Bool) {
@@ -194,13 +219,14 @@ fn print_dep_tree(qname: QualifiedName, graph: Map[QualifiedName, Vec[QualifiedN
     }
 }
 
-pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]], Set[QualifiedName]) {
+pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[QualifiedName, Vec[QualifiedName]], Map[QualifiedName, Set[QualifiedName]], Set[QualifiedName], Vec[AllocatorUse]) {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
     let handler_map: Map[QualifiedName, Set[QualifiedName]] = Map.new();
     let co_create_targets: Set[QualifiedName] = Set.new();
+    let allocator_uses: Vec[AllocatorUse] = Vec.new();
 
     for (qname, func) in program.functions {
-        let collector = CallCollector(Set.new(), Set.new(), Set.new(), program);
+        let collector = CallCollector(Set.new(), Set.new(), Set.new(), Vec.new(), program);
         walk(func, collector);
         let deps: Vec[QualifiedName] = collector.deps
             .into_iter()
@@ -212,6 +238,9 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
         }
         for t in collector.co_create_targets {
             co_create_targets.insert(t);
+        }
+        for use in collector.allocator_uses {
+            allocator_uses.push(use);
         }
     }
 
@@ -232,7 +261,7 @@ pub fn build_groups(program: Program) -> (Vec[Vec[QualifiedName]], Map[Qualified
         }
     }
 
-    (SCC.compute(graph), graph, handler_map, co_create_targets)
+    (SCC.compute(graph), graph, handler_map, co_create_targets, allocator_uses)
 }
 
 }

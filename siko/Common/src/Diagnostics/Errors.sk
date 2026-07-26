@@ -4,6 +4,7 @@ import Siko.Format.Utils
 import Siko.Instances.InstanceChecker
 import Siko.Interner as I
 import Siko.Interpreter.Error
+import Siko.CoroutineLowering.Error
 import Siko.LowerDefer
 import Siko.MatchValidation
 import Siko.Monomorphizer.Error
@@ -122,6 +123,15 @@ pub fn report_defer_errors(errors: Vec[DeferError]) {
         match e {
             DeferError.ControlFlowEscapesDefer(kind, location) =>
                 report("`${kind}` is not allowed to escape a deferred expression", Some(location)),
+        }
+    }
+}
+
+pub fn report_coroutine_lowering_errors(errors: Vec[CoroutineLoweringError]) {
+    for error in errors {
+        match error {
+            CoroutineLoweringError.AllocatorMayYield(allocator, location) =>
+                report("allocator handler `${I.resolve(allocator.name())}` cannot yield, directly or transitively", Some(location)),
         }
     }
 }

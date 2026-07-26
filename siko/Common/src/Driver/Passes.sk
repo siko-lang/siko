@@ -273,7 +273,11 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
             Pass(
                 name: "lower-coroutines",
                 label: "Lowering coroutines...",
-                run: |driver| { lower_coroutines(driver.program); },
+                run: |driver| {
+                    if let Err(errors) = lower_coroutines(driver.program) {
+                        report_coroutine_lowering_errors(errors);
+                    }
+                },
                 dump: Some(|driver| println(driver.program.format())),
                 run_sanity_check: True,
             ),

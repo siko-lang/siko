@@ -48,6 +48,7 @@ instance TransitiveLower[FunctionKind]      = auto(Map, =)
 instance TransitiveLower[BinaryOp]          = auto(Map, =)
 instance TransitiveLower[UnaryOp]           = auto(Map, =)
 instance TransitiveLower[WitnessInfo]       = auto(Map, =)
+instance TransitiveLower[AllocationInfo]    = auto(Map)
 instance TransitiveLower[HandlerSelection]  = auto(Map, =)
 instance TransitiveLower[ImplicitRefInfo]   = auto(Map, =)
 instance TransitiveLower[CreateClosureInfo] = auto(Map, =)
@@ -216,7 +217,7 @@ pub fn transform_transitive(program: Program, is_co_map: Map[QualifiedName, Bool
 // Yield type is always unit — transitive coroutines only propagate suspension.
 fn classify_co_create(expr: Expr, program: Program, is_co_map: Map[QualifiedName, Bool]) -> Option[(TypeDef, TypeDef)] {
     match expr.kind {
-        ExprKind.FunctionCall(FunctionCallInfo(qname, _, _, _, _, False)) => {
+        ExprKind.FunctionCall(FunctionCallInfo(qname, _, _, _, _, False, _)) => {
             if !is_co_map.get(qname).unwrap_or(False) {
                 return None;
             }
@@ -278,7 +279,7 @@ fn build_expansion_stmts(
     // Mark is_coroutine_create=True so step 2 of lower_coroutines calls lower_co_create
     // and generates the frame struct construction instead of a plain function call.
     let co_create_kind = match rhs.kind {
-        ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, _)) =>
+        ExprKind.FunctionCall(FunctionCallInfo(qname, kind, args, witnesses, named_args, _, allocation)) =>
             ExprKind.FunctionCall(FunctionCallInfo(
                 qname: qname,
                 kind: kind,
@@ -286,6 +287,7 @@ fn build_expansion_stmts(
                 witnesses: witnesses,
                 named_args: named_args,
                 is_coroutine_create: True,
+                allocation: allocation,
             )),
         _ => panic("build_expansion_stmts: expected FunctionCall"),
     };
