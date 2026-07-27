@@ -6,6 +6,7 @@ import Siko.Instances.InstanceResolver
 import Siko.Typechecker.Collector
 import Siko.Typechecker.Error
 import Siko.Typechecker.Finalize
+import Siko.Typechecker.FunctionGroupBuilder
 import Siko.Typechecker.Sanity
 import Siko.Typechecker.Solver
 import Siko.Typechecker.Statistics
@@ -68,12 +69,14 @@ pub fn typecheck_function(key: QualifiedName, program: Program, instance_resolve
 }
 
 pub fn typecheck_program(program: Program) -> Result[(), Vec[TypeError]] {
-    let keys: Vec[QualifiedName] = program.functions.keys().collect();
+    let groups = FunctionGroupBuilder.build_groups(program);
     let errors: Vec[TypeError] = Vec.new();
-    for key in keys {
-        if let Err(errs) = typecheck_function(key, program, program.instance_resolver) {
-            for e in errs {
-                errors.push(e);
+    for group in groups {
+        for key in group {
+            if let Err(errs) = typecheck_function(key, program, program.instance_resolver) {
+                for e in errs {
+                    errors.push(e);
+                }
             }
         }
     }

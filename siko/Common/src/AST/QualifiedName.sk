@@ -111,22 +111,22 @@ pub struct BaseNameInfo {
     }
 }
 
-// A fully resolved witness (a monomorphized dictionary): the instance, the
-// module that certifies it, and the sub-dictionaries it closes over. The pre-mono
-// BoundWitness can still be a FunctionBound; resolving against a frame turns it
-// into one of these, which never contains an unresolved forward.
+// A fully resolved witness (a monomorphized dictionary): the instance and the
+// sub-dictionaries it closes over. The pre-mono BoundWitness can still be a
+// FunctionBound; resolving against a frame turns it into one of these, which
+// never contains an unresolved forward.
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub struct ResolvedWitness {
-    pub module_name: I.String,
     pub instance_qname: QualifiedName,
     pub children: Vec[ResolvedWitness],
 
     pub fn format(w: ResolvedWitness) -> String {
+        let instance_name = I.resolve(w.instance_qname.name());
         if w.children.is_empty() {
-            I.resolve(w.module_name)
+            instance_name
         } else {
             let cs: Vec[String] = w.children.iter().map(|c| c.format()).collect();
-            I.resolve(w.module_name) + "<" + join(cs, ",") + ">"
+            instance_name + "<" + join(cs, ",") + ">"
         }
     }
 }

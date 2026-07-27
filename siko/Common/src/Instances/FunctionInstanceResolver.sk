@@ -20,7 +20,7 @@ pub enum BoundWitness {
     FunctionBound(Int),
     // The witnesses for the instance's own (context) bounds, captured when the
     // instance was resolved — i.e. the sub-dictionaries this instance closes over.
-    Instance(module_name: I.String, instance_qname: QualifiedName, children: Vec[BoundWitness]),
+    Instance(instance_qname: QualifiedName, children: Vec[BoundWitness]),
     // A bound on an effect associated type. The instance is unknown here; it is
     // resolved at the `with` site and fetched from the effect-associated-type ctx
     // at mono. `index` selects which of the EAT's bounds this is.
@@ -29,12 +29,13 @@ pub enum BoundWitness {
     pub fn format(w: BoundWitness) -> String {
         match w {
             BoundWitness.FunctionBound(index) => "#${index}",
-            BoundWitness.Instance(module_name, _, children) => {
+            BoundWitness.Instance(instance_qname, children) => {
+                let instance_name = I.resolve(instance_qname.name());
                 if children.is_empty() {
-                    I.resolve(module_name)
+                    instance_name
                 } else {
                     let cs: Vec[String] = children.iter().map(|c| c.format()).collect();
-                    I.resolve(module_name) + "<" + join(cs, ",") + ">"
+                    instance_name + "<" + join(cs, ",") + ">"
                 }
             }
             BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => "eat:${assoc_qname.name()}#${index}",
@@ -44,7 +45,7 @@ pub enum BoundWitness {
     pub fn is_shareable(w: BoundWitness) -> Bool {
         match w {
             BoundWitness.FunctionBound(_) => False,
-            BoundWitness.Instance(_, _, children) => children.iter().all(|c| c.is_shareable()),
+            BoundWitness.Instance(_, children) => children.iter().all(|c| c.is_shareable()),
             BoundWitness.EffectAssociatedTypeBound(_, _) => True,
         }
     }
@@ -62,8 +63,8 @@ pub struct BoundResolution {
         BoundResolution(BoundWitness.FunctionBound(idx), assoc_types, [], None, Substitution.new())
     }
 
-    fn from_instance(module_name: I.String, assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[QualifiedName], type_witness: Substitution, children: Vec[BoundWitness]) -> BoundResolution {
-        BoundResolution(BoundWitness.Instance(module_name: module_name, instance_qname: instance_qname.unwrap(), children: children), assoc_types, primary_args, instance_qname, type_witness)
+    fn from_instance(assoc_types: Map[I.String, TypeDef], primary_args: Vec[TypeDef], instance_qname: Option[QualifiedName], type_witness: Substitution, children: Vec[BoundWitness]) -> BoundResolution {
+        BoundResolution(BoundWitness.Instance(instance_qname: instance_qname.unwrap(), children: children), assoc_types, primary_args, instance_qname, type_witness)
     }
 
     fn from_eat_bound(assoc_qname: QualifiedName, index: Int) -> BoundResolution {
@@ -105,14 +106,13 @@ pub struct FunctionBoundEntry {
 }
 
 pub struct FunctionInstanceResolver {
-    pub module_name: I.String,
     pub module_resolver: ModuleInstanceResolver,
     pub function_bounds: Vec[FunctionBoundEntry],
     pub allocator: TypeVarAllocator,
     pub program: Program,
 
-    pub fn new(module_name: I.String, module_resolver: ModuleInstanceResolver, function_bounds: Vec[FunctionBoundEntry], allocator: TypeVarAllocator, program: Program) -> FunctionInstanceResolver {
-        FunctionInstanceResolver(module_name, module_resolver, function_bounds, allocator, program)
+    pub fn new(module_resolver: ModuleInstanceResolver, function_bounds: Vec[FunctionBoundEntry], allocator: TypeVarAllocator, program: Program) -> FunctionInstanceResolver {
+        FunctionInstanceResolver(module_resolver, function_bounds, allocator, program)
     }
 
     fn check_sub_bounds(r: FunctionInstanceResolver, instance_def: InstanceDef, type_witness: Substitution, sub: Substitution) -> Bool {
@@ -152,7 +152,6 @@ pub struct FunctionInstanceResolver {
         let primary_args = instance_def.args.apply(type_witness);
         let instance_qname = instance_def.qualified_name;
         BoundResult.Satisfied(BoundResolution.from_instance(
-            r.module_name,
             assoc_types,
             primary_args,
             instance_qname,
@@ -330,7 +329,6 @@ pub fn resolve_known_instance(program: Program, witness: ResolvedWitness, query_
     }
     let primary_args = instance_def.args.apply(type_witness);
     BoundResolution.from_instance(
-        instance_def.module_name,
         assoc_types,
         primary_args,
         instance_def.qualified_name,

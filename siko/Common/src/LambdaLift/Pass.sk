@@ -138,7 +138,7 @@ instance CollectBounds[BoundWitness] {
         match w {
             BoundWitness.FunctionBound(idx) => { out.insert(idx); },
             // Children can themselves forward parent witnesses, so recurse.
-            BoundWitness.Instance(_, _, children) => { collect_bounds(children, out); },
+            BoundWitness.Instance(_, children) => { collect_bounds(children, out); },
             BoundWitness.EffectAssociatedTypeBound(_, _) => {},
         }
     }
@@ -210,7 +210,7 @@ instance RemapWitnesses[BoundWitness] {
     fn remap_witnesses(w: BoundWitness, remap: Map[Int, Int]) {
         match w {
             BoundWitness.FunctionBound(idx) => { w = BoundWitness.FunctionBound(remap.get(idx).unwrap()); },
-            BoundWitness.Instance(_, _, children) => { remap_witnesses(children, remap); },
+            BoundWitness.Instance(_, children) => { remap_witnesses(children, remap); },
             BoundWitness.EffectAssociatedTypeBound(_, _) => {},
         }
     }

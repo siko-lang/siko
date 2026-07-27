@@ -229,7 +229,7 @@ pub struct Monomorphizer {
 
     // Resolve a witness against the current frame into a fully concrete dictionary:
     // a FunctionBound forwards to the caller-provided witness at that index (which
-    // is already resolved), an Instance keeps its module/qname and resolves each
+    // is already resolved), an Instance keeps its qname and resolves each
     // child. The ResolvedWitness type guarantees no FunctionBound survives.
     pub fn resolve_witness(mono: Monomorphizer, witness: BoundWitness) -> Option[ResolvedWitness] {
         match witness {
@@ -237,12 +237,12 @@ pub struct Monomorphizer {
                 Some(mono.current_fn_witnesses
                     .get_opt(idx)
                     .expect("bound index not found: idx=${idx} in ${mono.current_module}")),
-            BoundWitness.Instance(module_name, qname, children) => {
+            BoundWitness.Instance(qname, children) => {
                 let resolved_children = match mono.resolve_witnesses(children) {
                     Some(children) => children,
                     None => return None,
                 };
-                Some(ResolvedWitness(module_name, qname, resolved_children))
+                Some(ResolvedWitness(qname, resolved_children))
             }
             BoundWitness.EffectAssociatedTypeBound(assoc_qname, index) => {
                 match mono.current_mono_ctx.get_effect_associated_type(assoc_qname) {
