@@ -1,0 +1,49 @@
+module Std.Allocators.Arena {
+
+import Std.GC
+import Std.Ptr
+import Std.Intrinsics
+
+pub implicit current: Arena
+
+pub struct Arena {
+    chunks: Vec[void*],
+    current_chunk: void*,
+    used: U64,
+    capacity: U64,
+
+    @safe
+    pub fn new() -> Arena {
+        Arena(Vec.new(), get_null_voidptr(), 0, 0)
+    }
+}
+
+fn chunk_size() -> U64 {
+    let bytes: Int = 2 * 1024 * 1024 * 1024;
+    bytes.as_u64()
+}
+
+fn align_size(size: U64) -> U64 {
+    let alignment = 16;
+    ((size + alignment - 1) / alignment) * alignment
+}
+
+@safe
+pub fn allocate(size: U64) -> void* {
+    let size = align_size(size);
+    if current.capacity == 0 || size > current.capacity - current.used {
+        let capacity = if size > chunk_size() { size } else { chunk_size() };
+        let chunk = gc_malloc_atomic(capacity);
+        current.chunks.push(chunk);
+        current.current_chunk = chunk;
+        current.used = 0;
+        current.capacity = capacity;
+    }
+
+    let address: U64 = transmute(current.current_chunk);
+    let result: void* = transmute(address + current.used);
+    current.used = current.used + size;
+    result
+}
+
+}

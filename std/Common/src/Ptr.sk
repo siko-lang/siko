@@ -4,6 +4,7 @@ import Std.Libc.Stdlib
 import Std.Libc.String
 import Std.GC
 import Std.Intrinsics
+import Std.Effects.Allocator
 
 // closure_alias: the size travels as a bare U64, so closure flow analysis
 // cannot see that sizeof(T) must be the same T instance as the result's
@@ -54,7 +55,7 @@ pub fn gc_allocate[T]() -> *T {
 @unsafe
 @closure_alias
 pub fn gc_allocate_array[T](count: Int) -> *T {
-    transmute(gc_malloc(count.as_u64() * sizeof(T)))
+    transmute(Allocator.allocate(count.as_u64() * sizeof(T)))
 }
 
 @unsafe

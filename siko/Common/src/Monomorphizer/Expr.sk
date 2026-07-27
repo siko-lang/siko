@@ -29,12 +29,18 @@ fn unresolved_user_defined_call(name: QualifiedName, args: Vec[Expr], is_co: Boo
 }
 
 fn instantiate_effect_handler(
+    effect_method: QualifiedName,
     handler_info: HandlerInfo,
     arg_types: Vec[TypeDef],
     result_ty: TypeDef,
     handler_ctx: MonoContext,
     mono: Monomorphizer,
 ) -> QualifiedName {
+    let handler_ctx = if effect_method == B.get_allocator_allocate_qn() {
+        handler_ctx.without_effect(effect_method)
+    } else {
+        handler_ctx
+    };
     let handler_name = handler_info.name;
     let handler_type_args = {
         let handler = mono.source.functions.get(handler_name)
@@ -80,10 +86,11 @@ fn ctor_allocation_info(mono: Monomorphizer) -> Option[AllocationInfo] {
         .expect("allocator effect method has no result type");
     Some(AllocationInfo(
         instantiate_effect_handler(
+            method,
             handler_info,
             arg_types,
             result_ty,
-            mono.current_mono_ctx.without_effect(method),
+            mono.current_mono_ctx,
             mono,
         ),
         None,
@@ -133,6 +140,7 @@ pub fn process_user_defined_fn(name: QualifiedName, args: Vec[Expr], mono: Monom
         let spec_args: Vec[Expr] = args.specialize(mono);
         let arg_types: Vec[TypeDef] = args.iter().map(|a| Monomorphizer.expr_ty(mono, a)).collect();
         let mono_handler = instantiate_effect_handler(
+            name,
             handler_info,
             arg_types,
             concrete_result_ty,

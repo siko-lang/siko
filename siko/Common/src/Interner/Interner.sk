@@ -3,6 +3,7 @@ module Siko.Interner {
 import Std.String as S
 
 import Std.Map
+import Std.Effects.Allocator
 
 implicit interner: Interner
 
@@ -53,13 +54,15 @@ pub struct Interner {
     }
 
     fn intern_string(interner: Interner, value: S.String) -> String {
-        if let Some(index) = interner.indices.get(value) {
-            return String(index);
+        with Allocator.allocate = Allocator.default_allocate {
+            if let Some(index) = interner.indices.get(value) {
+                return String(index);
+            }
+            let index = interner.values.len();
+            interner.values.insert(index, value);
+            interner.indices.insert(value, index);
+            String(index)
         }
-        let index = interner.values.len();
-        interner.values.insert(index, value);
-        interner.indices.insert(value, index);
-        String(index)
     }
 
     fn resolve_string(interner: Interner, interned: String) -> S.String {
