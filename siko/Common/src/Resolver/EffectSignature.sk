@@ -1,0 +1,96 @@
+module Siko.Resolver.EffectSignature {
+
+import Siko.AST.EffectSignature
+import Siko.AST.Function
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Resolver
+import Siko.Resolver.Error
+import Siko.Resolver.ModuleItem
+
+fn invalid(name: Name, expected: String) -> ResolveError {
+    ResolveError.InvalidEffectSignatureEntry(name.unresolved(), expected)
+}
+
+instance Resolvable[EffectSignature] {
+    fn resolve(signature: EffectSignature, ctx: ResolverContext) -> Result[EffectSignature, ResolveError] {
+        Ok(EffectSignature(
+            signature.entries.resolve(ctx)?,
+            signature.open,
+            signature.location,
+        ))
+    }
+}
+
+instance Resolvable[EffectSignatureEntry] {
+    fn resolve(entry: EffectSignatureEntry, ctx: ResolverContext) -> Result[EffectSignatureEntry, ResolveError] {
+        match entry {
+            EffectSignatureEntry.Effect(target, scope) => {
+                let item = ctx.module_resolver().resolve(target.unresolved())?;
+                match item.kind {
+                    ModuleItemKind.Effect(_, _) |
+                    ModuleItemKind.Function(_, _, FunctionDefKind.EffectMethod) =>
+                        Ok(EffectSignatureEntry.Effect(
+                            Name.Resolved(item.qualified_name, target.location()),
+                            scope.resolve(ctx)?,
+                        )),
+                    _ => Err(invalid(target, "effect or effect method")),
+                }
+            }
+            EffectSignatureEntry.Implicit(name) => {
+                let item = ctx.module_resolver().resolve(name.unresolved())?;
+                if let ModuleItemKind.Implicit(_) = item.kind {
+                    Ok(EffectSignatureEntry.Implicit(
+                        Name.Resolved(item.qualified_name, name.location()),
+                    ))
+                } else {
+                    Err(invalid(name, "implicit"))
+                }
+            }
+            EffectSignatureEntry.AssociatedType(name) => {
+                let item = ctx.module_resolver().resolve(name.unresolved())?;
+                if let ModuleItemKind.EffectAssociatedType(_) = item.kind {
+                    Ok(EffectSignatureEntry.AssociatedType(
+                        Name.Resolved(item.qualified_name, name.location()),
+                    ))
+                } else {
+                    Err(invalid(name, "effect associated type"))
+                }
+            }
+            EffectSignatureEntry.Bound(trait_name, type_args, method, scope) => {
+                let original_trait_name = trait_name.clone();
+                let (resolved_trait_name, _) = ctx.module_resolver()
+                    .resolve_trait_name(trait_name, type_args.len())?;
+                let resolved_type_args = type_args.resolve(ctx)?;
+                let full_method = original_trait_name.unresolved().merge(method.unresolved());
+                let method_item = ctx.module_resolver().resolve(full_method)?;
+                match method_item.kind {
+                    ModuleItemKind.Function(_, _, FunctionDefKind.TraitMethod) => {
+                        let expected = QualifiedName.new_method(
+                            resolved_trait_name.resolved().name(),
+                            method.name(),
+                        );
+                        if method_item.qualified_name != expected {
+                            return Err(ResolveError.InvalidEffectSignatureEntry(
+                                method.unresolved(),
+                                "method of the referenced trait",
+                            ));
+                        }
+                        Ok(EffectSignatureEntry.Bound(
+                            resolved_trait_name,
+                            resolved_type_args,
+                            Name.Resolved(method_item.qualified_name, method.location()),
+                            scope.resolve(ctx)?,
+                        ))
+                    }
+                    _ => Err(ResolveError.InvalidEffectSignatureEntry(
+                        method.unresolved(),
+                        "trait method",
+                    )),
+                }
+            }
+        }
+    }
+}
+
+}

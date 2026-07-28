@@ -1,0 +1,35 @@
+module Main {
+
+effect Logger {
+    fn log(message: String)
+}
+
+trait Runnable[R] {
+    fn run(value: R)
+}
+
+enum Job {
+    Pending
+}
+
+instance Runnable[Job] {
+    fn run(value: Job) {
+        Logger.log("hello")
+    }
+}
+
+fn console_log(message: String) {
+    println(message)
+}
+
+fn main() {
+    let object: Runnable = Runnable(Pending);
+
+    // Installing the handler for dispatch is too late: trait objects bind
+    // their method effects when the object is packed.
+    with log = console_log {
+        object.run()
+    }
+}
+
+}

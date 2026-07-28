@@ -1,0 +1,112 @@
+module Siko.Parser.EffectSignature {
+
+import Siko.AST.EffectSignature
+import Siko.AST.Name
+import Siko.AST.Type
+import Siko.Interner as I
+import Siko.Parser.Parser
+import Siko.Parser.Token
+import Siko.Parser.Type
+
+pub trait EffectSignatureParser[T] {
+    fn parse_effect_signature(p: T) -> Result[EffectSignature, ParseError]
+}
+
+fn parse_optional_scope(parser: Parser) -> Result[Option[EffectSignature], ParseError] {
+    if parser.peek() == TokenKind.KwWith {
+        parser.advance();
+        Ok(Some(parser.parse_effect_signature()?))
+    } else {
+        Ok(None)
+    }
+}
+
+fn parse_bound_trait_name(parser: Parser) -> Result[Name, ParseError] {
+    let ident = parser.expect_type_ident()?;
+    while parser.peek() == TokenKind.Dot {
+        match parser.peek_next() {
+            TokenKind.TypeIdentifier(_) => {
+                parser.advance();
+                ident = ident.merge(parser.expect_type_ident()?);
+            }
+            _ => break,
+        }
+    }
+    Ok(Name.Unresolved(ident))
+}
+
+fn parse_bound_entry(parser: Parser) -> Result[EffectSignatureEntry, ParseError] {
+    parser.advance();
+    let trait_name = parse_bound_trait_name(parser)?;
+    let type_args: Vec[TypeDef] = Vec.new();
+    if parser.peek() == TokenKind.LBracket {
+        parser.advance();
+        while parser.peek() != TokenKind.RBracket && parser.peek() != TokenKind.Eof {
+            type_args.push(parser.parse_type_def()?);
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            }
+        }
+        parser.expect(TokenKind.RBracket)?;
+    }
+    parser.expect(TokenKind.Dot)?;
+    let method = Name.Unresolved(parser.expect_var_ident()?);
+    let scope = parse_optional_scope(parser)?;
+    Ok(EffectSignatureEntry.Bound(trait_name, type_args, method, scope))
+}
+
+instance EffectSignatureParser[Parser] {
+    fn parse_effect_signature(parser: Parser) -> Result[EffectSignature, ParseError] {
+        let start = parser.current().start;
+        parser.expect(TokenKind.Lt)?;
+        let entries = Vec.new();
+        let open = False;
+        while parser.peek() != TokenKind.Gt && parser.peek() != TokenKind.Eof {
+            match parser.peek() {
+                TokenKind.DotDotDot => {
+                    if open {
+                        return Err(ParseError.new("duplicate `...` in effect signature", parser.cur_pos()));
+                    }
+                    open = True;
+                    parser.advance();
+                }
+                TokenKind.KwEffect => {
+                    parser.advance();
+                    let target = Name.Unresolved(parser.parse_expr_dotted_name()?);
+                    entries.push(EffectSignatureEntry.Effect(target, parse_optional_scope(parser)?));
+                }
+                TokenKind.KwImplicit => {
+                    parser.advance();
+                    entries.push(EffectSignatureEntry.Implicit(
+                        Name.Unresolved(parser.parse_expr_dotted_name()?),
+                    ));
+                }
+                TokenKind.KwType => {
+                    parser.advance();
+                    entries.push(EffectSignatureEntry.AssociatedType(
+                        Name.Unresolved(parser.parse_dotted_name()?),
+                    ));
+                }
+                TokenKind.VarIdentifier(name) if I.resolve(name) == "bound" => {
+                    entries.push(parse_bound_entry(parser)?);
+                }
+                _ => {
+                    return Err(ParseError.new(
+                        "expected effect signature entry, got ${parser.peek()}",
+                        parser.cur_pos(),
+                    ));
+                }
+            }
+            if parser.peek() == TokenKind.Comma {
+                parser.advance();
+            } else if parser.peek() != TokenKind.Gt {
+                return Err(ParseError.new("expected `,` or `>` in effect signature", parser.cur_pos()));
+            }
+        }
+        let end = parser.current().end;
+        parser.expect(TokenKind.Gt)?;
+        Ok(EffectSignature(entries, open, parser.loc(start, end)))
+    }
+}
+
+}

@@ -20,12 +20,18 @@ instance Resolvable[FunctionArg] {
 
 instance Resolvable[FunctionDef] {
     fn resolve(f: FunctionDef, ctx: ResolverContext) -> Result[FunctionDef, ResolveError] {
+        if f.is_extern() {
+            if let Some(signature) = f.effect_signature {
+                return Err(ResolveError.ExternEffectSignature(f.name, signature.location));
+            }
+        }
         ctx.type_resolver.add_args(f.type_arg_defs);
         //println("Processing function ${f.name.name()}");
 
         let resolved_args = f.args.resolve(ctx)?;
         let resolved_yield_type = f.yield_type.resolve(ctx)?;
         let resolved_result_type = f.result_type.resolve(ctx)?;
+        let resolved_effect_signature = f.effect_signature.resolve(ctx)?;
         if resolved_result_type.is_none() {
             resolved_result_type = Some(TypeDef.Tuple(Vec.new()));
         }
@@ -63,6 +69,7 @@ instance Resolvable[FunctionDef] {
             args: resolved_args,
             yield_type: resolved_yield_type,
             result_type: resolved_result_type,
+            effect_signature: resolved_effect_signature,
             body: resolved_body,
             module_name: ctx.module_name(),
             var_allocator: f.var_allocator,

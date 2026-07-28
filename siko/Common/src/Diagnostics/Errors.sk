@@ -5,6 +5,7 @@ import Siko.Instances.InstanceChecker
 import Siko.Interner as I
 import Siko.Interpreter.Error
 import Siko.CoroutineLowering.Error
+import Siko.EffectChecker.Error
 import Siko.LowerDefer
 import Siko.MatchValidation
 import Siko.Monomorphizer.Error
@@ -69,6 +70,10 @@ pub fn report_resolve_error(e: ResolveError) {
             report("wrong pattern arg count for " + I.resolve(ident.name()) + ": expected " + expected.to_string() + ", got " + got.to_string(), Some(ident.location)),
         ResolveError.InvalidEffectHandler(ident) =>
             report("invalid effect handler: " + I.resolve(ident.name()), Some(ident.location)),
+        ResolveError.InvalidEffectSignatureEntry(ident, expected) =>
+            report("invalid effect signature entry `${I.resolve(ident.name())}`: expected ${expected}", Some(ident.location)),
+        ResolveError.ExternEffectSignature(ident, location) =>
+            report("extern function `${I.resolve(ident.name())}` cannot have an effect signature", Some(location)),
         ResolveError.NamedArgOnDynamicCall(location) =>
             report("named arguments are not allowed on dynamic calls", Some(location)),
         ResolveError.NamedArgOnTraitObjectPack(location) =>
@@ -132,6 +137,25 @@ pub fn report_coroutine_lowering_errors(errors: Vec[CoroutineLoweringError]) {
         match error {
             CoroutineLoweringError.AllocatorMayYield(allocator, location) =>
                 report("allocator handler `${I.resolve(allocator.name())}` cannot yield, directly or transitively", Some(location)),
+        }
+    }
+}
+
+pub fn report_effect_errors(errors: Vec[EffectError]) {
+    for error in errors {
+        match error {
+            EffectError.UnresolvedEffectHandler(method, location) =>
+                report("unresolved effect handler for `${I.resolve(method.name())}`", Some(location)),
+            EffectError.UnsetImplicit(implicit_name, location) =>
+                report("implicit `${I.resolve(implicit_name.name())}` is not set in this context", Some(location)),
+            EffectError.UnboundEffectAssociatedType(associated_type, location) =>
+                report("effect associated type `${I.resolve(associated_type.name())}` is not bound in this handler", Some(location)),
+            EffectError.InvalidEffectSignatureBound(function, location) =>
+                report("effect signature of `${I.resolve(function.name())}` references a bound not present on the function", Some(location)),
+            EffectError.EffectSignatureMismatch(function, declared, inferred, location) =>
+                report("effect signature of `${I.resolve(function.name())}` does not match: declared `${declared}`, inferred `${inferred}`", Some(location)),
+            EffectError.EffectImplementationSignatureMismatch(implementation, declaration, declared, inferred, location) =>
+                report("`${I.resolve(implementation.name())}` does not satisfy the effect signature of `${I.resolve(declaration.name())}`: allowed `${declared}`, inferred `${inferred}`", Some(location)),
         }
     }
 }

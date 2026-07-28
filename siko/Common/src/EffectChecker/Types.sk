@@ -1,0 +1,83 @@
+module Siko.EffectChecker.Types {
+
+import Std.Map
+import Std.Set
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Location
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+pub struct HandlerBinding {
+    pub function: QualifiedName,
+    pub witnesses: Vec[BoundWitness],
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+pub struct AssociatedTypeBinding {
+    pub type_def: TypeDef,
+    pub witnesses: Vec[BoundWitness],
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+pub struct HandlerScope {
+    pub effects: Map[QualifiedName, HandlerBinding],
+    pub implicits: Set[QualifiedName],
+    pub associated_types: Map[QualifiedName, AssociatedTypeBinding],
+
+    pub fn new() -> HandlerScope {
+        HandlerScope(Map.new(), Set.new(), Map.new())
+    }
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+pub enum Effect {
+    // The operation itself: a caller must eventually select a handler for it.
+    EffectMethod(QualifiedName, Location),
+    // The fresh, unconstrained handler-effect row synthesized for an
+    // unannotated effect method. `scope` records the bindings that will be
+    // subtracted/substituted when the row is eventually instantiated by a
+    // concrete handler at a `with` site.
+    HandlerRowVar(method: QualifiedName, location: Location, scope: HandlerScope),
+    Implicit(QualifiedName, Location),
+    AssociatedType(QualifiedName, Location),
+    FunctionBound(bound_index: Int, method: QualifiedName, location: Location, scope: HandlerScope),
+    EffectAssociatedTypeBound(associated_type: QualifiedName, bound_index: Int, method: QualifiedName, location: Location, scope: HandlerScope),
+    Dynamic(Location),
+    Unknown(Location),
+}
+
+@derive(Clone, PartialEq, Eq)
+pub struct EffectRow {
+    pub effects: Set[Effect],
+
+    pub fn new() -> EffectRow {
+        EffectRow(Set.new())
+    }
+
+    pub fn insert(row: EffectRow, effect_def: Effect) -> Bool {
+        row.effects.insert(effect_def)
+    }
+}
+
+@derive(Clone)
+pub enum Requirement {
+    Call(callee: QualifiedName, witnesses: Vec[BoundWitness], location: Location, scope: HandlerScope),
+    Implicit(implicit_name: QualifiedName, location: Location, scope: HandlerScope),
+    AssociatedType(associated_type: QualifiedName, location: Location, scope: HandlerScope),
+    Dynamic(Location),
+}
+
+pub struct FunctionSummary {
+    pub requirements: Vec[Requirement],
+
+    pub fn new() -> FunctionSummary {
+        FunctionSummary(Vec.new())
+    }
+
+    pub fn add(summary: FunctionSummary, requirement: Requirement) {
+        summary.requirements.push(requirement);
+    }
+}
+
+}

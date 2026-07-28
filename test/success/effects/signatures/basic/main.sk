@@ -1,0 +1,52 @@
+module Main {
+
+implicit message: String
+
+effect Action {
+    fn perform() : <implicit message>
+}
+
+trait Doer[T] {
+    fn doit(value: T) : <...>
+}
+
+struct Thing {}
+
+instance Doer[Thing] {
+    fn doit(value: Thing) {
+        println("bound")
+    }
+}
+
+fn action_handler() {
+    println(message)
+}
+
+fn call_action() : <
+    effect Action with <
+        implicit message
+    >
+> {
+    let current = "handled";
+    with message = current {
+        Action.perform()
+    }
+}
+
+fn call_bound[T: Doer[T]](value: T) : <
+    bound Doer[T].doit
+> {
+    value.doit()
+}
+
+fn pure() : <> {}
+
+fn main() {
+    with Action.perform = action_handler {
+        call_action()
+    }
+    call_bound(Thing());
+    pure()
+}
+
+}

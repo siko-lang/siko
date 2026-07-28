@@ -7,6 +7,7 @@ import Siko.Format.Formatter
 import Siko.Format.Generics
 import Siko.Format.Types
 import Siko.Format.Expr
+import Siko.Format.EffectSignature
 
 pub fn format_fn_def(f: Formatter, def: FunctionDef) {
     f.format_annotations(def.annotations);
@@ -44,6 +45,13 @@ pub fn format_fn_def(f: Formatter, def: FunctionDef) {
         Some(rt) => {
             f.push(" -> ");
             format_type_def(f, rt);
+        }
+        None => {}
+    }
+    match def.effect_signature {
+        Some(signature) => {
+            f.push(" : ");
+            format_effect_signature(f, signature);
         }
         None => {}
     }

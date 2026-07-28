@@ -1,9 +1,10 @@
-module Siko.Typechecker.FunctionGroupBuilder {
+module Siko.EffectChecker.GroupBuilder {
 
 import Std.Map
 import Std.Set
 import Siko.AST.Annotations
 import Siko.AST.Expr as E
+import Siko.AST.EffectSignature
 import Siko.AST.Function
 import Siko.AST.Generics
 import Siko.AST.Identifier
@@ -23,6 +24,7 @@ import Siko.Utils.VarAllocator
 
 struct DepCollector {
     deps: Set[QualifiedName],
+    program: Program,
 }
 
 trait CollectDeps[T] {
@@ -30,6 +32,7 @@ trait CollectDeps[T] {
 }
 
 instance CollectDeps[Location]           = auto(Fold, =)
+instance CollectDeps[EffectSignature]    = auto(Fold, =)
 instance CollectDeps[TypeDef]            = auto(Fold, =)
 instance CollectDeps[I.String]           = auto(Fold, =)
 instance CollectDeps[String]             = auto(Fold, =)
@@ -43,7 +46,26 @@ instance CollectDeps[E.VariableName]     = auto(Fold, =)
 instance CollectDeps[Name]               = auto(Fold, =)
 instance CollectDeps[Identifier]         = auto(Fold, =)
 instance CollectDeps[E.WitnessInfo]      = auto(Fold, =)
-instance CollectDeps[BoundWitness]       = auto(Fold, =)
+instance CollectDeps[BoundWitness] {
+    fn collect_deps(witness: BoundWitness, collector: DepCollector) {
+        if let BoundWitness.Instance(instance_qname, children) = witness {
+            let instance_def = collector.program.all_instances.get(instance_qname)
+                .expect("effect checker: instance not found while building dependencies");
+            let trait_name = instance_def.subject.trait_name().resolved();
+            let trait_def = collector.program.traits.get(trait_name)
+                .expect("effect checker: trait not found while building dependencies");
+            for (short_name, abstract_method) in trait_def.method_map.names {
+                let concrete_method = QualifiedName.new_method(instance_qname.name(), short_name);
+                if collector.program.functions.contains_key(concrete_method) {
+                    collector.deps.insert(concrete_method);
+                } else {
+                    collector.deps.insert(abstract_method);
+                }
+            }
+            collect_deps(children, collector);
+        }
+    }
+}
 instance CollectDeps[E.FunctionKind]     = auto(Fold, =)
 instance CollectDeps[E.BinaryOp]         = auto(Fold, =)
 instance CollectDeps[E.UnaryOp]          = auto(Fold, =)
@@ -107,6 +129,7 @@ instance CollectDeps[E.FunctionCallInfo] {
             _ => { c.deps.insert(info.qname); }
         }
         collect_deps(info.args, c);
+        collect_deps(info.witnesses, c);
         collect_deps(info.allocation, c);
     }
 }
@@ -121,6 +144,7 @@ instance CollectDeps[E.TypeAssociatedCallInfo] {
     fn collect_deps(info: E.TypeAssociatedCallInfo, c: DepCollector) {
         c.deps.insert(info.fn_name);
         collect_deps(info.args, c);
+        collect_deps(info.witnesses, c);
     }
 }
 
@@ -135,6 +159,9 @@ instance CollectDeps[E.HandlerSelection] {
         match selection {
             E.HandlerSelection.EffectFunction(handler: handler, ..) => {
                 c.deps.insert(handler);
+                if let E.HandlerSelection.EffectFunction(witnesses: witnesses, ..) = selection {
+                    collect_deps(witnesses, c);
+                }
             }
             _ => {}
         }
@@ -142,13 +169,13 @@ instance CollectDeps[E.HandlerSelection] {
 }
 
 // SCC.compute returns reverse topological order for caller-to-callee edges, so
-// dependencies are typechecked before their callers. Members of a recursive
-// group remain adjacent for effect-row inference to process together later.
+// dependencies appear before their callers. Members of a recursive group stay
+// together for the effect-row checker.
 pub fn build_groups(program: Program) -> Vec[Vec[QualifiedName]] {
     let graph: Map[QualifiedName, Vec[QualifiedName]] = Map.new();
 
     for (qname, func) in program.functions {
-        let collector = DepCollector(Set.new());
+        let collector = DepCollector(Set.new(), program);
         collect_deps(func, collector);
         let deps: Vec[QualifiedName] = collector.deps
             .into_iter()

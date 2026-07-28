@@ -2,6 +2,7 @@ module Siko.Driver.Passes {
 
 import Siko.Driver
 import Siko.Driver.Util
+import Siko.EffectChecker.Checker as EC
 import Siko.Parser.Parser
 import Siko.Parser.Module
 import Siko.Resolver
@@ -184,7 +185,27 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
         []
     };
 
-    core_passes + safety_passes
+    let late_check_passes: Vec[Pass] = [
+        Pass(
+            name: "lambda-lift",
+            label: "Lambda lifting...",
+            run: |driver| { LL.lift_lambdas(driver.program); },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+        Pass(
+            name: "effect-check",
+            label: "Checking effects...",
+            run: |driver| {
+                let effect_errors = EC.check_effects(driver.program);
+                if !effect_errors.is_empty() {
+                    report_effect_errors(effect_errors);
+                }
+            },
+            dump: Some(|driver| println(driver.program.format())),
+        ),
+    ];
+
+    core_passes + safety_passes + late_check_passes
 }
 
 fn build_interpreter_test_passes(driver: Driver) -> Vec[Pass] {
@@ -223,12 +244,6 @@ fn build_interpreter_test_passes(driver: Driver) -> Vec[Pass] {
 
 fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
     [
-            Pass(
-                name: "lambda-lift",
-                label: "Lambda lifting...",
-                run: |driver| { LL.lift_lambdas(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
-            ),
             Pass(
                 name: "lower-match",
                 label: "Lowering match expressions...",

@@ -1,0 +1,503 @@
+module Siko.EffectChecker.Signature {
+
+import Std.Map
+import Std.Set
+import Siko.AST.EffectSignature as AST
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.Instances
+import Siko.AST.QualifiedName
+import Siko.AST.Type
+import Siko.EffectChecker.Error
+import Siko.EffectChecker.Collect
+import Siko.EffectChecker.Types
+import Siko.Format.EffectSignature as Format
+import Siko.Format.Formatter
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Interner as I
+import Siko.Location
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+enum BoundSource {
+    Function(Int),
+    AssociatedType(QualifiedName, Int),
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+struct SignatureRow {
+    entries: Set[SignatureEntry],
+    open: Bool,
+
+    fn new() -> SignatureRow {
+        SignatureRow(Set.new(), False)
+    }
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+enum SignatureEntry {
+    Effect(method: QualifiedName, scope: SignatureRow),
+    Implicit(QualifiedName),
+    AssociatedType(QualifiedName),
+    Bound(source: BoundSource, method: QualifiedName, scope: SignatureRow),
+}
+
+@derive(Clone, PartialEq, Eq, PartialOrd, Ord)
+struct CheckedHandler {
+    method: QualifiedName,
+    implementation: QualifiedName,
+}
+
+fn bound_args(bound: Bound) -> Vec[TypeDef] {
+    bound.type_args.iter()
+        .map(|arg| TypeDef.Var(TypeVar.Named(arg.name())))
+        .collect()
+}
+
+fn resolve_bound_source(
+    func: FunctionDef,
+    trait_name: QualifiedName,
+    type_args: Vec[TypeDef],
+    program: Program,
+) -> Option[BoundSource] {
+    if let Some(defs) = func.type_arg_defs {
+        for (index, bound) in defs.bounds.iter().enumerate() {
+            if bound.trait_name.resolved() == trait_name && bound_args(bound) == type_args {
+                return Some(BoundSource.Function(index));
+            }
+        }
+    }
+
+    for arg in type_args {
+        if let TypeDef.Named(NamedInfo(name, _)) = arg {
+            let associated_type = name.resolved();
+            if let BaseName.EffectAssociatedType(_, _, _) = associated_type.base() {
+                for (index, bound) in effect_bounds_for_eat(program, associated_type).iter().enumerate() {
+                    if bound.trait_name.resolved() == trait_name {
+                        return Some(BoundSource.AssociatedType(associated_type, index));
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn declared_row(
+    signature: AST.EffectSignature,
+    func: FunctionDef,
+    program: Program,
+) -> Option[SignatureRow] {
+    let row = SignatureRow.new();
+    row.open = signature.open;
+    for entry in signature.entries {
+        match entry {
+            AST.EffectSignatureEntry.Effect(target, scope) => {
+                let nested = match scope {
+                    Some(scope) => match declared_row(scope, func, program) {
+                        Some(row) => row,
+                        None => return None,
+                    },
+                    None => SignatureRow.new(),
+                };
+                let target = target.resolved();
+                match target.base() {
+                    BaseName.Effect(_, _) => {
+                        let effect_def = match program.effects.get(target) {
+                            Some(effect_def) => effect_def,
+                            None => return None,
+                        };
+                        for (_, method) in effect_def.method_map.names {
+                            row.entries.insert(SignatureEntry.Effect(method, nested.clone()));
+                        }
+                    }
+                    BaseName.Method(_, _) => {
+                        row.entries.insert(SignatureEntry.Effect(target, nested));
+                    }
+                    _ => return None,
+                }
+            }
+            AST.EffectSignatureEntry.Implicit(name) => {
+                row.entries.insert(SignatureEntry.Implicit(name.resolved()));
+            }
+            AST.EffectSignatureEntry.AssociatedType(name) => {
+                row.entries.insert(SignatureEntry.AssociatedType(name.resolved()));
+            }
+            AST.EffectSignatureEntry.Bound(trait_name, type_args, method, scope) => {
+                let nested = match scope {
+                    Some(scope) => match declared_row(scope, func, program) {
+                        Some(row) => row,
+                        None => return None,
+                    },
+                    None => SignatureRow.new(),
+                };
+                let source = match resolve_bound_source(
+                    func,
+                    trait_name.resolved(),
+                    type_args,
+                    program,
+                ) {
+                    Some(source) => source,
+                    None => return None,
+                };
+                row.entries.insert(SignatureEntry.Bound(
+                    source,
+                    method.resolved(),
+                    nested,
+                ));
+            }
+        }
+    }
+    Some(row)
+}
+
+fn operation_scope(row: EffectRow, method: QualifiedName, location: Location) -> HandlerScope {
+    for effect_def in row.effects {
+        if let Effect.HandlerRowVar(candidate, candidate_location, scope) = effect_def {
+            if candidate == method && candidate_location == location {
+                return scope;
+            }
+        }
+    }
+    HandlerScope.new()
+}
+
+fn inferred_scope(
+    scope: HandlerScope,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    expanding: Set[QualifiedName],
+) -> SignatureRow {
+    let row = SignatureRow.new();
+    for implicit_name in scope.implicits {
+        row.entries.insert(SignatureEntry.Implicit(implicit_name));
+    }
+    for (associated_type, _) in scope.associated_types {
+        row.entries.insert(SignatureEntry.AssociatedType(associated_type));
+    }
+    for (method, binding) in scope.effects {
+        let handler_row = if expanding.insert(binding.function) {
+            let normalized = match rows.get(binding.function) {
+                Some(handler_row) => inferred_row(handler_row, program, rows, expanding),
+                None => SignatureRow.new(),
+            };
+            expanding.remove(binding.function);
+            normalized
+        } else {
+            let recursive = SignatureRow.new();
+            recursive.open = True;
+            recursive
+        };
+        row.entries.insert(SignatureEntry.Effect(method, handler_row));
+    }
+    row
+}
+
+fn inferred_row(
+    effects: EffectRow,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    expanding: Set[QualifiedName],
+) -> SignatureRow {
+    let row = SignatureRow.new();
+    for effect_def in effects.effects {
+        match effect_def {
+            Effect.EffectMethod(method, location) => {
+                row.entries.insert(SignatureEntry.Effect(
+                    method,
+                    inferred_scope(
+                        operation_scope(effects, method, location),
+                        program,
+                        rows,
+                        expanding,
+                    ),
+                ));
+            }
+            Effect.Implicit(name, _) => {
+                row.entries.insert(SignatureEntry.Implicit(name));
+            }
+            Effect.AssociatedType(name, _) => {
+                row.entries.insert(SignatureEntry.AssociatedType(name));
+            }
+            Effect.FunctionBound(index, method, _, scope) => {
+                row.entries.insert(SignatureEntry.Bound(
+                    BoundSource.Function(index),
+                    method,
+                    inferred_scope(scope, program, rows, expanding),
+                ));
+            }
+            Effect.EffectAssociatedTypeBound(associated_type, index, method, _, scope) => {
+                row.entries.insert(SignatureEntry.Bound(
+                    BoundSource.AssociatedType(associated_type, index),
+                    method,
+                    inferred_scope(scope, program, rows, expanding),
+                ));
+            }
+            Effect.Unknown(_) => { row.open = True; }
+            Effect.HandlerRowVar(_, _, _) | Effect.Dynamic(_) => {}
+        }
+    }
+    row
+}
+
+fn entry_matches(declared: SignatureEntry, inferred: SignatureEntry) -> Bool {
+    match (declared, inferred) {
+        (SignatureEntry.Effect(dm, ds), SignatureEntry.Effect(im, inferred_scope_row)) =>
+            dm == im && row_matches(ds, inferred_scope_row),
+        (SignatureEntry.Implicit(d), SignatureEntry.Implicit(i)) => d == i,
+        (SignatureEntry.AssociatedType(d), SignatureEntry.AssociatedType(i)) => d == i,
+        (SignatureEntry.Bound(ds, dm, dr), SignatureEntry.Bound(inferred_source, im, ir)) =>
+            ds == inferred_source && dm == im && row_matches(dr, ir),
+        _ => False,
+    }
+}
+
+fn contains_match(haystack: Set[SignatureEntry], needle: SignatureEntry) -> Bool {
+    haystack.iter().any(|candidate| entry_matches(needle, candidate))
+}
+
+fn row_matches(declared: SignatureRow, inferred: SignatureRow) -> Bool {
+    for entry in declared.entries {
+        if !contains_match(inferred.entries, entry) {
+            return False;
+        }
+    }
+    if declared.open != inferred.open {
+        return False;
+    }
+    if !declared.open {
+        for entry in inferred.entries {
+            if !contains_match(declared.entries, entry) {
+                return False;
+            }
+        }
+    }
+    True
+}
+
+fn entry_allowed(declared: SignatureEntry, actual: SignatureEntry) -> Bool {
+    match (declared, actual) {
+        (SignatureEntry.Effect(dm, ds), SignatureEntry.Effect(am, ascope)) =>
+            dm == am && row_allowed(ds, ascope),
+        (SignatureEntry.Implicit(d), SignatureEntry.Implicit(a)) => d == a,
+        (SignatureEntry.AssociatedType(d), SignatureEntry.AssociatedType(a)) => d == a,
+        (SignatureEntry.Bound(ds, dm, dr), SignatureEntry.Bound(actual_source, am, ar)) =>
+            ds == actual_source && dm == am && row_allowed(dr, ar),
+        _ => False,
+    }
+}
+
+fn contains_allowed(haystack: Set[SignatureEntry], needle: SignatureEntry) -> Bool {
+    haystack.iter().any(|candidate| entry_allowed(candidate, needle))
+}
+
+fn row_allowed(declared: SignatureRow, actual: SignatureRow) -> Bool {
+    if actual.open && !declared.open {
+        return False;
+    }
+    for entry in actual.entries {
+        if !contains_allowed(declared.entries, entry) && !declared.open {
+            return False;
+        }
+    }
+    True
+}
+
+fn format_row(row: SignatureRow) -> String {
+    let entries: Vec[String] = Vec.new();
+    for entry in row.entries {
+        match entry {
+            SignatureEntry.Effect(method, scope) => {
+                let item = "effect ${I.resolve(method.name())}";
+                if !scope.entries.is_empty() || scope.open {
+                    item = item + " with " + format_row(scope);
+                }
+                entries.push(item);
+            }
+            SignatureEntry.Implicit(name) =>
+                entries.push("implicit ${I.resolve(name.name())}"),
+            SignatureEntry.AssociatedType(name) =>
+                entries.push("type ${I.resolve(name.name())}"),
+            SignatureEntry.Bound(source, method, scope) => {
+                let source_name = match source {
+                    BoundSource.Function(index) => "#${index}",
+                    BoundSource.AssociatedType(name, index) =>
+                        "${I.resolve(name.name())}#${index}",
+                };
+                let item = "bound ${source_name}.${I.resolve(method.name())}";
+                if !scope.entries.is_empty() || scope.open {
+                    item = item + " with " + format_row(scope);
+                }
+                entries.push(item);
+            }
+        }
+    }
+    if row.open {
+        entries.push("...");
+    }
+    "<" + join(entries, ", ") + ">"
+}
+
+fn format_declared(signature: AST.EffectSignature) -> String {
+    let formatter = Formatter.new();
+    Format.format_effect_signature(formatter, signature);
+    formatter.finish()
+}
+
+fn check_implementation(
+    declaration: FunctionDef,
+    implementation: QualifiedName,
+    implementation_location: Location,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    errors: Vec[EffectError],
+) {
+    let signature = match declaration.effect_signature {
+        Some(signature) => signature,
+        None => return,
+    };
+    let declared = match declared_row(signature, declaration, program) {
+        Some(row) => row,
+        None => {
+            errors.push(EffectError.InvalidEffectSignatureBound(
+                declaration.qualified_name.unwrap(),
+                signature.location,
+            ));
+            return;
+        }
+    };
+    let actual = inferred_row(
+        rows.get(implementation).unwrap_or(EffectRow.new()),
+        program,
+        rows,
+        Set.new(),
+    );
+    if !row_allowed(declared, actual) {
+        errors.push(EffectError.EffectImplementationSignatureMismatch(
+            implementation,
+            declaration.qualified_name.unwrap(),
+            format_declared(signature),
+            format_row(actual),
+            implementation_location,
+        ));
+    }
+}
+
+fn check_trait_implementations(
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    errors: Vec[EffectError],
+) {
+    for (instance_qname, instance_def) in program.all_instances {
+        let trait_name = match instance_def.subject {
+            InstanceKind.Trait(name) => name.resolved(),
+            _ => continue,
+        };
+        let trait_def = program.traits.get(trait_name).unwrap();
+        for (short_name, declaration_qname) in trait_def.method_map.names {
+            let declaration = program.functions.get(declaration_qname).unwrap();
+            if declaration.effect_signature.is_none() {
+                continue;
+            }
+            let implementation = QualifiedName.new_method(instance_qname.name(), short_name);
+            let implementation = if program.functions.contains_key(implementation) {
+                implementation
+            } else {
+                declaration_qname
+            };
+            let location = program.functions.get(implementation).unwrap().name.location;
+            check_implementation(
+                declaration,
+                implementation,
+                location,
+                program,
+                rows,
+                errors,
+            );
+        }
+    }
+}
+
+fn requirement_scope(requirement: Requirement) -> Option[HandlerScope] {
+    match requirement {
+        Requirement.Call(_, _, _, scope) | Requirement.Implicit(_, _, scope) |
+        Requirement.AssociatedType(_, _, scope) => Some(scope),
+        Requirement.Dynamic(_) => None,
+    }
+}
+
+fn check_effect_handlers(
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    errors: Vec[EffectError],
+) {
+    let checked: Set[CheckedHandler] = Set.new();
+    for (_, func) in program.functions {
+        let summary = collect_function(func);
+        for requirement in summary.requirements {
+            if let Some(scope) = requirement_scope(requirement) {
+                for (method, binding) in scope.effects {
+                    if !checked.insert(CheckedHandler(method, binding.function)) {
+                        continue;
+                    }
+                    let declaration = program.functions.get(method).unwrap();
+                    if declaration.effect_signature.is_none() {
+                        continue;
+                    }
+                    let implementation = program.functions.get(binding.function).unwrap();
+                    check_implementation(
+                        declaration,
+                        binding.function,
+                        implementation.name.location,
+                        program,
+                        rows,
+                        errors,
+                    );
+                }
+            }
+        }
+    }
+}
+
+pub fn check_signatures(
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+) -> Vec[EffectError] {
+    let errors: Vec[EffectError] = Vec.new();
+    for (qname, func) in program.functions {
+        if func.body.is_none() {
+            continue;
+        }
+        if let Some(signature) = func.effect_signature {
+            let declared = match declared_row(signature, func, program) {
+                Some(row) => row,
+                None => {
+                    errors.push(EffectError.InvalidEffectSignatureBound(
+                        qname,
+                        signature.location,
+                    ));
+                    continue;
+                }
+            };
+            let inferred = inferred_row(
+                rows.get(qname).unwrap_or(EffectRow.new()),
+                program,
+                rows,
+                Set.new(),
+            );
+            if !row_matches(declared, inferred) {
+                errors.push(EffectError.EffectSignatureMismatch(
+                    qname,
+                    format_declared(signature),
+                    format_row(inferred),
+                    signature.location,
+                ));
+            }
+        }
+    }
+    check_trait_implementations(program, rows, errors);
+    check_effect_handlers(program, rows, errors);
+    errors
+}
+
+}

@@ -5,6 +5,7 @@ import Std.Set
 import Siko.AST.Annotations
 import Siko.AST.Data
 import Siko.AST.Expr as E
+import Siko.AST.EffectSignature
 import Siko.AST.Function
 import Siko.AST.Generics
 import Siko.AST.Identifier
@@ -333,6 +334,7 @@ trait Rw[T] {
 }
 
 instance Rw[Location]            = auto(Map, =)
+instance Rw[EffectSignature]     = auto(Map, =)
 instance Rw[I.String]            = auto(Map, =)
 instance Rw[String]              = auto(Map, =)
 instance Rw[Int]                 = auto(Map, =)
@@ -842,6 +844,7 @@ fn generate_handler(l: Lowerer, hid: Int) -> FunctionDef {
         args: fn_args,
         yield_type: None,
         result_type: Some(rec.result_type.clone()),
+        effect_signature: None,
         body: Some(body),
         module_name: I.intern(""),
         var_allocator: var_alloc,

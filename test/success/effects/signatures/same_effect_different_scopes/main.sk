@@ -1,0 +1,30 @@
+module Main {
+
+implicit message: String
+
+effect Action {
+    fn perform()
+}
+
+fn handler() {
+    println("handled")
+}
+
+fn run() : <
+    effect Action.perform with <implicit message>,
+    effect Action.perform with <>
+> {
+    let current = "inner";
+    with message = current {
+        Action.perform()
+    }
+    Action.perform()
+}
+
+fn main() {
+    with Action.perform = handler {
+        run()
+    }
+}
+
+}

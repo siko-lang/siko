@@ -1,0 +1,548 @@
+module Siko.EffectChecker.Checker {
+
+import Std.Map
+import Std.Set
+import Siko.AST.Function
+import Siko.AST.Generics
+import Siko.AST.QualifiedName
+import Siko.EffectChecker.Collect
+import Siko.EffectChecker.Error
+import Siko.EffectChecker.GroupBuilder
+import Siko.EffectChecker.Signature
+import Siko.EffectChecker.Types
+import Siko.HIR.Program
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Location
+
+fn instance_method_name(instance_qname: QualifiedName, trait_method: QualifiedName) -> QualifiedName {
+    let method_name = match trait_method.base() {
+        BaseName.Method(_, method) => method,
+        _ => panic("effect checker: trait callee is not a method"),
+    };
+    QualifiedName.new_method(instance_qname.name(), method_name)
+}
+
+fn instance_method_witnesses(
+    program: Program,
+    method: QualifiedName,
+    instance_children: Vec[BoundWitness],
+    call_witnesses: Vec[BoundWitness],
+) -> Vec[BoundWitness] {
+    let result: Vec[BoundWitness] = Vec.new();
+    let child_index = 0;
+    let call_index = 1;
+    let bounds = program.functions.get(method)
+        .and_then(|f| f.type_arg_defs)
+        .map(|defs| defs.bounds)
+        .unwrap_or_else(|| Vec.new());
+
+    for bound in bounds {
+        match bound.origin {
+            BoundOrigin.InstanceContext => {
+                if let Some(witness) = instance_children.get_opt(child_index) {
+                    result.push(witness);
+                }
+                child_index = child_index + 1;
+            }
+            BoundOrigin.MethodOwn => {
+                if let Some(witness) = call_witnesses.get_opt(call_index) {
+                    result.push(witness);
+                }
+                call_index = call_index + 1;
+            }
+        }
+    }
+    result
+}
+
+// An unannotated effect method has a fresh, unconstrained handler row. Keep the
+// bindings available at the operation site on that row variable while it
+// escapes through callers. When a `with` eventually selects a concrete
+// handler, its inferred row is substituted and these bindings discharge it.
+// Bindings closest to the operation take precedence.
+fn combine_scopes(inner: HandlerScope, outer: HandlerScope) -> HandlerScope {
+    let combined = outer.clone();
+    for (method, binding) in inner.effects {
+        combined.effects.insert(method, binding);
+    }
+    for implicit_name in inner.implicits {
+        combined.implicits.insert(implicit_name);
+    }
+    for (associated_type, binding) in inner.associated_types {
+        combined.associated_types.insert(associated_type, binding);
+    }
+    combined
+}
+
+fn add_associated_type_bound(
+    associated_type: QualifiedName,
+    index: Int,
+    method: QualifiedName,
+    location: Location,
+    scope: HandlerScope,
+    call_witnesses: Vec[BoundWitness],
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    result: EffectRow,
+    expanding: Set[QualifiedName],
+) {
+    match scope.associated_types.get(associated_type)
+        .and_then(|binding| binding.witnesses.get_opt(index)) {
+        Some(BoundWitness.FunctionBound(caller_index)) => {
+            result.insert(Effect.FunctionBound(caller_index, method, location, scope));
+        }
+        Some(BoundWitness.Instance(instance_qname, children)) => {
+            add_instance_method(
+                instance_qname,
+                children,
+                method,
+                location,
+                scope,
+                call_witnesses,
+                program,
+                rows,
+                result,
+                expanding,
+            );
+        }
+        Some(BoundWitness.EffectAssociatedTypeBound(next_associated_type, next_index)) => {
+            result.insert(Effect.AssociatedType(next_associated_type, location));
+            result.insert(Effect.EffectAssociatedTypeBound(
+                next_associated_type,
+                next_index,
+                method,
+                location,
+                scope,
+            ));
+        }
+        None => {
+            result.insert(Effect.AssociatedType(associated_type, location));
+            result.insert(Effect.EffectAssociatedTypeBound(
+                associated_type,
+                index,
+                method,
+                location,
+                scope,
+            ));
+        }
+    }
+}
+
+fn add_instance_method(
+    instance_qname: QualifiedName,
+    children: Vec[BoundWitness],
+    method: QualifiedName,
+    location: Location,
+    scope: HandlerScope,
+    call_witnesses: Vec[BoundWitness],
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    result: EffectRow,
+    expanding: Set[QualifiedName],
+) {
+    let concrete_method = instance_method_name(instance_qname, method);
+    let target = if program.functions.contains_key(concrete_method) {
+        concrete_method
+    } else {
+        method
+    };
+    if expanding.insert(target) {
+        if let Some(target_row) = rows.get(target) {
+            let target_witnesses = if target == method {
+                call_witnesses.clone()
+            } else {
+                instance_method_witnesses(
+                    program,
+                    target,
+                    children,
+                    call_witnesses,
+                )
+            };
+            add_row(
+                target_row,
+                target_witnesses,
+                scope,
+                program,
+                rows,
+                result,
+                expanding,
+            );
+        }
+        expanding.remove(target);
+    }
+}
+
+fn add_bound_method(
+    witness: BoundWitness,
+    method: QualifiedName,
+    location: Location,
+    scope: HandlerScope,
+    call_witnesses: Vec[BoundWitness],
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    result: EffectRow,
+    expanding: Set[QualifiedName],
+) {
+    match witness {
+        BoundWitness.FunctionBound(caller_index) => {
+            result.insert(Effect.FunctionBound(caller_index, method, location, scope));
+        }
+        BoundWitness.Instance(instance_qname, children) => {
+            add_instance_method(
+                instance_qname,
+                children,
+                method,
+                location,
+                scope,
+                call_witnesses,
+                program,
+                rows,
+                result,
+                expanding,
+            );
+        }
+        BoundWitness.EffectAssociatedTypeBound(associated_type, index) => {
+            add_associated_type_bound(
+                associated_type,
+                index,
+                method,
+                location,
+                scope,
+                call_witnesses,
+                program,
+                rows,
+                result,
+                expanding,
+            );
+        }
+    }
+}
+
+fn add_row(
+    row: EffectRow,
+    witnesses: Vec[BoundWitness],
+    scope: HandlerScope,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    result: EffectRow,
+    expanding: Set[QualifiedName],
+) {
+    for effect_def in row.effects {
+        match effect_def {
+            Effect.EffectMethod(method, location) => {
+                if !scope.effects.contains_key(method) {
+                    result.insert(Effect.EffectMethod(method, location));
+                }
+            }
+            Effect.HandlerRowVar(method, location, operation_scope) => {
+                let combined_scope = combine_scopes(operation_scope, scope);
+                match combined_scope.effects.get(method) {
+                    Some(binding) => {
+                        if expanding.insert(binding.function) {
+                            if let Some(handler_row) = rows.get(binding.function) {
+                                add_row(
+                                    handler_row,
+                                    binding.witnesses,
+                                    combined_scope,
+                                    program,
+                                    rows,
+                                    result,
+                                    expanding,
+                                );
+                            }
+                            expanding.remove(binding.function);
+                        }
+                    }
+                    None => { result.insert(Effect.HandlerRowVar(method, location, combined_scope)); }
+                }
+            }
+            Effect.Implicit(implicit_name, location) => {
+                if !scope.implicits.contains(implicit_name) {
+                    result.insert(Effect.Implicit(implicit_name, location));
+                }
+            }
+            Effect.AssociatedType(associated_type, location) => {
+                if !scope.associated_types.contains_key(associated_type) {
+                    result.insert(Effect.AssociatedType(associated_type, location));
+                }
+            }
+            Effect.FunctionBound(bound_index, method, location, operation_scope) => {
+                let combined_scope = combine_scopes(operation_scope, scope);
+                match witnesses.get_opt(bound_index) {
+                    Some(witness) => {
+                        add_bound_method(
+                            witness,
+                            method,
+                            location,
+                            combined_scope,
+                            witnesses,
+                            program,
+                            rows,
+                            result,
+                            expanding,
+                        );
+                    }
+                    None => { result.insert(Effect.FunctionBound(bound_index, method, location, combined_scope)); }
+                }
+            }
+            Effect.EffectAssociatedTypeBound(associated_type, index, method, location, operation_scope) => {
+                let combined_scope = combine_scopes(operation_scope, scope);
+                add_associated_type_bound(
+                    associated_type,
+                    index,
+                    method,
+                    location,
+                    combined_scope,
+                    witnesses,
+                    program,
+                    rows,
+                    result,
+                    expanding,
+                );
+            }
+            Effect.Dynamic(location) => { result.insert(Effect.Dynamic(location)); }
+            Effect.Unknown(location) => { result.insert(Effect.Unknown(location)); }
+        }
+    }
+}
+
+fn add_call(
+    callee: QualifiedName,
+    witnesses: Vec[BoundWitness],
+    location: Location,
+    scope: HandlerScope,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+    result: EffectRow,
+) {
+    let func = match program.functions.get(callee) {
+        Some(func) => func,
+        None => return,
+    };
+
+    match func.kind {
+        FunctionDefKind.EffectMethod => {
+            if let Some(binding) = scope.effects.get(callee) {
+                if let Some(handler_row) = rows.get(binding.function) {
+                    let expanding = Set.new();
+                    expanding.insert(binding.function);
+                    add_row(
+                        handler_row,
+                        binding.witnesses,
+                        scope,
+                        program,
+                        rows,
+                        result,
+                        expanding,
+                    );
+                }
+            } else if func.body.is_some() {
+                if let Some(callee_row) = rows.get(callee) {
+                    add_row(
+                        callee_row,
+                        witnesses,
+                        scope,
+                        program,
+                        rows,
+                        result,
+                        Set.new(),
+                    );
+                }
+            } else {
+                result.insert(Effect.EffectMethod(callee, location));
+                result.insert(Effect.HandlerRowVar(callee, location, scope));
+            }
+        }
+        FunctionDefKind.TraitMethod if func.body.is_none() => {
+            match witnesses.get_opt(0) {
+                Some(witness) => {
+                    add_bound_method(
+                        witness,
+                        callee,
+                        location,
+                        scope,
+                        witnesses,
+                        program,
+                        rows,
+                        result,
+                        Set.new(),
+                    );
+                }
+                None => { result.insert(Effect.Dynamic(location)); }
+            }
+        }
+        _ => {
+            if let Some(callee_row) = rows.get(callee) {
+                add_row(
+                    callee_row,
+                    witnesses,
+                    scope,
+                    program,
+                    rows,
+                    result,
+                    Set.new(),
+                );
+            }
+        }
+    }
+}
+
+fn evaluate_summary(
+    summary: FunctionSummary,
+    program: Program,
+    rows: Map[QualifiedName, EffectRow],
+) -> EffectRow {
+    let result = EffectRow.new();
+    for requirement in summary.requirements {
+        match requirement {
+            Requirement.Call(callee, witnesses, location, scope) => {
+                add_call(callee, witnesses, location, scope, program, rows, result);
+            }
+            Requirement.Implicit(implicit_name, location, scope) => {
+                if !scope.implicits.contains(implicit_name) {
+                    result.insert(Effect.Implicit(implicit_name, location));
+                }
+            }
+            Requirement.AssociatedType(associated_type, location, scope) => {
+                if !scope.associated_types.contains_key(associated_type) {
+                    result.insert(Effect.AssociatedType(associated_type, location));
+                }
+            }
+            Requirement.Dynamic(location) => { result.insert(Effect.Dynamic(location)); }
+        }
+    }
+    result
+}
+
+fn check_group(
+    program: Program,
+    group: Vec[QualifiedName],
+    summaries: Map[QualifiedName, FunctionSummary],
+    rows: Map[QualifiedName, EffectRow],
+) {
+    for qname in group {
+        rows.insert(qname, EffectRow.new());
+    }
+
+    let changed = True;
+    while changed {
+        changed = False;
+        for qname in group {
+            let summary = summaries.get(qname).unwrap();
+            let inferred = evaluate_summary(summary, program, rows);
+            if rows.get(qname).unwrap() != inferred {
+                rows.insert(qname, inferred);
+                changed = True;
+            }
+        }
+    }
+}
+
+fn check_published_group(
+    program: Program,
+    group: Vec[QualifiedName],
+    summaries: Map[QualifiedName, FunctionSummary],
+    body_rows: Map[QualifiedName, EffectRow],
+    rows: Map[QualifiedName, EffectRow],
+) {
+    for qname in group {
+        let func = program.functions.get(qname).unwrap();
+        if let Some(signature) = func.effect_signature {
+            let row = body_rows.get(qname).unwrap_or(EffectRow.new()).clone();
+            if signature.open {
+                row.insert(Effect.Unknown(signature.location));
+            }
+            rows.insert(qname, row);
+        } else {
+            rows.insert(qname, EffectRow.new());
+        }
+    }
+
+    let changed = True;
+    while changed {
+        changed = False;
+        for qname in group {
+            let func = program.functions.get(qname).unwrap();
+            if func.effect_signature.is_some() {
+                continue;
+            }
+            let summary = summaries.get(qname).unwrap();
+            let inferred = evaluate_summary(summary, program, rows);
+            if rows.get(qname).unwrap() != inferred {
+                rows.insert(qname, inferred);
+                changed = True;
+            }
+        }
+    }
+}
+
+fn publish_effects(
+    program: Program,
+    body_rows: Map[QualifiedName, EffectRow],
+) -> Map[QualifiedName, EffectRow] {
+    let summaries: Map[QualifiedName, FunctionSummary] = Map.new();
+    for (qname, func) in program.functions {
+        summaries.insert(qname, collect_function(func));
+    }
+
+    let rows: Map[QualifiedName, EffectRow] = Map.new();
+    for group in GroupBuilder.build_groups(program) {
+        check_published_group(program, group, summaries, body_rows, rows);
+    }
+    rows
+}
+
+fn evaluate_bodies(
+    program: Program,
+    published_rows: Map[QualifiedName, EffectRow],
+) -> Map[QualifiedName, EffectRow] {
+    let rows: Map[QualifiedName, EffectRow] = Map.new();
+    for (qname, func) in program.functions {
+        rows.insert(
+            qname,
+            evaluate_summary(collect_function(func), program, published_rows),
+        );
+    }
+    rows
+}
+
+pub fn infer_effects(program: Program) -> Map[QualifiedName, EffectRow] {
+    let summaries: Map[QualifiedName, FunctionSummary] = Map.new();
+    for (qname, func) in program.functions {
+        summaries.insert(qname, collect_function(func));
+    }
+
+    let rows: Map[QualifiedName, EffectRow] = Map.new();
+    for group in GroupBuilder.build_groups(program) {
+        check_group(program, group, summaries, rows);
+    }
+    rows
+}
+
+pub fn check_effects(program: Program) -> Vec[EffectError] {
+    let body_rows = infer_effects(program);
+    let rows = publish_effects(program, body_rows);
+    let checked_body_rows = evaluate_bodies(program, rows);
+    let errors = check_signatures(program, checked_body_rows);
+    for entry_point in program.entry_points {
+        if let Some(row) = rows.get(entry_point) {
+            for effect_def in row.effects {
+                match effect_def {
+                    Effect.EffectMethod(method, location) => {
+                        errors.push(EffectError.UnresolvedEffectHandler(method, location));
+                    }
+                    Effect.Implicit(implicit_name, location) => {
+                        errors.push(EffectError.UnsetImplicit(implicit_name, location));
+                    }
+                    Effect.AssociatedType(associated_type, location) => {
+                        errors.push(EffectError.UnboundEffectAssociatedType(associated_type, location));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    errors
+}
+
+}

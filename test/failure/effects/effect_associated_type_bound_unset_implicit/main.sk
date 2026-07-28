@@ -1,0 +1,35 @@
+module Main {
+
+implicit message: String
+
+trait Use[T] {
+    fn use(value: T)
+}
+
+effect[Foo: Use[Foo]] MyEff {
+    type Foo
+
+    fn create() -> Foo
+}
+
+struct Boo {}
+
+instance Use[Boo] {
+    fn use(value: Boo) {
+        println(message)
+    }
+}
+
+fn create_handler() -> Boo {
+    Boo()
+}
+
+fn main() {
+    with type MyEff.Foo = Boo,
+        MyEff.create = create_handler {
+        let value = create();
+        use(value)
+    }
+}
+
+}

@@ -1,0 +1,23 @@
+module Main {
+
+effect Logger {
+    fn log(message: String)
+}
+
+fn console_log(message: String) {
+    println(message)
+}
+
+fn main() {
+    let action: fn() -> () = || {
+        Logger.log("hello")
+    };
+
+    // Installing the handler for invocation is too late: closures capture
+    // their effect handlers when they are created.
+    with log = console_log {
+        action()
+    }
+}
+
+}

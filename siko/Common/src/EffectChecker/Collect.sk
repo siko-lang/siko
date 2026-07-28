@@ -1,0 +1,248 @@
+module Siko.EffectChecker.Collect {
+
+import Siko.AST.Expr as E
+import Siko.AST.Function
+import Siko.AST.Identifier
+import Siko.AST.Name
+import Siko.AST.Pattern
+import Siko.AST.QualifiedName
+import Siko.AST.Statement as S
+import Siko.AST.Type
+import Siko.EffectChecker.Types
+import Siko.Instances.FunctionInstanceResolver
+import Siko.Interner as I
+import Siko.Location
+
+struct EffectCollector {
+    summary: FunctionSummary,
+    scope: HandlerScope,
+    location: Location,
+}
+
+trait CollectEffects[T] {
+    fn collect_effects(t: T, collector: EffectCollector)
+}
+
+instance CollectEffects[Location]          = auto(Fold, =)
+instance CollectEffects[I.String]          = auto(Fold, =)
+instance CollectEffects[String]            = auto(Fold, =)
+instance CollectEffects[Int]               = auto(Fold, =)
+instance CollectEffects[E.AtomicOrdering]  = auto(Fold, =)
+instance CollectEffects[E.AtomicRmwOp]     = auto(Fold, =)
+instance CollectEffects[U8]                = auto(Fold, =)
+instance CollectEffects[Bool]              = auto(Fold, =)
+instance CollectEffects[QualifiedName]     = auto(Fold, =)
+instance CollectEffects[E.VariableName]    = auto(Fold, =)
+instance CollectEffects[Name]              = auto(Fold, =)
+instance CollectEffects[Identifier]        = auto(Fold, =)
+instance CollectEffects[E.WitnessInfo]     = auto(Fold, =)
+instance CollectEffects[BoundWitness]      = auto(Fold, =)
+instance CollectEffects[E.FunctionKind]    = auto(Fold, =)
+instance CollectEffects[E.BinaryOp]        = auto(Fold, =)
+instance CollectEffects[E.UnaryOp]         = auto(Fold, =)
+instance CollectEffects[E.LambdaArg]       = auto(Fold, =)
+instance CollectEffects[E.NamedArgument]   = auto(Fold, =)
+instance CollectEffects[NamedPatternArg]   = auto(Fold, =)
+instance CollectEffects[NamedPatternInfo]  = auto(Fold)
+instance CollectEffects[E.MethodCallInfo]  = auto(Fold)
+instance CollectEffects[E.MatchArm]        = auto(Fold)
+instance CollectEffects[E.MatchInfo]       = auto(Fold)
+instance CollectEffects[E.YieldInfo]       = auto(Fold)
+instance CollectEffects[E.ExprKind]        = auto(Fold)
+instance CollectEffects[S.LetInfo]         = auto(Fold)
+instance CollectEffects[S.DeclareInfo]     = auto(Fold)
+instance CollectEffects[E.BlockInfo]       = auto(Fold)
+instance CollectEffects[S.Statement]       = auto(Fold)
+instance CollectEffects[Pattern]           = auto(Fold)
+instance CollectEffects[PatternKind]       = auto(Fold)
+instance CollectEffects[E.HandlerSelection] = auto(Fold, =)
+
+instance[T: CollectEffects[T]] CollectEffects[Option[T]] {
+    fn collect_effects(opt: Option[T], collector: EffectCollector) {
+        if let Some(t) = opt {
+            collect_effects(t, collector);
+        }
+    }
+}
+
+instance[T: CollectEffects[T]] CollectEffects[Vec[T]] {
+    fn collect_effects(vec: Vec[T], collector: EffectCollector) {
+        for t in vec {
+            collect_effects(t, collector);
+        }
+    }
+}
+
+instance CollectEffects[TypeDef] {
+    fn collect_effects(ty: TypeDef, collector: EffectCollector) {
+        match ty {
+            TypeDef.Named(NamedInfo(name, args)) => {
+                let qname = name.resolved();
+                if let BaseName.EffectAssociatedType(_, _, _) = qname.base() {
+                    collector.summary.add(Requirement.AssociatedType(
+                        qname,
+                        collector.location,
+                        collector.scope.clone(),
+                    ));
+                }
+                collect_effects(args, collector);
+            }
+            TypeDef.Tuple(args) => collect_effects(args, collector),
+            TypeDef.Paren(inner) | TypeDef.Ptr(inner) => collect_effects(inner, collector),
+            TypeDef.Fn(ClosureInfo(args, result, _)) | TypeDef.FnPtr(args, result) => {
+                collect_effects(args, collector);
+                collect_effects(result, collector);
+            }
+            TypeDef.Array(inner, _) => collect_effects(inner, collector),
+            TypeDef.Co(CoroutineInfo(yield_ty, return_ty)) => {
+                collect_effects(yield_ty, collector);
+                collect_effects(return_ty, collector);
+            }
+            TypeDef.Var(_) |
+            TypeDef.Never(_) |
+            TypeDef.Wildcard |
+            TypeDef.Void |
+            TypeDef.VoidPtr |
+            TypeDef.Numeric(_) => {}
+        }
+    }
+}
+
+instance CollectEffects[E.Expr] {
+    fn collect_effects(expr: E.Expr, collector: EffectCollector) {
+        let saved_location = collector.location;
+        collector.location = expr.location;
+        collect_effects(expr.ty, collector);
+        collect_effects(expr.kind, collector);
+        collector.location = saved_location;
+    }
+}
+
+instance CollectEffects[E.CallInfo] {
+    fn collect_effects(info: E.CallInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Dynamic(collector.location));
+        collect_effects(info.callee, collector);
+        collect_effects(info.args, collector);
+    }
+}
+
+instance CollectEffects[E.AllocationInfo] {
+    fn collect_effects(info: E.AllocationInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Call(
+            info.allocator,
+            Vec.new(),
+            collector.location,
+            collector.scope.clone(),
+        ));
+        collect_effects(info.ctx, collector);
+    }
+}
+
+instance CollectEffects[E.FunctionCallInfo] {
+    fn collect_effects(info: E.FunctionCallInfo, collector: EffectCollector) {
+        match info.kind {
+            E.FunctionKind.StructCtor | E.FunctionKind.VariantCtor => {}
+            _ => {
+                collector.summary.add(Requirement.Call(
+                    info.qname,
+                    info.witnesses.witnesses.clone(),
+                    collector.location,
+                    collector.scope.clone(),
+                ));
+            }
+        }
+        collect_effects(info.args, collector);
+        collect_effects(info.allocation, collector);
+    }
+}
+
+instance CollectEffects[E.CreateClosureInfo] {
+    fn collect_effects(info: E.CreateClosureInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Call(
+            info.name,
+            info.witnesses.witnesses.clone(),
+            collector.location,
+            collector.scope.clone(),
+        ));
+    }
+}
+
+instance CollectEffects[E.FunctionPtrInfo] {
+    fn collect_effects(info: E.FunctionPtrInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Call(
+            info.name,
+            info.witnesses.witnesses.clone(),
+            collector.location,
+            collector.scope.clone(),
+        ));
+    }
+}
+
+instance CollectEffects[E.TypeAssociatedCallInfo] {
+    fn collect_effects(info: E.TypeAssociatedCallInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Call(
+            info.fn_name,
+            info.witnesses.witnesses.clone(),
+            collector.location,
+            collector.scope.clone(),
+        ));
+        collect_effects(info.args, collector);
+    }
+}
+
+instance CollectEffects[E.ImplicitRefInfo] {
+    fn collect_effects(info: E.ImplicitRefInfo, collector: EffectCollector) {
+        collector.summary.add(Requirement.Implicit(
+            info.name,
+            collector.location,
+            collector.scope.clone(),
+        ));
+    }
+}
+
+instance CollectEffects[E.WithInfo] {
+    fn collect_effects(info: E.WithInfo, collector: EffectCollector) {
+        let saved_scope = collector.scope.clone();
+        let with_scope = saved_scope.clone();
+
+        for selection in info.selections {
+            match selection {
+                E.HandlerSelection.EffectFunction(method, handler, _, witness_info) => {
+                    with_scope.effects.insert(
+                        method,
+                        HandlerBinding(handler, witness_info.witnesses.clone()),
+                    );
+                }
+                E.HandlerSelection.Implicit(implicit_name, _) => {
+                    with_scope.implicits.insert(implicit_name);
+                }
+                E.HandlerSelection.TypeAssociation(associated_type, handler, _, witness_info) => {
+                    with_scope.associated_types.insert(
+                        associated_type,
+                        AssociatedTypeBinding(handler, witness_info.witnesses.clone()),
+                    );
+                }
+                E.HandlerSelection.Unresolved(_, _) |
+                E.HandlerSelection.UnresolvedType(_, _) =>
+                    panic("effect checker: unresolved handler selection"),
+            }
+        }
+
+        collector.scope = with_scope;
+        collect_effects(info.body, collector);
+        collector.scope = saved_scope;
+    }
+}
+
+pub fn collect_function(func: FunctionDef) -> FunctionSummary {
+    let collector = EffectCollector(FunctionSummary.new(), HandlerScope.new(), func.name.location);
+    for arg in func.args {
+        collect_effects(arg.type_def, collector);
+    }
+    collect_effects(func.yield_type, collector);
+    collect_effects(func.result_type, collector);
+    collect_effects(func.body, collector);
+    collector.summary
+}
+
+}

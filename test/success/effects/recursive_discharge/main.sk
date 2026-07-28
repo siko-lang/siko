@@ -1,0 +1,29 @@
+module Main {
+
+effect BarEffect {
+    fn bar()
+}
+
+fn bar_handler() {
+    println("bar")
+}
+
+// Future signature: fn foo(n: Int) -> Int : <BarEffect>
+fn foo(n: Int) -> Int {
+    BarEffect.bar();
+    if n == 0 {
+        0
+    } else {
+        with bar = bar_handler {
+            foo(n - 1)
+        }
+    }
+}
+
+fn main() {
+    with bar = bar_handler {
+        println(foo(3))
+    }
+}
+
+}

@@ -5,6 +5,7 @@ import Siko.AST.Function
 import Siko.AST.Annotations
 import Siko.Interner as I
 import Siko.Parser.Expr
+import Siko.Parser.EffectSignature
 import Siko.Parser.Generics
 import Siko.Parser.Parser
 import Siko.Parser.Token
@@ -52,6 +53,12 @@ instance FunctionParser[Parser] {
         } else {
             None
         };
+        let effect_signature = if parser.peek() == TokenKind.Colon {
+            parser.advance();
+            Some(parser.parse_effect_signature()?)
+        } else {
+            None
+        };
         let body = if parser.peek() == TokenKind.LBrace {
             Some(parser.parse_block_expr()?)
         } else {
@@ -67,6 +74,7 @@ instance FunctionParser[Parser] {
             args: args,
             yield_type: yield_type,
             result_type: result_type,
+            effect_signature: effect_signature,
             body: body,
             module_name: I.intern(""),
             var_allocator: VarAllocator.new(),

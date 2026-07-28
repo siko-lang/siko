@@ -1,0 +1,44 @@
+module Main {
+
+effect MyEff {
+    type Foo
+
+    fn create() -> Foo
+
+    fn consume(value: Foo)
+}
+
+struct Boo {}
+
+fn create_handler() -> Boo {
+    Boo()
+}
+
+fn use_associated_type(value: MyEff.Foo) {
+    println("handled")
+}
+
+fn consume_handler(value: MyEff.Foo) {
+    use_associated_type(value)
+}
+
+fn run() : <
+    effect MyEff.consume with <
+        type MyEff.Foo,
+        effect MyEff.create
+    >
+> {
+    with type MyEff.Foo = Boo,
+        MyEff.create = create_handler {
+        let value = create();
+        consume(value)
+    }
+}
+
+fn main() {
+    with MyEff.consume = consume_handler {
+        run()
+    }
+}
+
+}

@@ -1,0 +1,63 @@
+module Siko.Format.EffectSignature {
+
+import Siko.AST.EffectSignature
+import Siko.AST.Name
+import Siko.AST.QualifiedName
+import Siko.Interner as I
+import Siko.Format.Formatter
+import Siko.Format.Types
+
+fn format_scope(f: Formatter, scope: Option[EffectSignature]) {
+    if let Some(scope) = scope {
+        f.push(" with ");
+        format_effect_signature(f, scope);
+    }
+}
+
+pub fn format_effect_signature(f: Formatter, signature: EffectSignature) {
+    f.push("<");
+    let first = True;
+    for entry in signature.entries {
+        if !first { f.push(", "); }
+        first = False;
+        match entry {
+            EffectSignatureEntry.Effect(target, scope) => {
+                f.push("effect ${I.resolve(target.name())}");
+                format_scope(f, scope);
+            }
+            EffectSignatureEntry.Implicit(name) =>
+                f.push("implicit ${I.resolve(name.name())}"),
+            EffectSignatureEntry.AssociatedType(name) =>
+                f.push("type ${I.resolve(name.name())}"),
+            EffectSignatureEntry.Bound(trait_name, type_args, method, scope) => {
+                f.push("bound ${I.resolve(trait_name.name())}");
+                if !type_args.is_empty() {
+                    f.push("[");
+                    let arg_first = True;
+                    for arg in type_args {
+                        if !arg_first { f.push(", "); }
+                        arg_first = False;
+                        format_type_def(f, arg);
+                    }
+                    f.push("]");
+                }
+                let method_name = match method {
+                    Name.Unresolved(ident) => ident.name,
+                    Name.Resolved(qname, _) => match qname.base() {
+                        BaseName.Method(_, name) => name,
+                        _ => qname.name(),
+                    },
+                };
+                f.push(".${I.resolve(method_name)}");
+                format_scope(f, scope);
+            }
+        }
+    }
+    if signature.open {
+        if !first { f.push(", "); }
+        f.push("...");
+    }
+    f.push(">");
+}
+
+}
