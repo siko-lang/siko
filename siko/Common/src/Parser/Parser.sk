@@ -7,7 +7,7 @@ import Siko.AST.Module
 import Siko.Parser.Module
 import Siko.AST.Identifier
 import Siko.FileManager
-import Std.Fs.File
+import Siko.CompilerHost
 import Siko.Package.Collector as PC
 
 pub struct ParseError {
@@ -146,33 +146,24 @@ pub struct ParserError {
     pub location: Location,
 }
 
-pub fn parse_files(packages: Vec[PC.SourcePackage]) -> (Vec[Module], Vec[ParserError]) {
+pub fn parse_sources(sources: Vec[SourceFile]) -> (Vec[Module], Vec[ParserError]) {
     let all_modules = Vec.new();
     let errors = Vec.new();
-    for pkg in packages {
-        for path in pkg.files {
-            match read_file(path) {
-                Err(_) => {
-                    println("error: could not read file: " + path);
-                }
-                Ok(contents) => {
-                    let file_id = Siko.FileManager.add(path, contents);
-                    match tokenize(contents) {
-                        Err(e) => {
-                            errors.push(ParserError(message: e.message, location: Location.new(file_id, Span(e.pos, e.pos+1))));
-                        }
-                        Ok(tokens) => {
-                            let parser = Parser.new(tokens, file_id, pkg);
-                            match parser.parse_program() {
-                                Err(e) => {
-                                    errors.push(ParserError(message: e.message, location: Location.new(file_id, Span(e.pos, e.pos+1))));
-                                }
-                                Ok(program) => {
-                                    for m in program.modules {
-                                        all_modules.push(m);
-                                    }
-                                }
-                            }
+    for source in sources {
+        let file_id = Siko.FileManager.add(source.path, source.content);
+        match tokenize(source.content) {
+            Err(e) => {
+                errors.push(ParserError(message: e.message, location: Location.new(file_id, Span(e.pos, e.pos+1))));
+            }
+            Ok(tokens) => {
+                let parser = Parser.new(tokens, file_id, source.package);
+                match parser.parse_program() {
+                    Err(e) => {
+                        errors.push(ParserError(message: e.message, location: Location.new(file_id, Span(e.pos, e.pos+1))));
+                    }
+                    Ok(program) => {
+                        for m in program.modules {
+                            all_modules.push(m);
                         }
                     }
                 }

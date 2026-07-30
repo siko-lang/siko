@@ -1,7 +1,8 @@
 module Siko.Driver.Passes {
 
 import Siko.Driver
-import Siko.Driver.Util
+import Siko.CompilerHost
+import Siko.Diagnostics
 import Siko.EffectChecker.Checker as EC
 import Siko.Parser.Parser
 import Siko.Parser.Module
@@ -38,14 +39,22 @@ fn build_parse_resolve_passes(driver: Driver) -> Vec[Pass] {
             name: "parse",
             label: "Parsing...",
             run: |driver| {
-                let packages = collect_files(config.paths, config.no_std, config.std_path);
-                driver.packages = packages.clone();
-                driver.pkg_reachability = PC.build_package_reachability(packages);
-                let (all_modules, parse_errors) = parse_files(packages);
-                if !parse_errors.is_empty() {
-                    report_parse_errors(parse_errors);
+                match CompilerInput.load_workspace(config) {
+                    Err(message) => CompilerDiagnostics.emit(Diagnostic(
+                        Severity.Error,
+                        message,
+                        None,
+                    )),
+                    Ok(workspace) => {
+                        driver.packages = workspace.packages.clone();
+                        driver.pkg_reachability = PC.build_package_reachability(workspace.packages);
+                        let (all_modules, parse_errors) = parse_sources(workspace.sources);
+                        if !parse_errors.is_empty() {
+                            report_parse_errors(parse_errors);
+                        }
+                        driver.all_modules = all_modules;
+                    }
                 }
-                driver.all_modules = all_modules;
             },
             dump: None,
         ),
@@ -66,7 +75,7 @@ fn build_parse_resolve_passes(driver: Driver) -> Vec[Pass] {
                     }
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
     ]
 }
@@ -83,13 +92,13 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     report_defer_errors(defer_errors);
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "normalize",
             label: "Normalizing...",
             run: |driver| { Siko.Normalizer.normalize(driver.program); },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "canonicalize",
@@ -102,19 +111,19 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     Ok(_) => {}
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "bound-expansion",
             label: "Bound expansion...",
             run: |driver| { expand_program(driver.program); },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "instance-resolver",
             label: "Building instance resolver...",
             run: |driver| { driver.program.instance_resolver = InstanceResolver.build(driver.program); },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "typecheck",
@@ -129,7 +138,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     report_type_errors(type_errors);
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "lower-trait-objects",
@@ -141,7 +150,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     Siko.Normalizer.normalize(driver.program);
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "match-validation",
@@ -152,7 +161,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     report_match_validation_errors(mv_errors);
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
     ];
 
@@ -167,7 +176,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                         report_safety_errors(safety_errors);
                     }
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "purity-check",
@@ -178,7 +187,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                         report_purity_errors(purity_errors);
                     }
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
         ]
     } else {
@@ -190,7 +199,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
             name: "lambda-lift",
             label: "Lambda lifting...",
             run: |driver| { LL.lift_lambdas(driver.program); },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
         Pass(
             name: "effect-check",
@@ -201,7 +210,7 @@ fn build_post_resolve_check_passes(driver: Driver) -> Vec[Pass] {
                     report_effect_errors(effect_errors);
                 }
             },
-            dump: Some(|driver| println(driver.program.format())),
+            dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
         ),
     ];
 
@@ -226,7 +235,7 @@ fn build_interpreter_test_passes(driver: Driver) -> Vec[Pass] {
                         }
                         let failed = test_driver.has_error_diagnostic();
                         for diagnostic in test_driver.get_diagnostics() {
-                            Siko.Driver.add_diagnostic(diagnostic);
+                            CompilerDiagnostics.emit(diagnostic);
                         }
                         if !failed {
                             InterpreterTests.run_interpreter_tests(
@@ -248,7 +257,7 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
                 name: "lower-match",
                 label: "Lowering match expressions...",
                 run: |driver| { lower_matches(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "mono",
@@ -259,7 +268,7 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
                         Ok(new_program) => { driver.program = new_program; }
                     }
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "lower-trait-object-carriers",
@@ -267,13 +276,13 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
                 run: |driver| {
                     lower_trait_object_carriers(driver.program);
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "propagate-implicits",
                 label: "Propagating implicit arguments...",
                 run: |driver| { IP.propagate_implicits(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
                 run_sanity_check: True,
             ),
             Pass(
@@ -282,7 +291,7 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
                 run: |driver| {
                     ClosureLowering.lower_closures(driver.program);
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
                 run_sanity_check: True,
             ),
             Pass(
@@ -293,14 +302,14 @@ fn build_lowering_passes(driver: Driver) -> Vec[Pass] {
                         report_coroutine_lowering_errors(errors);
                     }
                 },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
                 run_sanity_check: True,
             ),
             Pass(
                 name: "lower-tuples",
                 label: "Lowering tuples...",
                 run: |driver| { lower_tuples(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
                 run_sanity_check: True,
             ),
     ]

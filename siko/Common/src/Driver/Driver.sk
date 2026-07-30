@@ -6,6 +6,7 @@ import Siko.Errors
 import Siko.Diagnostics
 import Std.Sys.Process as Sys
 import Siko.Config
+import Siko.CompilerHost
 import Siko.Driver.Passes
 import Siko.HIR.Program
 import Siko.Package.Collector as PC
@@ -57,7 +58,12 @@ pub struct Driver {
         for pass in passes {
             let start = Instant.now();
             (pass.run)(d);
-            if trace { println("${pass.label} (${start.elapsed().to_millis()}ms)"); }
+            if trace {
+                CompilerEvents.pass_finished(
+                    pass.label,
+                    start.elapsed().to_millis(),
+                );
+            }
             if d.has_error_diagnostic() {
                 return;
             }
@@ -67,7 +73,7 @@ pub struct Driver {
             if d.pass == Some(pass.name) {
                 match pass.dump {
                     Some(dump_fn) => (dump_fn)(d),
-                    None => println(d.program.format()),
+                    None => CompilerEvents.dump(d.program.format()),
                 }
                 Sys.exit(0);
             }

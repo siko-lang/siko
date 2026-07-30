@@ -3,6 +3,7 @@ module Siko.Resolver.MacroBuilder {
 import Siko.AST.Module as M
 import Siko.AST.QualifiedName
 import Siko.Config
+import Siko.CompilerHost
 import Siko.Constants.Builtins as B
 import Siko.Driver
 import Siko.HIR.Program
@@ -31,7 +32,7 @@ pub struct MacroBuilder {
         module_trait_method_map: Map[I.String, Map[I.String, Vec[QualifiedName]]],
         statistics: Statistics,
     ) -> Bool {
-        if let Some(macro_program) = MacroCache.load(
+        if let Some(macro_program) = MacroCache.MacroCache.load(
             macro_module,
             dependencies,
             modules,
@@ -72,7 +73,7 @@ pub struct MacroBuilder {
         }
         let failed = driver.has_error_diagnostic();
         for diagnostic in driver.get_diagnostics() {
-            Siko.Driver.add_diagnostic(diagnostic);
+            CompilerDiagnostics.emit(diagnostic);
         }
         if failed {
             return False;
@@ -85,7 +86,7 @@ pub struct MacroBuilder {
             compiled.entry_points,
         );
         let macro_program = MacroProgram(compiled.executable, launchers);
-        MacroCache.store(
+        MacroCache.MacroCache.store(
             macro_module,
             dependencies,
             modules,

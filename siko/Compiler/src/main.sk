@@ -5,7 +5,11 @@ import Siko.Constants.Builtins as B
 import Siko.FileManager
 import Siko.Config
 import Siko.Driver
+import Siko.CompilerHost
+import Siko.CompilerHost.Batch as HostBatch
+import Siko.CompilerHost.MacroCache as HostMacroCache
 import Siko.Compiler.Passes as Compiler
+import Siko.Resolver.Macros.Cache as MacroCache
 import Siko.Errors
 import Siko.CLI
 
@@ -22,6 +26,10 @@ fn main() {
     let fm = FileManager.new();
     let config = Config.new();
     with I.Compiler.compile = name_cache_entry,
+         CompilerInput = HostBatch.BatchInput,
+         CompilerDiagnostics = HostBatch.BatchDiagnostics,
+         CompilerEvents = HostBatch.BatchEvents,
+         MacroCache.MacroCache = HostMacroCache.DiskMacroCache,
          Siko.FileManager.filemanager = fm,
          Siko.Config.current = config {
         let config = match CLI.parse_cli_args() {

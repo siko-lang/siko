@@ -1,0 +1,67 @@
+module Siko.CompilerHost.Batch {
+
+// Production handlers for command-line compiler hosts.
+
+import Siko.CompilerHost
+import Siko.Config
+import Siko.Diagnostics
+import Siko.Driver
+import Siko.Package.Collector as PC
+import Std.Fs.File
+import Std.Fs.Path
+
+fn collect_packages(config: Config) -> Result[Vec[PC.SourcePackage], PC.CollectorError] {
+    let lib_paths: Vec[String] = Vec.new();
+    match config.std_path {
+        Some(path) => {
+            lib_paths.push(Path.join(path, "Common"));
+            lib_paths.push(Path.join(
+                Path.join(path, "Arch"),
+                config.target_info.arch_dir_name,
+            ));
+        }
+        None => {}
+    }
+    PC.Collector.new(config.no_std).collect(config.paths, lib_paths)
+}
+
+pub instance BatchInput CompilerInput {
+    fn load_workspace(config: Config) -> Result[Workspace, String] {
+        let packages = match collect_packages(config) {
+            Ok(packages) => packages,
+            Err(error) => return Err(error.to_string()),
+        };
+        let sources: Vec[SourceFile] = Vec.new();
+        for package in packages {
+            for path in package.files {
+                match File.read_file(path) {
+                    Ok(content) => sources.push(SourceFile(
+                        path: path,
+                        content: content,
+                        package: package.clone(),
+                    )),
+                    Err(_) => return Err("could not read file: " + path),
+                }
+            }
+        }
+        Ok(Workspace(packages: packages, sources: sources))
+    }
+}
+
+pub instance BatchDiagnostics CompilerDiagnostics {
+    fn emit(diagnostic: Diagnostic) {
+        Siko.Driver.add_diagnostic(diagnostic)
+    }
+}
+
+pub instance BatchEvents CompilerEvents {
+    fn pass_finished(label: String, elapsed_ms: I64) {
+        println("${label} (${elapsed_ms}ms)")
+    }
+
+    fn dump(content: String) {
+        println(content)
+    }
+}
+
+}

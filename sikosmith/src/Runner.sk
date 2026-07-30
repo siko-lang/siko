@@ -1,0 +1,46 @@
+module SikoSmith.Runner {
+
+import Siko.CompilerHost
+import Siko.Config
+import Siko.Constants.Builtins as B
+import Siko.Driver
+import Siko.Driver.Passes as Passes
+import Siko.FileManager
+import Siko.Interner as I
+import Siko.Resolver.Macros.Cache as MacroCache
+import SikoSmith.Generator
+import SikoSmith.Host as Host
+
+fn compile_generated_program() {
+    let name_cache = B.build_cache();
+    with B.name_cache = name_cache {
+        let driver = Siko.Driver.current;
+        driver.compile(None, Passes.build_common_passes(driver));
+    }
+}
+
+pub fn run(seed: Int) {
+    let driver = Driver.new();
+    let host = Host.State.new(seed, Generator.generate(seed));
+    let config = Config.new();
+    config.no_std = True;
+    config.check_safety = True;
+    let file_manager = FileManager.new();
+
+    with Host.current = host,
+         I.Compiler.compile = compile_generated_program,
+         CompilerInput = Host.SmithCompilerInput,
+         CompilerDiagnostics = Host.SmithCompilerDiagnostics,
+         CompilerEvents = Host.SmithCompilerEvents,
+         MacroCache.MacroCache = Host.SmithMacroCache,
+         Siko.Config.current = config,
+         Siko.FileManager.filemanager = file_manager,
+         Siko.Driver.current = driver {
+        I.run();
+        for diagnostic in driver.get_diagnostics() {
+            diagnostic.print();
+        }
+    }
+}
+
+}

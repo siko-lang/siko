@@ -1,0 +1,146 @@
+module SikoSmith.Generator {
+
+import Std.Rand
+
+let MAX_FUNCTIONS: Int = 3;
+let MAX_STATEMENTS: Int = 5;
+
+enum Action {
+    UseImplicit,
+    PerformEffect,
+    Call(function: Int),
+}
+
+enum Scope {
+    Bare,
+    UnderImplicit,
+    UnderHandler,
+    UnderBoth,
+}
+
+struct Statement {
+    scope: Scope,
+    action: Action,
+}
+
+struct Function {
+    index: Int,
+    statements: Vec[Statement],
+}
+
+fn random_statement(
+    rand: Rand,
+    function_count: Int,
+    function_index: Int,
+) -> Statement {
+    let scope = match rand.between(0, 3) {
+        0 => Scope.Bare,
+        1 => Scope.UnderImplicit,
+        2 => Scope.UnderHandler,
+        _ => Scope.UnderBoth,
+    };
+    // Forward-only calls keep generated programs terminating once SikoSmith
+    // starts executing them.
+    let action_count = 2 + function_count - function_index - 1;
+    let action_index = rand.between(0, action_count - 1);
+    let action = match action_index {
+        0 => Action.UseImplicit,
+        1 => Action.PerformEffect,
+        _ => Action.Call(function_index + action_index - 1),
+    };
+    Statement(scope: scope, action: action)
+}
+
+fn random_functions(seed: Int) -> Vec[Function] {
+    let rand = Rand.new(seed);
+    let function_count = rand.between(1, MAX_FUNCTIONS);
+    let functions: Vec[Function] = Vec.new(function_count);
+    for function_index in 0..function_count {
+        let statement_count = rand.between(0, MAX_STATEMENTS);
+        let statements: Vec[Statement] = Vec.new(statement_count);
+        for _ in 0..statement_count {
+            statements.push(random_statement(
+                rand,
+                function_count,
+                function_index,
+            ));
+        }
+        functions.push(Function(
+            index: function_index,
+            statements: statements,
+        ));
+    }
+    functions
+}
+
+fn indentation(depth: Int) -> String {
+    let result = "";
+    for _ in 0..depth {
+        result += "    ";
+    }
+    result
+}
+
+fn render_action(action: Action, depth: Int, statement_index: Int) -> String {
+    let prefix = indentation(depth);
+    match action {
+        Action.UseImplicit => "${prefix}let used_${statement_index} = token;\n",
+        Action.PerformEffect => "${prefix}Action.perform();\n",
+        Action.Call(function) => "${prefix}f${function}();\n",
+    }
+}
+
+fn render_statement(statement: Statement, statement_index: Int) -> String {
+    match statement.scope {
+        Scope.Bare => render_action(statement.action, 1, statement_index),
+        Scope.UnderImplicit => {
+            let result = "    with token = token_value {\n";
+            result += render_action(statement.action, 2, statement_index);
+            result += "    }\n";
+            result
+        }
+        Scope.UnderHandler => {
+            let result = "    with Action.perform = handler {\n";
+            result += render_action(statement.action, 2, statement_index);
+            result += "    }\n";
+            result
+        }
+        Scope.UnderBoth => {
+            let result = "    with token = token_value, Action.perform = handler {\n";
+            result += render_action(statement.action, 2, statement_index);
+            result += "    }\n";
+            result
+        }
+    }
+}
+
+fn render_function(function: Function) -> String {
+    let result = "fn f${function.index}() {\n";
+    result += "    let token_value = Token();\n";
+    for (statement_index, statement) in function.statements.iter().enumerate() {
+        result += render_statement(statement, statement_index);
+    }
+    result += "}\n\n";
+    result
+}
+
+pub fn generate(seed: Int) -> String {
+    let result = "// SikoSmith seed ${seed}\n";
+    result += "module Main {\n\n";
+    result += "struct Token {}\n\n";
+    result += "implicit token: Token\n\n";
+    result += "effect Action {\n";
+    result += "    fn perform()\n";
+    result += "}\n\n";
+    result += "fn handler() {}\n\n";
+    for function in random_functions(seed) {
+        result += render_function(function);
+    }
+    result += "fn main() {\n";
+    result += "    f0()\n";
+    result += "}\n\n";
+    result += "}\n";
+    result
+}
+
+}

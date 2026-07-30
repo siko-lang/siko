@@ -1,0 +1,38 @@
+module Siko.CompilerHost {
+
+import Siko.Config
+import Siko.Diagnostics
+import Siko.Package.Collector
+
+pub struct SourceFile {
+    pub path: String,
+    pub content: String,
+    pub package: SourcePackage,
+}
+
+pub struct Workspace {
+    pub packages: Vec[SourcePackage],
+    pub sources: Vec[SourceFile],
+}
+
+// Semantic input to a compilation. The batch handler discovers packages and
+// reads their sources; an in-memory compiler host can provide the same shape
+// without pretending to be a filesystem.
+pub effect CompilerInput {
+    fn load_workspace(config: Config) -> Result[Workspace, String]
+}
+
+// Compiler passes emit structured diagnostics. Choosing where those
+// diagnostics are stored or displayed belongs to the host.
+pub effect CompilerDiagnostics {
+    fn emit(diagnostic: Diagnostic)
+}
+
+// Observable pipeline activity. Keeping the already-formatted dump as a
+// string lets a batch host print it and an embedded host capture it.
+pub effect CompilerEvents {
+    fn pass_finished(label: String, elapsed_ms: I64)
+    fn dump(content: String)
+}
+
+}

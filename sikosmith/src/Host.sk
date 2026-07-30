@@ -1,0 +1,82 @@
+module SikoSmith.Host {
+
+import Siko.AST.Module as M
+import Siko.CompilerHost
+import Siko.Config
+import Siko.Diagnostics
+import Siko.Driver
+import Siko.Interner as I
+import Siko.Package.Collector
+import Siko.Package.Info
+import Siko.Resolver.Macros.Cache as MacroCache
+import Siko.Resolver.Macros.Launcher
+import Std.Set
+
+pub struct State {
+    seed: Int,
+    source: String,
+
+    pub fn new(seed: Int, source: String) -> State {
+        State(seed: seed, source: source)
+    }
+}
+
+pub implicit current: State
+
+pub instance SmithCompilerInput CompilerInput {
+    fn load_workspace(config: Config) -> Result[Workspace, String] {
+        let path = "sikosmith_seed_${current.seed}.sk";
+        let package = SourcePackage(
+            root: None,
+            info: PackageInfo(
+                name: "SikoSmithInput",
+                version: "0.1.0",
+                dependencies: Vec.new(),
+                native_libs: Vec.new(),
+                pure: False,
+            ),
+            files: [path],
+            is_root: True,
+        );
+        Ok(Workspace(
+            packages: [package],
+            sources: [SourceFile(
+                path: path,
+                content: current.source,
+                package: package,
+            )],
+        ))
+    }
+}
+
+pub instance SmithCompilerDiagnostics CompilerDiagnostics {
+    fn emit(diagnostic: Diagnostic) {
+        let driver = Siko.Driver.current;
+        driver.diagnostics.push(diagnostic)
+    }
+}
+
+pub instance SmithCompilerEvents CompilerEvents {
+    fn pass_finished(label: String, elapsed_ms: I64) {}
+
+    fn dump(content: String) {}
+}
+
+pub instance SmithMacroCache MacroCache.MacroCache {
+    fn load(
+        macro_module: I.String,
+        dependencies: Set[I.String],
+        modules: Vec[M.Module],
+    ) -> Option[MacroProgram] {
+        None
+    }
+
+    fn store(
+        macro_module: I.String,
+        dependencies: Set[I.String],
+        modules: Vec[M.Module],
+        program: MacroProgram,
+    ) {}
+}
+
+}

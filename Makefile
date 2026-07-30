@@ -1,9 +1,11 @@
 SIKO_COMMON_SK := $(shell find siko/Common std -name '*.sk')
-SIKO_COMPILER_SK := $(shell find siko/Compiler -name '*.sk') $(SIKO_COMMON_SK)
-SIKO_LSP_SK := $(shell find siko/LSP -name '*.sk') $(SIKO_COMMON_SK)
+SIKO_COMPILER_HOST_SK := $(shell find siko/CompilerHost -name '*.sk')
+SIKO_COMPILER_SK := $(shell find siko/Compiler -name '*.sk') $(SIKO_COMPILER_HOST_SK) $(SIKO_COMMON_SK)
+SIKO_LSP_SK := $(shell find siko/LSP -name '*.sk') $(SIKO_COMPILER_HOST_SK) $(SIKO_COMMON_SK)
 HTTPD_SK := $(shell find apps/httpd -name '*.sk')
 TESTRUNNER_SK := $(shell find testrunner -name '*.sk')
 SSG_SK := $(shell find ssg -name '*.sk')
+SIKOSMITH_SK := $(shell find sikosmith -name '*.sk')
 
 SIKO_ROOT ?= $(CURDIR)
 SIKO_TARGET_OS ?= macos
@@ -64,6 +66,9 @@ web: site
 
 runner.bin: siko.bin ${TESTRUNNER_SK}
 	./siko.bin build testrunner -o runner.bin
+
+sikosmith.bin: siko.bin $(SIKOSMITH_SK)
+	./siko.bin build sikosmith -o sikosmith.bin
 
 httpd.bin: siko.bin $(HTTPD_SK)
 	./siko.bin build apps/httpd -o httpd.bin

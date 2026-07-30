@@ -5,6 +5,7 @@ import Std.Fs.Path
 import Std.Sys.Command
 import Std.Sys.Process as Sys
 import Siko.Compiler.Errors
+import Siko.CompilerHost
 import Siko.Config
 import Siko.Driver
 import Siko.Driver.Passes as CommonPasses
@@ -116,21 +117,23 @@ fn dump_llvm(llvm_modules: Vec[LLVMEmit.LLVMModule]) {
     if llvm_modules.is_empty() {
         panic("No llvm modules in driver");
     }
-    println(LLVMEmit.emit_modules(llvm_modules));
+    CompilerEvents.dump(LLVMEmit.emit_modules(llvm_modules));
 }
 
 fn dump_object_module(object_modules: Vec[LLVMEmit.ObjectModule]) {
     if object_modules.is_empty() {
         panic("No optimized llvm modules in driver");
     }
+    let content = "";
     let first = True;
     for object_module in object_modules {
         if !first {
-            println("");
+            content = content + "\n";
         }
-        println(object_module.ir());
+        content = content + object_module.ir();
         first = False;
     }
+    CompilerEvents.dump(content);
 }
 
 struct BackendState {
@@ -154,7 +157,7 @@ pub fn build_full_passes(driver: Driver) -> Vec[Pass] {
                 name: "lower-builtins",
                 label: "Lowering builtins...",
                 run: |driver| { lower_builtins(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
                 run_sanity_check: True,
             ),
             Pass(
@@ -166,32 +169,32 @@ pub fn build_full_passes(driver: Driver) -> Vec[Pass] {
                     }
                 },
                 dump: Some(|driver| {
-                    ValueTypes.dump_stats(driver.program);
+                    CompilerEvents.dump(ValueTypes.format_stats(driver.program));
                 }),
             ),
             Pass(
                 name: "lower-ifs",
                 label: "Lowering ifs...",
                 run: |driver| { lower_ifs(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "lower-basic-block",
                 label: "Lowering basic blocks...",
                 run: |driver| { lower_basic_blocks(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "lower-pointers",
                 label: "Lowering pointers...",
                 run: |driver| { lower_pointers(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
             Pass(
                 name: "lower-data",
                 label: "Lowering data...",
                 run: |driver| { lower_data(driver.program); },
-                dump: Some(|driver| println(driver.program.format())),
+                dump: Some(|driver| CompilerEvents.dump(driver.program.format())),
             ),
         ]
     };
