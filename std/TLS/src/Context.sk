@@ -32,7 +32,7 @@ pub fn library_error(operation: String, class: I32, fallback: String) -> SslErro
     SslError.Library(operation, class, drain_error_queue(fallback))
 }
 
-@safe
+@unsafe
 pub fn operation_error(ssl: void*, verify_peer: Bool, operation: String, class: I32) -> SslError {
     let details = drain_error_queue("OpenSSL returned no error-queue entry");
     if verify_peer {
@@ -50,7 +50,7 @@ pub fn operation_error(ssl: void*, verify_peer: Bool, operation: String, class: 
     SslError.Library(operation, class, details)
 }
 
-@safe
+@unsafe
 fn configure_versions(ctx: void*, config: Config) -> Result[(), Error] {
     CApi.err_clear_error();
     if CApi.ssl_ctx_set_min_proto_version(ctx, Util.version_code(config.min_version())) <= 0 {
@@ -68,7 +68,7 @@ fn configure_versions(ctx: void*, config: Config) -> Result[(), Error] {
     Ok(())
 }
 
-@safe
+@unsafe
 pub fn new_context(config: Config, server: Bool) -> Result[void*, Error] {
     if server {
         config.validate_server_config()?;
@@ -128,7 +128,7 @@ pub fn new_context(config: Config, server: Bool) -> Result[void*, Error] {
     Ok(ctx)
 }
 
-@safe
+@unsafe
 pub fn configure_client_name(ssl: void*, config: Config) -> Result[(), Error] {
     match config.server_name() {
         Some(server_name) => {

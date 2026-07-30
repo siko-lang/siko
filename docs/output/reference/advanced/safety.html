@@ -19,13 +19,14 @@
     <p class="post-meta"><a href="../../index.html">Siko Language</a> · <a href="../../reference.html">Reference</a> · <a href="../advanced.html">Advanced Topics</a> · Safety</p>
 
     <h1>Safety in Siko</h1>
-<p>Siko uses a garbage collector but it also has an FFI layer so it can call C code or write/read memory using raw pointers. Siko uses the now traditional safe/unsafe split to mark sections of code that break the usual safety guarantees. The unit of safety is a function. By default, a function is safe. You must explicitly mark it as <code>@unsafe</code> to use any unsafe features of the language. It is not possible to mark a function as  <code>@safe</code> or <code>@unsafe</code> if it does not use any of the unsafe operations.</p>
-<p>We want to be able to talk about safety of a code pre monomorphization. Due to this design decision, there are some restrictions regarding where you can use or define unsafe functions. A trait instance method must be either fully safe or marked as <code>@safe</code>. Meaning it is not possible to "inject" an unsafe functionality into an otherwise safe code during monomorphization.</p>
-<p>The same is true for effect handlers, an effect handler is either fully safe or marked as <code>@safe</code>.</p>
+<p>Siko uses a garbage collector but it also has an FFI layer so it can call C code or write/read memory using raw pointers. The unit of safety is a function. By default, a function is safe. A function using unsafe operations must be marked <code>@safe</code> or <code>@unsafe</code>: <code>@safe</code> promises that its public contract is safe, while callers of an <code>@unsafe</code> function must themselves be <code>@safe</code> or <code>@unsafe</code>. A function without unsafe operations cannot use either annotation.</p>
+<p>Raw pointers cannot cross a safe function boundary. A function with <code>*T</code> or <code>void*</code> in a parameter or return type must be <code>@unsafe</code>; <code>@safe</code> is rejected for such a signature.</p>
+<p>Safety must be known before monomorphization. A trait instance method must therefore be safe or <code>@safe</code>. Effect handlers instead match their effect method: a safe effect method requires a safe handler, while an <code>@unsafe</code> effect method requires an <code>@unsafe</code> handler. These rules apply per method, including methods supplied through a named effect instance.</p>
 <p>A function is considered to be unsafe if it uses any of the following operations:</p>
 <ul>
 <li>has any expression that has pointer type</li>
 <li>calls an unsafe function</li>
+<li>installs an unsafe effect handler</li>
 <li>calls an extern function</li>
 <li>dereferences a pointer</li>
 <li>takes the address of something</li>

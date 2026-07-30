@@ -2,10 +2,11 @@
     'use strict';
 
     const KEYWORDS = new Set([
-        'fn', 'let', 'match', 'if', 'else', 'return', 'for', 'while',
-        'loop', 'break', 'continue', 'in', 'pub', 'struct', 'enum',
-        'trait', 'instance', 'import', 'module', 'effect', 'implicit',
-        'with', 'declare', 'as', 'type', 'auto',
+        'module', 'import', 'as', 'is', 'pub', 'struct', 'enum', 'effect',
+        'trait', 'instance', 'fn', 'let', 'if', 'else', 'return', 'type',
+        'match', 'for', 'in', 'loop', 'break', 'continue', 'with',
+        'implicit', 'while', 'void', 'sizeof', 'yield', 'co', 'defer',
+        'macro',
     ]);
 
     function esc(s) {
@@ -68,6 +69,18 @@
             if (ch >= '0' && ch <= '9') {
                 let j = i;
                 while (j < n && ((src[j] >= '0' && src[j] <= '9') || src[j] === '_')) j++;
+                if (j + 1 < n && src[j] === '.' && src[j + 1] >= '0' && src[j + 1] <= '9') {
+                    j += 2;
+                    while (j < n && ((src[j] >= '0' && src[j] <= '9') || src[j] === '_')) j++;
+                    if (j < n && (src[j] === 'e' || src[j] === 'E')) {
+                        let k = j + 1;
+                        if (k < n && (src[k] === '+' || src[k] === '-')) k++;
+                        if (k < n && src[k] >= '0' && src[k] <= '9') {
+                            j = k + 1;
+                            while (j < n && ((src[j] >= '0' && src[j] <= '9') || src[j] === '_')) j++;
+                        }
+                    }
+                }
                 out += span('sk-number', src.slice(i, j));
                 i = j;
                 continue;

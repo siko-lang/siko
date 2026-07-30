@@ -18,7 +18,7 @@ pub struct State {
     eof: Bool,
     closed: Bool,
 
-    @safe
+    @unsafe
     pub fn new(tcp: TcpStream) -> *State {
         let state: *State = gc_allocate();
         *state = State(tcp: tcp, last_error: None, eof: False, closed: False);
@@ -67,12 +67,12 @@ pub struct Bios {
         ))
     }
 
-    @safe
+    @unsafe
     pub fn read_bio(bios: Bios) -> void* {
         bios.read_bio
     }
 
-    @safe
+    @unsafe
     pub fn write_bio(bios: Bios) -> void* {
         bios.write_bio
     }
@@ -115,7 +115,7 @@ fn bio_error(operation: String, message: String) -> SslError {
     SslError.Library(operation, 0, message)
 }
 
-@safe
+@unsafe
 fn close_state(state_ptr: *State) -> Result[(), Error] {
     let state = *state_ptr;
     if state.closed {

@@ -705,8 +705,9 @@ pub struct Resolver {
             QualifiedName.new_unnamed_instance(trait_name.name(), resolved_instance_def.args.clone())
         };
         let instance_name = resolved_instance_def.get_instance_name()?;
+        let is_effect_instance = resolved_instance_def.subject.try_effect_name().is_some();
         for method in instance_def.methods {
-            if method.is_unsafe() {
+            if method.is_unsafe() && !is_effect_instance {
                 return Err(ResolveError.UnsafeInstanceMethod(method.name));
             }
             let method_ctx = ResolverContext.new(base_type_resolver, resolver.ctx);

@@ -3,14 +3,17 @@ layout: reference
 
 # Safety in Siko
 
-Siko uses a garbage collector but it also has an FFI layer so it can call C code or write/read memory using raw pointers. Siko uses the now traditional safe/unsafe split to mark sections of code that break the usual safety guarantees. The unit of safety is a function. By default, a function is safe. You must explicitly mark it as `@unsafe` to use any unsafe features of the language. It is not possible to mark a function as  `@safe` or `@unsafe` if it does not use any of the unsafe operations.
+Siko uses a garbage collector but it also has an FFI layer so it can call C code or write/read memory using raw pointers. The unit of safety is a function. By default, a function is safe. A function using unsafe operations must be marked `@safe` or `@unsafe`: `@safe` promises that its public contract is safe, while callers of an `@unsafe` function must themselves be `@safe` or `@unsafe`. A function without unsafe operations cannot use either annotation.
 
-We want to be able to talk about safety of a code pre monomorphization. Due to this design decision, there are some restrictions regarding where you can use or define unsafe functions. A trait instance method must be either fully safe or marked as `@safe`. Meaning it is not possible to "inject" an unsafe functionality into an otherwise safe code during monomorphization.
-The same is true for effect handlers, an effect handler is either fully safe or marked as `@safe`.
+Raw pointers cannot cross a safe function boundary. A function with `*T` or `void*` in a parameter or return type must be `@unsafe`; `@safe` is rejected for such a signature.
+
+Safety must be known before monomorphization. A trait instance method must therefore be safe or `@safe`. Effect handlers instead match their effect method: a safe effect method requires a safe handler, while an `@unsafe` effect method requires an `@unsafe` handler. These rules apply per method, including methods supplied through a named effect instance.
 
 A function is considered to be unsafe if it uses any of the following operations:
+
 - has any expression that has pointer type
 - calls an unsafe function
+- installs an unsafe effect handler
 - calls an extern function
 - dereferences a pointer
 - takes the address of something
@@ -22,4 +25,3 @@ A function is considered to be unsafe if it uses any of the following operations
 The design philosophy is that anything that reveals platform specific details and does not fit into a java/python esque feel of the language needs to be explicitly marked as unsafe.
 
 The language must guarantee that literally everything you can do in safe mode is safe.
-

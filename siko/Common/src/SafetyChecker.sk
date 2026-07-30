@@ -23,8 +23,10 @@ import Siko.Constants.Builtins as B
 pub enum SafetyError {
     UnsafeFunctionNotAnnotated(location: Location), // unsafe ops but no @safe/@unsafe
     SafeFunctionAnnotated(location: Location),      // no unsafe ops but has @safe/@unsafe
-    UnsafeEffectHandler(location: Location),        // effect handler marked @unsafe (must be @safe or plain safe)
+    UnsafeHandlerForSafeEffect(location: Location),
+    SafeHandlerForUnsafeEffect(location: Location),
     PureWithoutSafe(location: Location),            // @pure requires @safe
+    RawPointerSignatureMustBeUnsafe(location: Location),
 }
 
 trait Check[T] {
@@ -57,10 +59,17 @@ instance Check[E.BinaryOp]            = auto(Fold, =)
 instance Check[E.UnaryOp]             = auto(Fold, =)
 instance Check[E.HandlerSelection] {
     fn check(sel: E.HandlerSelection, checker: SafetyChecker) {
-        if let E.HandlerSelection.EffectFunction(_, handler, location, _) = sel {
+        if let E.HandlerSelection.EffectFunction(method, handler, location, _) = sel {
+            let method_fn = checker.program.functions.get(method).unwrap();
             let handler_fn = checker.program.functions.get(handler).unwrap();
-            if handler_fn.is_unsafe() {
-                checker.errors.push(SafetyError.UnsafeEffectHandler(location));
+            if handler_fn.is_unsafe() && !method_fn.is_unsafe() {
+                checker.errors.push(SafetyError.UnsafeHandlerForSafeEffect(location));
+            }
+            if !handler_fn.is_unsafe() && method_fn.is_unsafe() {
+                checker.errors.push(SafetyError.SafeHandlerForUnsafeEffect(location));
+            }
+            if handler_fn.is_unsafe() && method_fn.is_unsafe() {
+                checker.is_unsafe = True;
             }
         }
     }
@@ -162,6 +171,16 @@ pub struct SafetyChecker {
     unsafe_reasons: Set[QualifiedName],
 }
 
+fn has_raw_pointer_signature(func: FunctionDef) -> Bool {
+    if func.args.iter().any(|arg| arg.type_def.has_raw_ptr()) {
+        return True;
+    }
+    match func.result_type {
+        Some(result_type) => result_type.has_raw_ptr(),
+        None => False,
+    }
+}
+
 pub fn check_safety(program: Program) -> Vec[SafetyError] {
     let checker = SafetyChecker(program, Vec.new(), False, Set.new());
     for (_, func) in program.functions {
@@ -173,6 +192,10 @@ pub fn check_safety(program: Program) -> Vec[SafetyError] {
         check(func, checker);
         let fn_is_unsafe = checker.is_unsafe;
         let has_annotation = func.is_safe() || func.is_unsafe();
+        let has_raw_pointer_signature = has_raw_pointer_signature(func);
+        if has_raw_pointer_signature && func.is_safe() {
+            checker.errors.push(SafetyError.RawPointerSignatureMustBeUnsafe(location: func.name.location));
+        }
         if fn_is_unsafe && !has_annotation {
             if func.is_extern() {
                 continue;
