@@ -10,20 +10,19 @@ import Siko.Config
 import Siko.Package.Info
 import Siko.PurityCheck.GroupBuilder as GB
 
-pub enum ImpurityReason {
-    DirectlyUnsafe,
-    CallsImpure(QualifiedName),
-    UsesImpureHandler(QualifiedName),
-}
-
-pub struct ImpureFn {
+pub struct ImpureDependency {
     pub name: QualifiedName,
-    pub reason: ImpurityReason,
+    pub callers: Vec[QualifiedName],
+    pub handler_users: Vec[QualifiedName],
 }
 
 pub enum PurityError {
     PureInMixedCycle(Location),
-    PackageClaimsPure(pkg_name: String, impure_fns: Vec[ImpureFn]),
+    PackageClaimsPure(
+        pkg_name: String,
+        directly_impure_fns: Vec[QualifiedName],
+        impure_dependencies: Vec[ImpureDependency],
+    ),
 }
 
 pub fn check_purity(program: Program) -> Vec[PurityError] {
@@ -31,7 +30,6 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
 
     let errors: Vec[PurityError] = Vec.new();
     let purity_map: Map[QualifiedName, Bool] = Map.new();
-    let impurity_reason_map: Map[QualifiedName, ImpurityReason] = Map.new();
 
     for scc in sccs {
         let scc_set: Set[QualifiedName] = Set.new();
@@ -76,7 +74,6 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
             }
 
             if func.is_unsafe() || func.is_safe() || func.is_extern() || func.is_builtin() {
-                impurity_reason_map.insert(qname, ImpurityReason.DirectlyUnsafe);
                 scc_pure = False;
                 continue;
             }
@@ -92,17 +89,6 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
                     }
                 }
                 if !purity_map.get(dep).unwrap_or(False) {
-                    if !impurity_reason_map.contains_key(qname) {
-                        let is_handler = handler_map.get(qname)
-                            .map(|handlers| handlers.contains(dep))
-                            .unwrap_or(False);
-                        let reason = if is_handler {
-                            ImpurityReason.UsesImpureHandler(dep)
-                        } else {
-                            ImpurityReason.CallsImpure(dep)
-                        };
-                        impurity_reason_map.insert(qname, reason);
-                    }
                     scc_pure = False;
                 }
             }
@@ -119,7 +105,8 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
     // aggregate by package — a package is pure only if every function in it is pure
     let package_purity: Map[String, Bool] = Map.new();
     let package_info: Map[String, PackageInfo] = Map.new();
-    let package_impure_fns: Map[String, Vec[ImpureFn]] = Map.new();
+    let package_directly_impure_fns: Map[String, Vec[QualifiedName]] = Map.new();
+    let package_impure_dependencies: Map[String, Map[QualifiedName, ImpureDependency]] = Map.new();
 
     for (qname, _) in program.functions {
         let func = program.functions.get(qname).unwrap();
@@ -131,9 +118,51 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
         package_info.insert(pkg_name, pkg.info);
         let fn_pure = purity_map.get(qname).unwrap_or(False);
         if !fn_pure {
-            if let Some(reason) = impurity_reason_map.get(qname) {
-                let impure_fns = package_impure_fns.entry(pkg_name).or_insert_with(|| Vec.new());
-                impure_fns.push(ImpureFn(name: qname, reason: reason));
+            if func.is_unsafe() || func.is_safe() || func.is_extern() || func.is_builtin() {
+                let directly_impure_fns = package_directly_impure_fns
+                    .entry(pkg_name)
+                    .or_insert_with(|| Vec.new());
+                directly_impure_fns.push(qname);
+            }
+
+            let deps = dep_map.get(qname).unwrap_or([]);
+            for dep in deps {
+                let dep_func = match program.functions.get(dep) {
+                    Some(f) => f,
+                    None => continue,
+                };
+                if dep_func.kind == FunctionDefKind.EffectMethod {
+                    continue;
+                }
+                if purity_map.get(dep).unwrap_or(False) {
+                    continue;
+                }
+                let outside_package = match dep_func.source_package {
+                    Some(dep_pkg) => dep_pkg.info.name != pkg_name,
+                    None => True,
+                };
+                if !outside_package {
+                    continue;
+                }
+
+                let dependencies = package_impure_dependencies
+                    .entry(pkg_name)
+                    .or_insert_with(|| Map.new());
+                let dependency = dependencies.entry(dep).or_insert_with(||
+                    ImpureDependency(
+                        name: dep,
+                        callers: Vec.new(),
+                        handler_users: Vec.new(),
+                    )
+                );
+                let is_handler = handler_map.get(qname)
+                    .map(|handlers| handlers.contains(dep))
+                    .unwrap_or(False);
+                if is_handler {
+                    dependency.handler_users.push(qname);
+                } else {
+                    dependency.callers.push(qname);
+                }
             }
         }
         match package_purity.get(pkg_name) {
@@ -159,8 +188,23 @@ pub fn check_purity(program: Program) -> Vec[PurityError] {
             None => False,
         };
         if advertised && !is_pure {
-            let impure_fns = package_impure_fns.get(pkg_name).unwrap_or([]);
-            errors.push(PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns));
+            let directly_impure_fns = package_directly_impure_fns
+                .get(pkg_name)
+                .unwrap_or([]);
+            directly_impure_fns.sort();
+            let impure_dependencies: Vec[ImpureDependency] = match package_impure_dependencies.get(pkg_name) {
+                Some(dependencies) => dependencies.values().collect(),
+                None => Vec.new(),
+            };
+            for dependency in impure_dependencies {
+                dependency.callers.sort();
+                dependency.handler_users.sort();
+            }
+            errors.push(PurityError.PackageClaimsPure(
+                pkg_name: pkg_name,
+                directly_impure_fns: directly_impure_fns,
+                impure_dependencies: impure_dependencies,
+            ));
         }
     }
 

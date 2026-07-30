@@ -19,6 +19,7 @@ pub struct Vec[T] {
         }
     }
 
+    @pure
     @safe
     pub fn with_value(cap: Int, value: T) -> Vec[T] {
         let data = gc_allocate_array(cap);
@@ -28,6 +29,7 @@ pub struct Vec[T] {
         Vec(data, cap, cap)
     }
 
+    @pure
     @safe
     pub fn from_slice(s: Slice[T]) -> Vec[T] {
         let new = gc_allocate_array(s.len());
@@ -49,6 +51,7 @@ pub struct Vec[T] {
         v.size
     }
 
+    @pure
     @safe
     pub fn get(v: Vec[T], index: Int) -> T {
         if index < 0 || index >= v.size {
@@ -57,6 +60,7 @@ pub struct Vec[T] {
         *offset_of(v.data, index)
     }
 
+    @pure
     @safe
     pub fn get_opt(v: Vec[T], index: Int) -> Option[T] {
         if index < 0 || index >= v.size {
@@ -65,6 +69,7 @@ pub struct Vec[T] {
         Some(*offset_of(v.data, index))
     }
 
+    @pure
     @safe
     pub fn first(v: Vec[T]) -> Option[T] {
         if v.size == 0 {
@@ -74,6 +79,7 @@ pub struct Vec[T] {
         }
     }
 
+    @pure
     @safe
     pub fn last(v: Vec[T]) -> Option[T] {
         if v.size == 0 {
@@ -95,6 +101,7 @@ pub struct Vec[T] {
         v.data = new_data;
     }
 
+    @pure
     @safe
     pub fn ensure_capacity(v: Vec[T], needed: Int) {
         if needed <= v.capacity {
@@ -110,6 +117,7 @@ pub struct Vec[T] {
         v.capacity = new_cap;
     }
 
+    @pure
     @safe
     pub fn insert(v: Vec[T], index: Int, item: T) {
         if index < 0 || index > v.size {
@@ -123,6 +131,7 @@ pub struct Vec[T] {
         v.size = v.size + 1;
     }
 
+    @pure
     @safe
     pub fn remove(v: Vec[T], index: Int) -> T {
         if index < 0 || index >= v.size {
@@ -138,6 +147,7 @@ pub struct Vec[T] {
         VecIterator(v, 0)
     }
 
+    @pure
     @safe
     pub fn slice(v: Vec[T]) -> Slice[T] {
         Slice.from_raw(v.data, v.size)
@@ -177,6 +187,7 @@ pub struct Vec[T] {
         }
     }
 
+    @pure
     @safe
     pub fn extend_from_slice(v: Vec[T], s: Slice[T]) {
         v.ensure_capacity(v.size + s.len());
@@ -184,6 +195,7 @@ pub struct Vec[T] {
         v.size = v.size + s.len();
     }
 
+    @pure
     @safe
     pub fn dedup[T: PartialEq[T]](v: Vec[T]) {
         if v.size == 0 {
@@ -201,6 +213,7 @@ pub struct Vec[T] {
         v.size = write;
     }
 
+    @pure
     @safe
     pub fn pop(v: Vec[T]) -> Option[T] {
         if v.size == 0 {
@@ -212,6 +225,7 @@ pub struct Vec[T] {
         }
     }
 
+    @pure
     @safe
     pub fn clear(v: Vec[T]) {
         v.data = get_null_ptr();
@@ -239,6 +253,7 @@ pub struct VecIterator[T] {
 instance[T] Iterator[VecIterator[T]] {
     type Item = T
 
+    @pure
     @safe
     fn next(a: VecIterator[T]) -> Option[T] {
         if a.index < a.vec.size {
@@ -262,6 +277,7 @@ instance[T] IntoIterator[Vec[T]] {
 
 instance[T: PartialEq[T]] PartialEq[Vec[T]] {
 
+    @pure
     @safe
     fn eq(a: Vec[T], b: Vec[T]) -> Bool {
         if a.size != b.size {
@@ -288,6 +304,7 @@ instance[T: Ord[T]] PartialOrd[Vec[T]] {
 
 instance[T: Ord[T]] Ord[Vec[T]] {
 
+    @pure
     @safe
     fn cmp(a: Vec[T], b: Vec[T]) -> Ordering {
         let len = if a.size < b.size { a.size } else { b.size };
@@ -316,6 +333,7 @@ instance[T] IndexAssign[Vec[T]] {
     type Key = Int
     type Value = T
 
+    @pure
     @safe
     fn index_assign(a: Vec[T], index: Int, value: T) {
         if index < 0 || index >= a.size {

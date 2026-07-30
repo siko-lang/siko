@@ -9,6 +9,7 @@ import Siko.AST.QualifiedName
 import Siko.Interner as I
 import Siko.Interpreter.IR
 import Siko.Location
+import Siko.Package.Collector as PC
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
 import Siko.Resolver.Error
@@ -34,6 +35,7 @@ pub struct MacroRequest {
     pub invocation: MacroInvocation,
     pub args: Vec[MacroArg],
     pub module_name: I.String,
+    pub source_package: PC.SourcePackage,
     pub location: Location,
 }
 
@@ -43,6 +45,7 @@ pub struct PendingMacroRequest {
     pub invocation: MacroInvocation,
     pub args: Vec[MacroArg],
     pub module_name: I.String,
+    pub source_package: PC.SourcePackage,
     pub location: Location,
 }
 
@@ -59,6 +62,7 @@ fn collect_attached(
     out: Vec[PendingMacroRequest],
     global_ctx: GlobalResolverContext,
     module_name: I.String,
+    source_package: PC.SourcePackage,
     target: MacroTarget,
     annotations: Vec[Annotation],
     location: Location,
@@ -72,6 +76,7 @@ fn collect_attached(
                 MacroInvocation.Attached,
                 app.args,
                 module_name,
+                source_package,
                 location,
             ));
         }
@@ -101,6 +106,7 @@ fn collect_external(
     out: Vec[PendingMacroRequest],
     global_ctx: GlobalResolverContext,
     module_name: I.String,
+    source_package: PC.SourcePackage,
     instance_def: InstanceDef,
     app: ExternalMacroApplication,
 ) -> Result[(), ResolveError] {
@@ -120,6 +126,7 @@ fn collect_external(
         MacroInvocation.External(resolved),
         app.args,
         module_name,
+        source_package,
         instance_def.location,
     ));
     Ok(())
@@ -139,6 +146,7 @@ pub fn collect_requests(
                     out,
                     global_ctx,
                     module_name,
+                    module_def.source_package,
                     MacroTarget.Struct(QualifiedName.new_struct(module_name, def.name.name())),
                     def.annotations,
                     def.name.location,
@@ -147,12 +155,20 @@ pub fn collect_requests(
                     out,
                     global_ctx,
                     module_name,
+                    module_def.source_package,
                     MacroTarget.Enum(QualifiedName.new_enum(module_name, def.name.name())),
                     def.annotations,
                     def.name.location,
                 )?,
                 M.ModuleItem.Instance(def) => if let Some(app) = def.macro_derive_info {
-                    collect_external(out, global_ctx, module_name, def, app)?;
+                    collect_external(
+                        out,
+                        global_ctx,
+                        module_name,
+                        module_def.source_package,
+                        def,
+                        app,
+                    )?;
                 },
                 _ => {}
             }
@@ -181,6 +197,7 @@ pub fn finalize_requests(
                 invocation: request.invocation,
                 args: request.args,
                 module_name: request.module_name,
+                source_package: request.source_package,
                 location: request.location,
             )
         })

@@ -11,6 +11,7 @@ import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Interpreter.Value
 import Siko.Location
+import Siko.Package.Collector as PC
 import Siko.Resolver
 import Siko.Resolver.GlobalContext
 import Siko.Resolver.Macros.Bridge.FunctionDefs
@@ -96,6 +97,7 @@ pub fn decode_instance(
     global_ctx: GlobalResolverContext,
     state: BridgeState,
     module_name: I.String,
+    source_package: PC.SourcePackage,
     location: Location,
     value: Value,
 ) -> Result[IDef.InstanceDef, String] {
@@ -122,6 +124,7 @@ pub fn decode_instance(
             target,
             type_arg_defs,
             module_name,
+            source_package,
             location,
             method_value,
         )?;
@@ -149,6 +152,7 @@ pub fn decode_instance_body(
     global_ctx: GlobalResolverContext,
     state: BridgeState,
     instance_def: IDef.InstanceDef,
+    source_package: PC.SourcePackage,
     value: Value,
 ) -> Result[IDef.InstanceDef, String] {
     let fields = match read_struct(value, B.get_macro_instance_body_qn(), 1) {
@@ -172,6 +176,7 @@ pub fn decode_instance_body(
             target,
             method_type_arg_defs,
             instance_def.module_name,
+            source_package,
             instance_def.location,
             method_value,
         )?;

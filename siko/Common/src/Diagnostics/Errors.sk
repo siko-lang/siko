@@ -270,15 +270,40 @@ pub fn report_purity_error(e: PurityError) {
     match e {
         PurityError.PureInMixedCycle(location) =>
             report("@pure function is in a mutual recursion cycle with non-pure functions", Some(location)),
-        PurityError.PackageClaimsPure(pkg_name: pkg_name, impure_fns: impure_fns) => {
-            let message = "package `${pkg_name}` declares `pure = true` but contains impure functions\n";
-            for impure_fn in impure_fns {
-                let reason_str = match impure_fn.reason {
-                    ImpurityReason.DirectlyUnsafe => "directly unsafe/extern",
-                    ImpurityReason.CallsImpure(dep) => "calls impure `${dep.name()}`",
-                    ImpurityReason.UsesImpureHandler(dep) => "uses impure effect handler `${dep.name()}`",
-                };
-                message = message + "\n  impure: `${impure_fn.name.name()}`: ${reason_str}";
+        PurityError.PackageClaimsPure(
+            pkg_name: pkg_name,
+            directly_impure_fns: directly_impure_fns,
+            impure_dependencies: impure_dependencies,
+        ) => {
+            let message = "package `${pkg_name}` declares `pure = true` but is not pure";
+            if !directly_impure_fns.is_empty() {
+                message = message + "\n\n  directly impure functions:";
+                for fn_name in directly_impure_fns.iter().take(5) {
+                    message = message + "\n    - `${fn_name.name()}`";
+                }
+                if directly_impure_fns.len() > 5 {
+                    message = message + "\n    ... and ${directly_impure_fns.len() - 5} more";
+                }
+            }
+            for dependency in impure_dependencies {
+                if !dependency.callers.is_empty() {
+                    message = message + "\n\n  impure dependency `${dependency.name.name()}` is called by:";
+                    for caller in dependency.callers.iter().take(5) {
+                        message = message + "\n    - `${caller.name()}`";
+                    }
+                    if dependency.callers.len() > 5 {
+                        message = message + "\n    ... and ${dependency.callers.len() - 5} more";
+                    }
+                }
+                if !dependency.handler_users.is_empty() {
+                    message = message + "\n\n  impure dependency `${dependency.name.name()}` is used as an effect handler by:";
+                    for user in dependency.handler_users.iter().take(5) {
+                        message = message + "\n    - `${user.name()}`";
+                    }
+                    if dependency.handler_users.len() > 5 {
+                        message = message + "\n    ... and ${dependency.handler_users.len() - 5} more";
+                    }
+                }
             }
             report(message, None);
         }
