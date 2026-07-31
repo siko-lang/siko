@@ -6,11 +6,12 @@ import Siko.CompilerHost
 import Siko.Config
 import Siko.Diagnostics
 import Siko.Driver
-import Siko.Package.Collector as PC
+import Siko.Package.Collector
+import Siko.Package.Source as SP
 import Std.Fs.File
 import Std.Fs.Path
 
-fn collect_packages(config: Config) -> Result[Vec[PC.SourcePackage], PC.CollectorError] {
+fn collect_packages(config: Config) -> Result[Vec[SP.SourcePackage], CollectorError] {
     let lib_paths: Vec[String] = Vec.new();
     match config.std_path {
         Some(path) => {
@@ -22,7 +23,7 @@ fn collect_packages(config: Config) -> Result[Vec[PC.SourcePackage], PC.Collecto
         }
         None => {}
     }
-    PC.Collector.new(config.no_std).collect(config.paths, lib_paths)
+    Collector.new(config.no_std).collect(config.paths, lib_paths)
 }
 
 pub instance BatchInput CompilerInput {

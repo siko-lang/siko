@@ -9,7 +9,6 @@ import Siko.CompilerHost
 import Siko.Config
 import Siko.Driver
 import Siko.Driver.Passes as CommonPasses
-import Siko.Errors
 import Siko.LLVM.Emit as LLVMEmit
 import Siko.LLVM.Lower as LLVMBackend
 import Siko.LowerBasicBlock
@@ -17,7 +16,7 @@ import Siko.LowerBuiltins
 import Siko.LowerData
 import Siko.LowerIfs
 import Siko.LowerPointers
-import Siko.Package.Collector as PC
+import Siko.Package.Source as SP
 import Siko.Package.Info
 import Siko.ValueTypes
 
@@ -70,10 +69,10 @@ fn native_lib_args(lib: NativeLib) -> Vec[String] {
         }
     }
     println("error: native library `${lib.name}` not found");
-    exit_with_error();
+    Sys.exit(1);
 }
 
-fn package_native_link_args(packages: Vec[PC.SourcePackage]) -> Vec[String] {
+fn package_native_link_args(packages: Vec[SP.SourcePackage]) -> Vec[String] {
     let args: Vec[String] = Vec.new();
     for pkg in packages {
         for lib in pkg.info.native_libs {
@@ -85,7 +84,7 @@ fn package_native_link_args(packages: Vec[PC.SourcePackage]) -> Vec[String] {
     args
 }
 
-fn common_link_args(output: String, packages: Vec[PC.SourcePackage]) -> Vec[String] {
+fn common_link_args(output: String, packages: Vec[SP.SourcePackage]) -> Vec[String] {
     let args: Vec[String] = Vec.new();
     args.push("-o");
     args.push(output);
@@ -101,7 +100,7 @@ fn common_link_args(output: String, packages: Vec[PC.SourcePackage]) -> Vec[Stri
     args
 }
 
-fn link_objects(object_paths: Vec[String], output: String, packages: Vec[PC.SourcePackage]) {
+fn link_objects(object_paths: Vec[String], output: String, packages: Vec[SP.SourcePackage]) {
     let clang = Command.new("clang").with_path().args(object_paths);
     for arg in common_link_args(output, packages) {
         clang = clang.arg(arg);
@@ -109,7 +108,7 @@ fn link_objects(object_paths: Vec[String], output: String, packages: Vec[PC.Sour
     let result = clang.run();
     if !result.success() {
         println("clang failed");
-        exit_with_error();
+        Sys.exit(1);
     }
 }
 
@@ -262,9 +261,9 @@ pub fn build_full_passes(driver: Driver) -> Vec[Pass] {
     CommonPasses.build_common_passes(driver) + lowering_passes + backend_passes
 }
 
-pub fn compile(driver: Driver, pass: Option[String]) {
+pub fn compile(driver: Driver, pass: Option[String]) -> Result[(), CompilationError] {
     with Siko.Driver.current = driver {
-        driver.compile(pass, build_full_passes(driver));
+        driver.compile(pass, build_full_passes(driver))
     }
 }
 

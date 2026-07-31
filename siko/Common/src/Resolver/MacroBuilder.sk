@@ -68,10 +68,9 @@ pub struct MacroBuilder {
         // misses have identical effects on the outer compilation.
         driver.program = program.deep_clone();
         let macro_config = get_config().for_nested_compilation();
-        with Siko.Config.current = macro_config {
-            driver.compile_macro();
-        }
-        let failed = driver.has_error_diagnostic();
+        let failed = with Siko.Config.current = macro_config {
+            driver.compile_macro().is_err()
+        };
         for diagnostic in driver.get_diagnostics() {
             CompilerDiagnostics.emit(diagnostic);
         }

@@ -1,7 +1,9 @@
 module Siko.Typechecker.Statistics {
 
-import Std.Time
+import Std.Time as T
 import Siko.Typechecker.Constraints as C
+import Std.Effects.Console
+import Std.Effects.Time
 
 pub implicit stats: Statistics
 
@@ -14,34 +16,34 @@ fn format_microseconds_as_millis(us: I64) -> String {
     "${ms}.${frac}ms"
 }
 
-fn format_duration(total: Duration) -> String {
+fn format_duration(total: T.Duration) -> String {
     format_microseconds_as_millis(total.to_microseconds())
 }
 
-fn format_average_duration(total: Duration, count: Int) -> String {
+fn format_average_duration(total: T.Duration, count: Int) -> String {
     if count == 0 {
         return "0.000ms";
     }
     format_microseconds_as_millis(total.to_microseconds() / count.as_i64())
 }
 
-fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
+fn statistics_start(enabled: Bool, starts: Vec[Instance]) {
     if enabled {
-        starts.push(Instant.now());
+        starts.push(now());
     }
 }
 
-fn statistics_elapsed(enabled: Bool, starts: Vec[Instant]) -> Option[Duration] {
+fn statistics_elapsed(enabled: Bool, starts: Vec[Instance]) -> Option[T.Duration] {
     if !enabled {
         return None;
     }
     match starts.pop() {
-        Some(start) => Some(start.elapsed()),
+        Some(start) => Some(elapsed(start)),
         None => None,
     }
 }
 
-fn print_time_stat(name: String, count: Int, total: Duration) {
+fn print_time_stat(name: String, count: Int, total: T.Duration) {
     println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}");
 }
 
@@ -170,17 +172,17 @@ pub struct Statistics {
     pub processed_by_kind: ConstraintKindStats,
     pub spawned_by_kind: ConstraintKindStats,
     pub collector_calls: Int,
-    pub collector_time: Duration,
-    collector_starts: Vec[Instant],
+    pub collector_time: T.Duration,
+    collector_starts: Vec[Instance],
     pub solver_calls: Int,
-    pub solver_time: Duration,
-    solver_starts: Vec[Instant],
+    pub solver_time: T.Duration,
+    solver_starts: Vec[Instance],
     pub finalizer_calls: Int,
-    pub finalizer_time: Duration,
-    finalizer_starts: Vec[Instant],
+    pub finalizer_time: T.Duration,
+    finalizer_starts: Vec[Instance],
     pub sanity_calls: Int,
-    pub sanity_time: Duration,
-    sanity_starts: Vec[Instant],
+    pub sanity_time: T.Duration,
+    sanity_starts: Vec[Instance],
 
     pub fn new(enabled: Bool) -> Statistics {
         Statistics(
@@ -211,16 +213,16 @@ pub struct Statistics {
             processed_by_kind: ConstraintKindStats.new(),
             spawned_by_kind: ConstraintKindStats.new(),
             collector_calls: 0,
-            collector_time: Duration.zero(),
+            collector_time: T.Duration.zero(),
             collector_starts: Vec.new(),
             solver_calls: 0,
-            solver_time: Duration.zero(),
+            solver_time: T.Duration.zero(),
             solver_starts: Vec.new(),
             finalizer_calls: 0,
-            finalizer_time: Duration.zero(),
+            finalizer_time: T.Duration.zero(),
             finalizer_starts: Vec.new(),
             sanity_calls: 0,
-            sanity_time: Duration.zero(),
+            sanity_time: T.Duration.zero(),
             sanity_starts: Vec.new(),
         )
     }

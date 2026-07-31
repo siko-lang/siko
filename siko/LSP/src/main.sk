@@ -7,12 +7,12 @@ import Siko.Config
 import Siko.CompilerHost
 import Siko.CompilerHost.Batch as HostBatch
 import Siko.CompilerHost.MacroCache as HostMacroCache
-import Siko.Errors
 import Siko.LSP
 import Siko.Resolver.Macros.Cache as MacroCache
 import Siko.StdPath
 import Std.Fs.Directory
 import Std.Sys.Process as Sys
+import Std.Effects.Time
 
 fn read_target_info() -> TargetInfo {
     match Sys.getenv("SIKO_TARGET_OS") {
@@ -20,11 +20,11 @@ fn read_target_info() -> TargetInfo {
         Some("macos") => TargetInfo("Darwin", "arm64-apple-macosx26.0.0"),
         Some(target_os) => {
             println("error: unsupported target os: ${target_os}");
-            exit_with_error();
+            Sys.exit(1);
         }
         None => {
             println("error: unsupported target os: <unset>");
-            exit_with_error();
+            Sys.exit(1);
         }
     }
 }
@@ -36,7 +36,7 @@ fn build_config() -> Config {
         Ok(cwd) => paths.push(cwd),
         Err(error) => {
             println("error: could not get current directory: ${error.message()}");
-            exit_with_error();
+            Sys.exit(1);
         }
     }
     let std_path = find_std_path();
@@ -80,7 +80,8 @@ pub fn name_cache_entry() {
 fn main() {
     let fm = FileManager.new();
     let config = Config.new();
-    with I.Compiler.compile = name_cache_entry,
+    with Time = ThreadTime,
+         I.Compiler.compile = name_cache_entry,
          CompilerInput = HostBatch.BatchInput,
          CompilerDiagnostics = HostBatch.BatchDiagnostics,
          CompilerEvents = HostBatch.BatchEvents,

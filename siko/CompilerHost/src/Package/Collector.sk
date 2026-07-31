@@ -3,11 +3,12 @@ module Siko.Package.Collector {
 import Std.Error as E
 import Siko.Package.Info
 import Siko.Package.Parser as P
+import Siko.Package.Source
 import Std.Fs.Directory
+import Std.Fs.File
 import Std.Fs.Path
 import Std.Fs.Stat as S
 import Std.Map
-import Std.Set
 
 pub enum CollectorError {
     IOError(E.Error),
@@ -25,17 +26,6 @@ instance ToString[CollectorError] {
             CollectorError.MissingDependency(dep: dep, requester: requester, toml: toml) =>
                 "dependency not found: `${dep}` (required by `${requester}` in ${toml})",
         }
-    }
-}
-
-instance ToString[SourcePackage] {
-    fn to_string(p: SourcePackage) -> String {
-        let root = match p.root {
-            Some(r) => r,
-            None => "<implicit>",
-        };
-        let kind = if p.is_root { "root" } else { "dep" };
-        "${kind} ${p.info} at ${root}"
     }
 }
 
@@ -63,14 +53,6 @@ instance E.Error[CollectorError] {
             _ => None
         }
     }
-}
-
-@derive(Clone, PartialEq, Eq)
-pub struct SourcePackage {
-    pub root: Option[String],
-    pub info: PackageInfo,
-    pub files: Vec[String],
-    pub is_root: Bool,
 }
 
 fn select_packages(
@@ -152,7 +134,8 @@ pub struct Collector {
 
         let pkg_key = if has_toml {
             let toml_path = Path.join(dir, "package.toml");
-            let info = P.parse(toml_path)?;
+            let contents = Std.Fs.File.read_file(toml_path)?;
+            let info = P.parse(contents)?;
             c.packages.insert(dir, SourcePackage(root: Some(dir), info: info, files: Vec.new(), is_root: is_root));
             Some(dir)
         } else {
@@ -276,27 +259,6 @@ pub struct Collector {
 
         Ok(result)
     }
-}
-
-// Returns a map from package name to the set of all package names it can reach
-// (itself plus all transitive dependencies). Relies on `packages` being in
-// dependency-first order, as produced by `Collector.collect`.
-pub fn build_package_reachability(packages: Vec[SourcePackage]) -> Map[String, Set[String]] {
-    let reachable: Map[String, Set[String]] = Map.new();
-    for pkg in packages {
-        let r: Set[String] = Set.new();
-        r.insert(pkg.info.name);
-        for dep in pkg.info.dependencies {
-            r.insert(dep.name);
-            if let Some(dep_r) = reachable.get(dep.name) {
-                for name in dep_r {
-                    r.insert(name);
-                }
-            }
-        }
-        reachable.insert(pkg.info.name, r);
-    }
-    reachable
 }
 
 }

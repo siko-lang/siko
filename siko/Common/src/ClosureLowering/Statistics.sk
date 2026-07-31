@@ -1,10 +1,12 @@
 module Siko.ClosureLowering.Statistics {
 
-import Std.Time
+import Std.Time as T
 import Siko.AST.QualifiedName
 import Siko.ClosureLowering.Debug
 import Siko.ClosureLowering.Profile
 import Siko.Interner as I
+import Std.Effects.Console
+import Std.Effects.Time
 
 pub implicit stats: Statistics
 
@@ -17,11 +19,11 @@ fn format_microseconds_as_millis(us: I64) -> String {
     "${ms}.${frac}ms"
 }
 
-fn format_duration(total: Duration) -> String {
+fn format_duration(total: T.Duration) -> String {
     format_microseconds_as_millis(total.to_microseconds())
 }
 
-fn format_average_duration(total: Duration, count: Int) -> String {
+fn format_average_duration(total: T.Duration, count: Int) -> String {
     if count == 0 {
         return "0.000ms";
     }
@@ -41,27 +43,27 @@ fn format_average_count(total: Int, count: Int) -> String {
     "${whole}.${frac}"
 }
 
-fn statistics_start(enabled: Bool, starts: Vec[Instant]) {
+fn statistics_start(enabled: Bool, starts: Vec[Instance]) {
     if enabled {
-        starts.push(Instant.now());
+        starts.push(now());
     }
 }
 
-fn statistics_elapsed(enabled: Bool, starts: Vec[Instant]) -> Option[Duration] {
+fn statistics_elapsed(enabled: Bool, starts: Vec[Instance]) -> Option[T.Duration] {
     if !enabled {
         return None;
     }
     match starts.pop() {
-        Some(start) => Some(start.elapsed()),
+        Some(start) => Some(elapsed(start)),
         None => None,
     }
 }
 
-fn print_time_stat(name: String, count: Int, total: Duration) {
+fn print_time_stat(name: String, count: Int, total: T.Duration) {
     println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}");
 }
 
-fn print_time_sample_stat(name: String, count: Int, total: Duration, min_us: I64, max_us: I64) {
+fn print_time_sample_stat(name: String, count: Int, total: T.Duration, min_us: I64, max_us: I64) {
     let actual_min = if count == 0 { 0 } else { min_us };
     let actual_max = if count == 0 { 0 } else { max_us };
     println("  ${name}: calls=${count}, total=${format_duration(total)}, avg=${format_average_duration(total, count)}, min=${format_microseconds_as_millis(actual_min)}, max=${format_microseconds_as_millis(actual_max)}");
@@ -79,15 +81,15 @@ fn print_size_stat(name: String, count: Int, total: Int, min: Int, max: Int) {
 
 pub struct TimedStat {
     pub calls: Int,
-    pub total: Duration,
+    pub total: T.Duration,
     pub min_us: I64,
     pub max_us: I64,
-    starts: Vec[Instant],
+    starts: Vec[Instance],
 
     pub fn new() -> TimedStat {
         TimedStat(
             calls: 0,
-            total: Duration.zero(),
+            total: T.Duration.zero(),
             min_us: 0,
             max_us: 0,
             starts: Vec.new(),
@@ -182,48 +184,48 @@ pub struct Statistics {
     pub generated_handlers: Int,
 
     pub generalize_datatypes_calls: Int,
-    pub generalize_datatypes_time: Duration,
-    generalize_datatypes_starts: Vec[Instant],
+    pub generalize_datatypes_time: T.Duration,
+    generalize_datatypes_starts: Vec[Instance],
     pub generalize_functions_calls: Int,
-    pub generalize_functions_time: Duration,
-    generalize_functions_starts: Vec[Instant],
+    pub generalize_functions_time: T.Duration,
+    generalize_functions_starts: Vec[Instance],
     pub profile_build_calls: Int,
-    pub profile_build_time: Duration,
-    profile_build_starts: Vec[Instant],
+    pub profile_build_time: T.Duration,
+    profile_build_starts: Vec[Instance],
     pub profile_scc_calls: Int,
-    pub profile_scc_time: Duration,
+    pub profile_scc_time: T.Duration,
     pub profile_scc_time_min_us: I64,
     pub profile_scc_time_max_us: I64,
-    profile_scc_starts: Vec[Instant],
+    profile_scc_starts: Vec[Instance],
     pub profile_flow_calls: Int,
-    pub profile_flow_time: Duration,
-    profile_flow_starts: Vec[Instant],
+    pub profile_flow_time: T.Duration,
+    profile_flow_starts: Vec[Instance],
     pub profile_publish_calls: Int,
-    pub profile_publish_time: Duration,
-    profile_publish_starts: Vec[Instant],
+    pub profile_publish_time: T.Duration,
+    profile_publish_starts: Vec[Instance],
     pub resolve_calls: Int,
-    pub resolve_time: Duration,
-    resolve_starts: Vec[Instant],
+    pub resolve_time: T.Duration,
+    resolve_starts: Vec[Instance],
     pub resolver_walk_data_calls: Int,
-    pub resolver_walk_data_time: Duration,
-    resolver_walk_data_starts: Vec[Instant],
+    pub resolver_walk_data_time: T.Duration,
+    resolver_walk_data_starts: Vec[Instance],
     pub resolver_process_instance_calls: Int,
-    pub resolver_process_instance_time: Duration,
-    resolver_process_instance_starts: Vec[Instant],
+    pub resolver_process_instance_time: T.Duration,
+    resolver_process_instance_starts: Vec[Instance],
     pub rewrite_calls: Int,
-    pub rewrite_time: Duration,
-    rewrite_starts: Vec[Instant],
+    pub rewrite_time: T.Duration,
+    rewrite_starts: Vec[Instance],
     pub rewrite_function_calls: Int,
-    pub rewrite_function_time: Duration,
+    pub rewrite_function_time: T.Duration,
     pub rewrite_function_time_min_us: I64,
     pub rewrite_function_time_max_us: I64,
-    rewrite_function_starts: Vec[Instant],
+    rewrite_function_starts: Vec[Instance],
     pub generate_handler_calls: Int,
-    pub generate_handler_time: Duration,
-    generate_handler_starts: Vec[Instant],
+    pub generate_handler_time: T.Duration,
+    generate_handler_starts: Vec[Instance],
     pub generate_enum_calls: Int,
-    pub generate_enum_time: Duration,
-    generate_enum_starts: Vec[Instant],
+    pub generate_enum_time: T.Duration,
+    generate_enum_starts: Vec[Instance],
     pub rewrite_type_timing: TimedStat,
     pub rewrite_function_walk_data_timing: TimedStat,
     pub rewrite_function_rw_timing: TimedStat,
@@ -289,47 +291,47 @@ pub struct Statistics {
             generated_closure_enums: 0,
             generated_handlers: 0,
             generalize_datatypes_calls: 0,
-            generalize_datatypes_time: Duration.zero(),
+            generalize_datatypes_time: T.Duration.zero(),
             generalize_datatypes_starts: Vec.new(),
             generalize_functions_calls: 0,
-            generalize_functions_time: Duration.zero(),
+            generalize_functions_time: T.Duration.zero(),
             generalize_functions_starts: Vec.new(),
             profile_build_calls: 0,
-            profile_build_time: Duration.zero(),
+            profile_build_time: T.Duration.zero(),
             profile_build_starts: Vec.new(),
             profile_scc_calls: 0,
-            profile_scc_time: Duration.zero(),
+            profile_scc_time: T.Duration.zero(),
             profile_scc_time_min_us: 0,
             profile_scc_time_max_us: 0,
             profile_scc_starts: Vec.new(),
             profile_flow_calls: 0,
-            profile_flow_time: Duration.zero(),
+            profile_flow_time: T.Duration.zero(),
             profile_flow_starts: Vec.new(),
             profile_publish_calls: 0,
-            profile_publish_time: Duration.zero(),
+            profile_publish_time: T.Duration.zero(),
             profile_publish_starts: Vec.new(),
             resolve_calls: 0,
-            resolve_time: Duration.zero(),
+            resolve_time: T.Duration.zero(),
             resolve_starts: Vec.new(),
             resolver_walk_data_calls: 0,
-            resolver_walk_data_time: Duration.zero(),
+            resolver_walk_data_time: T.Duration.zero(),
             resolver_walk_data_starts: Vec.new(),
             resolver_process_instance_calls: 0,
-            resolver_process_instance_time: Duration.zero(),
+            resolver_process_instance_time: T.Duration.zero(),
             resolver_process_instance_starts: Vec.new(),
             rewrite_calls: 0,
-            rewrite_time: Duration.zero(),
+            rewrite_time: T.Duration.zero(),
             rewrite_starts: Vec.new(),
             rewrite_function_calls: 0,
-            rewrite_function_time: Duration.zero(),
+            rewrite_function_time: T.Duration.zero(),
             rewrite_function_time_min_us: 0,
             rewrite_function_time_max_us: 0,
             rewrite_function_starts: Vec.new(),
             generate_handler_calls: 0,
-            generate_handler_time: Duration.zero(),
+            generate_handler_time: T.Duration.zero(),
             generate_handler_starts: Vec.new(),
             generate_enum_calls: 0,
-            generate_enum_time: Duration.zero(),
+            generate_enum_time: T.Duration.zero(),
             generate_enum_starts: Vec.new(),
             rewrite_type_timing: TimedStat.new(),
             rewrite_function_walk_data_timing: TimedStat.new(),

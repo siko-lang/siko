@@ -10,22 +10,27 @@ import Siko.CompilerHost.Batch as HostBatch
 import Siko.CompilerHost.MacroCache as HostMacroCache
 import Siko.Compiler.Passes as Compiler
 import Siko.Resolver.Macros.Cache as MacroCache
-import Siko.Errors
 import Siko.CLI
+import Std.Effects.Time
+import Std.Sys.Process as Sys
 
 pub fn name_cache_entry() {
     let name_cache = B.build_cache();
     with B.name_cache = name_cache {
         let driver = Driver.new();
-        Compiler.compile(driver, get_config().pass);
-        driver.report_diagnostics_and_exit();
+        let result = Compiler.compile(driver, get_config().pass);
+        driver.report_diagnostics();
+        if result.is_err() {
+            Sys.exit(1);
+        }
     }
 }
 
 fn main() {
     let fm = FileManager.new();
     let config = Config.new();
-    with I.Compiler.compile = name_cache_entry,
+    with Time = ThreadTime,
+         I.Compiler.compile = name_cache_entry,
          CompilerInput = HostBatch.BatchInput,
          CompilerDiagnostics = HostBatch.BatchDiagnostics,
          CompilerEvents = HostBatch.BatchEvents,
@@ -34,7 +39,7 @@ fn main() {
          Siko.Config.current = config {
         let config = match CLI.parse_cli_args() {
             None => {
-                exit_with_error();
+                Sys.exit(1);
             }
             Some(config) => config,
         };

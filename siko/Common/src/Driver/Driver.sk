@@ -2,20 +2,20 @@ module Siko.Driver {
 
 import Siko.Parser.Module
 import Siko.AST.Module
-import Siko.Errors
 import Siko.Diagnostics
-import Std.Sys.Process as Sys
 import Siko.Config
 import Siko.CompilerHost
 import Siko.Driver.Passes
 import Siko.HIR.Program
-import Siko.Package.Collector as PC
+import Siko.Package.Source as SP
 import Siko.SanityCheck
-import Std.Time
+import Std.Effects.Time
 import Std.Map
 import Std.Set
 
 pub implicit current: Driver
+
+pub struct CompilationError {}
 
 pub struct Pass {
     pub name: String,
@@ -29,7 +29,7 @@ pub struct Driver {
     pass: Option[String],
     pub program: Program,
     pub all_modules: Vec[Module],
-    pub packages: Vec[PC.SourcePackage],
+    pub packages: Vec[SP.SourcePackage],
     pub pkg_reachability: Map[String, Set[String]],
     pub diagnostics: Vec[Diagnostic],
 
@@ -53,19 +53,19 @@ pub struct Driver {
         False
     }
 
-    pub fn run_passes(d: Driver, passes: Vec[Pass]) {
+    pub fn run_passes(d: Driver, passes: Vec[Pass]) -> Result[(), CompilationError] {
         let trace = get_config().trace;
         for pass in passes {
-            let start = Instant.now();
+            let start = now();
             (pass.run)(d);
             if trace {
                 CompilerEvents.pass_finished(
                     pass.label,
-                    start.elapsed().to_millis(),
+                    elapsed(start).to_millis(),
                 );
             }
             if d.has_error_diagnostic() {
-                return;
+                return Err(CompilationError());
             }
             if pass.run_sanity_check {
                 SanityCheck.check_program(d.program);
@@ -75,38 +75,36 @@ pub struct Driver {
                     Some(dump_fn) => (dump_fn)(d),
                     None => CompilerEvents.dump(d.program.format()),
                 }
-                Sys.exit(0);
+                return Ok(());
             }
         }
+        Ok(())
     }
 
-    pub fn compile(d: Driver, pass: Option[String], passes: Vec[Pass]) {
+    pub fn compile(d: Driver, pass: Option[String], passes: Vec[Pass]) -> Result[(), CompilationError] {
         with current = d {
             d.pass = pass;
-            d.run_passes(passes);
+            d.run_passes(passes)
         }
     }
 
-    pub fn compile_macro(d: Driver) {
+    pub fn compile_macro(d: Driver) -> Result[(), CompilationError] {
         with current = d {
             d.pass = None;
-            d.run_passes(Passes.build_macro_passes(d));
+            d.run_passes(Passes.build_macro_passes(d))
         }
     }
 
-    pub fn compile_interpreter_tests(d: Driver) {
+    pub fn compile_interpreter_tests(d: Driver) -> Result[(), CompilationError] {
         with current = d {
             d.pass = None;
-            d.run_passes(Passes.build_interpreter_test_program_passes(d));
+            d.run_passes(Passes.build_interpreter_test_program_passes(d))
         }
     }
 
-    pub fn report_diagnostics_and_exit(d: Driver) {
+    pub fn report_diagnostics(d: Driver) {
         for di in d.diagnostics {
             di.print();
-        }
-        if d.has_error_diagnostic() {
-            exit_with_error();
         }
     }
 

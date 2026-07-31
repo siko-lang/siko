@@ -1,0 +1,47 @@
+module Std.Effects.Time {
+
+import Std.Time
+import Std.Time as T
+import Std.IO.Async.Scheduler as Async
+
+pub effect Time {
+    type Instance
+
+    fn sleep(d: Duration)
+    fn now() -> Instance
+    fn elapsed(start: Instance) -> Duration
+}
+
+pub instance ThreadTime Time {
+    type Instance = T.Instant
+
+    fn sleep(d: Duration) {
+        T.sleep(d);
+    }
+
+    fn now() -> T.Instant {
+        T.Instant.now()
+    }
+
+    fn elapsed(start: T.Instant) -> Duration {
+        start.elapsed()
+    }
+}
+
+pub instance AsyncTime Time {
+    type Instance = T.Instant
+
+    fn sleep(d: Duration) {
+        Async.sleep(d);
+    }
+
+    fn now() -> T.Instant {
+        T.Instant.now()
+    }
+
+    fn elapsed(start: T.Instant) -> Duration {
+        start.elapsed()
+    }
+}
+
+}

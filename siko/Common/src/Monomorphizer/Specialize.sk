@@ -22,6 +22,7 @@ import Siko.Location
 import Siko.Constants.Builtins as B
 import Siko.Interner as I
 import Siko.Format.Utils
+import Std.Effects.Console
 
 pub trait Specialize[T] {
     fn specialize(t: T, mono: Monomorphizer) -> T
@@ -138,7 +139,7 @@ instance Specialize[FunctionPtrInfo] {
         };
 
         let callee_mono_ctx = if func.is_extern() {
-            MonoContext.new()
+            mono.current_mono_ctx.type_context()
         } else if func.is_c_callback() {
             mono.current_mono_ctx.without_implicits()
         } else {

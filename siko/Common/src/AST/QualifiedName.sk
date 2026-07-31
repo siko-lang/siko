@@ -6,6 +6,7 @@ import Std.Hash.MD5
 import Siko.Interner as I
 import Siko.AST.Type
 import Siko.Format.Utils
+import Std.Effects.Console
 
 @derive(PartialEq, Eq, PartialOrd, Ord, Clone)
 pub enum BaseName {
@@ -190,7 +191,10 @@ pub struct MonoContext {
         ctx.implicit_ctx.contains(value)
     }
 
-    pub fn without_effects_and_implicits(ctx: MonoContext) -> MonoContext {
+    // Keep only compile-time type bindings. Builtins, externs, and C callbacks
+    // cannot use runtime handlers, but their concrete types may still depend on
+    // effect associated types.
+    pub fn type_context(ctx: MonoContext) -> MonoContext {
         MonoContext(Map.new(), ctx.effect_associated_type_ctx, Vec.new())
     }
 

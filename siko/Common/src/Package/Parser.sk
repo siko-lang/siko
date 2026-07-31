@@ -3,11 +3,9 @@ module Siko.Package.Parser {
 import Siko.Package.Info
 import Std.Map
 import Std.Toml as T
-import Std.Fs.File
 import Std.Error as E
 
 pub enum Error {
-    IoError(E.Error),
     TomlError,
     ContentError,
 }
@@ -15,7 +13,6 @@ pub enum Error {
 instance ToString[Error] {
     fn to_string(e: Error) -> String {
         match e {
-            Error.IoError(error) => "io error: ${error}",
             Error.TomlError => "toml parse error",
             Error.ContentError => "invalid package.toml content",
         }
@@ -28,10 +25,7 @@ instance E.Error[Error] {
     }
 
     fn source(error: Error) -> Option[E.Error] {
-        match error {
-            Error.IoError(error) => Some(error),
-            _ => None
-        }
+        None
     }
 }
 
@@ -157,53 +151,44 @@ fn parse_native_libs(root: Table) -> Result[Vec[NativeLib], Error] {
     Ok(native_libs)
 }
 
-pub fn parse(f: String) -> Result[PackageInfo, Error] {
-    match read_file(f) {
-        Ok(contents) => {
-            match T.parse(contents) {
-                Ok(T.TomlOutput(m)) => {
-                    let root = Table(m);
-                    let name = root.get_string("name")?;
-                    let version = root.get_string("version")?;
-                    let dependencies = Vec.new();
-                    if root.m.contains_key("dependencies") {
-                        let dep_table = root.get_table("dependencies")?;
-                        for (name, dep_info) in dep_table.m {
-                            let (version, path) = match dep_info {
-                                T.TomlValue.Str(s) => (s, None),
-                                T.TomlValue.Table(m) => {
-                                    let t = Table(m);
-                                    let version = t.get_string_opt("version").unwrap_or("");
-                                    let path = t.get_string_opt("path");
-                                    if version.is_empty() && path == None {
-                                        return Err(Error.ContentError);
-                                    }
-                                    (version, path)
-                                }
-                                _ => return Err(Error.ContentError),
-                            };
-                            let dep = Dependency(name: name, version: version, path: path);
-                            dependencies.push(dep);
+pub fn parse(contents: String) -> Result[PackageInfo, Error] {
+    match T.parse(contents) {
+        Ok(T.TomlOutput(m)) => {
+            let root = Table(m);
+            let name = root.get_string("name")?;
+            let version = root.get_string("version")?;
+            let dependencies = Vec.new();
+            if root.m.contains_key("dependencies") {
+                let dep_table = root.get_table("dependencies")?;
+                for (name, dep_info) in dep_table.m {
+                    let (version, path) = match dep_info {
+                        T.TomlValue.Str(s) => (s, None),
+                        T.TomlValue.Table(m) => {
+                            let t = Table(m);
+                            let version = t.get_string_opt("version").unwrap_or("");
+                            let path = t.get_string_opt("path");
+                            if version.is_empty() && path == None {
+                                return Err(Error.ContentError);
+                            }
+                            (version, path)
                         }
-                    }
-                    let native_libs = parse_native_libs(root)?;
-                    let pure = root.get_bool_opt("pure").unwrap_or(False);
-                    let info = PackageInfo(
-                        name: name,
-                        version: version,
-                        dependencies: dependencies,
-                        native_libs: native_libs,
-                        pure: pure);
-                    Ok(info)
-                }
-                Err(_) => {
-                    return Err(Error.TomlError);
+                        _ => return Err(Error.ContentError),
+                    };
+                    let dep = Dependency(name: name, version: version, path: path);
+                    dependencies.push(dep);
                 }
             }
+            let native_libs = parse_native_libs(root)?;
+            let pure = root.get_bool_opt("pure").unwrap_or(False);
+            Ok(PackageInfo(
+                name: name,
+                version: version,
+                dependencies: dependencies,
+                native_libs: native_libs,
+                pure: pure,
+            ))
         }
-        Err(error) => {
-            return Err(Error.IoError(error));
-        }
+        Err(_) => Err(Error.TomlError),
     }
 }
 
